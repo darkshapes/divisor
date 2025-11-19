@@ -10,12 +10,14 @@ import torch
 from torch import dtype
 from einops import rearrange
 from safetensors.torch import load_file as load_sft
+from huggingface_hub import snapshot_download
 from divisor.flux_modules.model import Flux, FluxParams
 from divisor.flux_modules.autoencoder import AutoEncoder, AutoEncoderParams
 from divisor.flux_modules.text_embedder import HFEmbedder
 from divisor.flux_modules.model import FluxLoraWrapper
 
-CHECKPOINTS_DIR = Path("")
+
+CHECKPOINTS_DIR = Path(snapshot_download(repo_id="black-forest-labs/FLUX.1-dev", local_files_only=False))
 PREFERED_KONTEXT_RESOLUTIONS = [
     (672, 1568),
     (688, 1504),
@@ -80,7 +82,7 @@ class ModelSpec:
 
 configs = {
     "flux-dev": ModelSpec(
-        repo_id="cocktailpeanut/xulf-dev",
+        repo_id="",
         repo_flow="flux1-dev.safetensors",
         repo_ae="ae.safetensors",
         params=FluxParams(
