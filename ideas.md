@@ -8,13 +8,16 @@ Consider denoising as a back-and-forth creative process where, rather than havin
 
 There are an almost endless variety of ways to intervene on a diffusion model's predictions, many of which have become standard in commercial pipelines (e.g. CFG, autoguidance). Despite this, the _majority_ of interventions are not consistent enough to be applied indiscriminantly, essentially requiring a human in the loop to decide whether their application is desirable. These, under-studied interventions are exactly the sort Divisor could facilitate exploring.
 
-Branching
+### Branching
+
 Allow the user to fork the diffusion trajectory at any timestep, creating parallel streams that can be explored side‑by‑side. Each branch inherits the current latent state but can be nudged with different conditioning, LoRA weights, or stochastic seeds, letting the creator compare alternatives instantly.
 
-Masked Editing
+### Masked Editing
+
 Paint a mask over regions of the intermediate output and request the model to re‑denoise only those areas, preserving the rest of the composition while granting fine‑grained control.
 
-Parameter Adjustment
+### Parameter Adjustment
+
 Expose key hyper‑parameters (e.g., CFG scale, noise level) as coordinate pairs that update the preview in real time. Users can feel the impact of each tweak while building a visual map of associated effects, all without committing to a full generation.
 
 ```
