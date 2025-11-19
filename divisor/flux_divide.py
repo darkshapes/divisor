@@ -13,8 +13,8 @@ from typing import Optional
 import torch
 from torch import Tensor
 
-from .controller import time_shift
-from .flux_controller import FluxController
+from divisor.controller import time_shift
+from divisor.flux_controller import FluxController
 
 
 class FluxDivide:
@@ -84,12 +84,8 @@ class FluxDivide:
             branch_txt = params.get("txt", self.controller.txt)
             branch_vec = params.get("vec", self.controller.vec)
             branch_img_cond = params.get("img_cond", self.controller.img_cond)
-            branch_img_cond_seq = params.get(
-                "img_cond_seq", self.controller.img_cond_seq
-            )
-            branch_img_cond_seq_ids = params.get(
-                "img_cond_seq_ids", self.controller.img_cond_seq_ids
-            )
+            branch_img_cond_seq = params.get("img_cond_seq", self.controller.img_cond_seq)
+            branch_img_cond_seq_ids = params.get("img_cond_seq_ids", self.controller.img_cond_seq_ids)
 
             # Apply preview steps
             branch_index = current_index
@@ -122,13 +118,9 @@ class FluxDivide:
                     img_input = torch.cat((branch_img, branch_img_cond), dim=-1)
 
                 if branch_img_cond_seq is not None:
-                    assert branch_img_cond_seq_ids is not None, (
-                        "You need to provide either both or neither of the sequence conditioning"
-                    )
+                    assert branch_img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
                     img_input = torch.cat((img_input, branch_img_cond_seq), dim=1)
-                    img_input_ids = torch.cat(
-                        (img_input_ids, branch_img_cond_seq_ids), dim=1
-                    )
+                    img_input_ids = torch.cat((img_input_ids, branch_img_cond_seq_ids), dim=1)
 
                 # Run model prediction with branch parameters
                 pred = self.controller.model(
@@ -158,27 +150,11 @@ class FluxDivide:
             "snapshot_index": current_index,
             "preview_steps": preview_steps,
             "snapshot_guidance": self.controller.guidance,
-            "snapshot_txt": (
-                self.controller.txt.clone() if self.controller.txt is not None else None
-            ),
-            "snapshot_vec": (
-                self.controller.vec.clone() if self.controller.vec is not None else None
-            ),
-            "snapshot_img_cond": (
-                self.controller.img_cond.clone()
-                if self.controller.img_cond is not None
-                else None
-            ),
-            "snapshot_img_cond_seq": (
-                self.controller.img_cond_seq.clone()
-                if self.controller.img_cond_seq is not None
-                else None
-            ),
-            "snapshot_img_cond_seq_ids": (
-                self.controller.img_cond_seq_ids.clone()
-                if self.controller.img_cond_seq_ids is not None
-                else None
-            ),
+            "snapshot_txt": (self.controller.txt.clone() if self.controller.txt is not None else None),
+            "snapshot_vec": (self.controller.vec.clone() if self.controller.vec is not None else None),
+            "snapshot_img_cond": (self.controller.img_cond.clone() if self.controller.img_cond is not None else None),
+            "snapshot_img_cond_seq": (self.controller.img_cond_seq.clone() if self.controller.img_cond_seq is not None else None),
+            "snapshot_img_cond_seq_ids": (self.controller.img_cond_seq_ids.clone() if self.controller.img_cond_seq_ids is not None else None),
         }
 
         return results
@@ -222,9 +198,7 @@ class FluxDivide:
 
         results = self._preview_cache["results"]
         if branch_index < 0 or branch_index >= len(results):
-            raise ValueError(
-                f"Branch index {branch_index} out of range [0, {len(results) - 1}]"
-            )
+            raise ValueError(f"Branch index {branch_index} out of range [0, {len(results) - 1}]")
 
         # Get the selected branch
         params, preview_img = results[branch_index]
@@ -308,17 +282,13 @@ class FluxDivide:
         tensor_steps = torch.tensor(remaining_timesteps, dtype=torch.float32)
 
         # Apply time_shift
-        adjusted_timesteps = time_shift(
-            self.controller.mu, self.controller.sigma, tensor_steps, steps, compress
-        )
+        adjusted_timesteps = time_shift(self.controller.mu, self.controller.sigma, tensor_steps, steps, compress)
 
         # Convert back to list
         new_timesteps = adjusted_timesteps.tolist()
 
         # Update the schedule (keep processed timesteps, replace remaining)
-        self.controller.timesteps = (
-            self.controller.timesteps[: self.controller.current_index] + new_timesteps
-        )
+        self.controller.timesteps = self.controller.timesteps[: self.controller.current_index] + new_timesteps
 
         return new_timesteps
 
@@ -343,11 +313,7 @@ class FluxDivide:
             raise ValueError("No current step to subdivide.")
 
         t_curr = self.controller.timesteps[self.controller.current_index]
-        t_prev = (
-            self.controller.timesteps[self.controller.current_index + 1]
-            if self.controller.current_index + 1 < len(self.controller.timesteps)
-            else 0.0
-        )
+        t_prev = self.controller.timesteps[self.controller.current_index + 1] if self.controller.current_index + 1 < len(self.controller.timesteps) else 0.0
 
         if t_curr == t_prev:
             # No step to subdivide
@@ -383,9 +349,7 @@ class FluxDivide:
 
         # Replace current step with sub-steps
         self.controller.timesteps = (
-            self.controller.timesteps[: self.controller.current_index + 1]
-            + new_sub_timesteps
-            + self.controller.timesteps[self.controller.current_index + 1 :]
+            self.controller.timesteps[: self.controller.current_index + 1] + new_sub_timesteps + self.controller.timesteps[self.controller.current_index + 1 :]
         )
 
         return new_sub_timesteps
