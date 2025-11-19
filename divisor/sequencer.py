@@ -1,6 +1,12 @@
-from controller import ManualTimestepController
+# SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
+# <!-- // /*  d a r k s h a p e s */ -->
+
 import torch
 import math
+from controller import ManualTimestepController
+from flux_controller import FluxController
+from flux_divide import FluxDivide
+
 
 device = torch.device(
     "cuda"
@@ -31,6 +37,31 @@ def get_noise(
         dtype=dtype,
         generator=torch.Generator(device="cpu").manual_seed(seed),
     ).to(device)
+
+
+def flux_sequencer(controller: FluxController):
+    while not controller.is_complete:
+        state = controller.current_state
+        print(
+            f"\nCurrent timestep: {state.current_timestep} ({state.timestep_index}/{state.total_timesteps})"
+        )
+        print(f"Current guidance: {state.guidance:.2f}")
+        print(f"Sample: {state.current_sample}")
+        controller.step()
+        controller.set_guidance(7.0)
+
+        # Advanced usage - with branching
+        controller = FluxController(...)
+        divide = FluxDivide(controller)
+
+        # Generate branches
+        branches = divide.preview_guidance_branches([3.5, 7.0, 10.0])
+
+        # Restore a branch
+        divide.restore_from_preview_cache(branch_index=1)
+
+        # Continue with controller
+        controller.step()
 
 
 def example_usage():

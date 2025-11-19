@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
+# <!-- // /*  d a r k s h a p e s */ -->
+
 """
 Interactive denoising with manual timestep control.
 Allows users to manually increment through timesteps one at a time.

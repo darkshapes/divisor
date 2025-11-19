@@ -1,4 +1,6 @@
-# original BFL Flux code
+# SPDX-License-Identifier:Apache-2.0
+# original BFL Flux code from https://github.com/black-forest-labs/flux
+
 import math
 from typing import Callable
 
@@ -13,8 +15,9 @@ from .modules.autoencoder import AutoEncoder
 from .modules.conditioner import HFEmbedder
 
 
-
-def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:
+def prepare(
+    t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]
+) -> dict[str, Tensor]:
     bs, c, h, w = img.shape
     if bs == 1 and not isinstance(prompt, str):
         bs = len(prompt)
@@ -97,7 +100,9 @@ def denoise(
     img_cond_seq_ids: Tensor | None = None,
 ):
     # this is ignored for schnell
-    guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
+    guidance_vec = torch.full(
+        (img.shape[0],), guidance, device=img.device, dtype=img.dtype
+    )
     for t_curr, t_prev in zip(timesteps[:-1], timesteps[1:]):
         t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
         img_input = img
@@ -105,9 +110,9 @@ def denoise(
         if img_cond is not None:
             img_input = torch.cat((img, img_cond), dim=-1)
         if img_cond_seq is not None:
-            assert (
-                img_cond_seq_ids is not None
-            ), "You need to provide either both or neither of the sequence conditioning"
+            assert img_cond_seq_ids is not None, (
+                "You need to provide either both or neither of the sequence conditioning"
+            )
             img_input = torch.cat((img_input, img_cond_seq), dim=1)
             img_input_ids = torch.cat((img_input_ids, img_cond_seq_ids), dim=1)
         pred = model(
@@ -136,4 +141,3 @@ def unpack(x: Tensor, height: int, width: int) -> Tensor:
         ph=2,
         pw=2,
     )
-```

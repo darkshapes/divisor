@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
+# <!-- // /*  d a r k s h a p e s */ -->
+
 """
 Flux-specific controller for interactive denoising with manual timestep control.
 Mirrors the controller.py structure but is specifically designed for Flux models.
@@ -8,7 +11,7 @@ from dataclasses import dataclass
 import torch
 from torch import Tensor
 
-from .controller import DenoisingState, time_shift
+from .controller import DenoisingState
 from .model import Flux
 
 
@@ -220,7 +223,7 @@ class FluxController:
         This replaces the current image with a user-modified version.
 
         Args:
-            modified_img: The user-modified image tensor to use going forward.
+            modified_img: The user-modified image tensor to use next.
         """
         self.img = modified_img
 
@@ -237,128 +240,6 @@ class FluxController:
             Preview of the final result.
         """
         return preview_fn(self.img)
-
-    def stretch_compress_schedule(
-        self,
-        compress: float,
-        steps: Optional[int] = None,
-    ) -> list[float]:
-        """
-        Stretch or compress the remaining timesteps in the schedule using time_shift.
-
-        Args:
-            compress: >1 compresses (fewer steps), <1 stretches (more steps)
-            steps: Desired number of timesteps for the remaining schedule.
-                   If None, uses the current number of remaining timesteps.
-
-        Returns:
-            New list of timesteps for the remaining schedule.
-        """
-        if self.is_complete:
-            return []
-
-        # Get remaining timesteps
-        remaining_timesteps = self.timesteps[self.current_index :]
-
-        if steps is None:
-            steps = len(remaining_timesteps)
-
-        # Convert to tensor and normalize to [0, 1] if needed
-        # Assuming timesteps are already in [0, 1] range
-        tensor_steps = torch.tensor(remaining_timesteps, dtype=torch.float32)
-
-        # Apply time_shift
-        adjusted_timesteps = time_shift(
-            self.mu, self.sigma, tensor_steps, steps, compress
-        )
-
-        # Convert back to list
-        new_timesteps = adjusted_timesteps.tolist()
-
-        # Update the schedule (keep processed timesteps, replace remaining)
-        self.timesteps = self.timesteps[: self.current_index] + new_timesteps
-
-        return new_timesteps
-
-    def stretch_compress_current_step(
-        self,
-        sub_steps: int,
-        compress: float = 1.0,
-    ) -> list[float]:
-        """
-        Stretch or compress the current step by subdividing it into multiple steps.
-        This allows finer control over a single denoising step.
-
-        Args:
-            sub_steps: Number of sub-steps to divide the current step into
-            compress: >1 compresses the sub-steps (closer spacing), <1 stretches them
-                     (wider spacing). Affects the distribution of sub-steps.
-
-        Returns:
-            List of new timesteps that replace the current step.
-        """
-        if self.is_complete:
-            raise ValueError("No current step to subdivide.")
-
-        t_curr = self.timesteps[self.current_index]
-        t_prev = (
-            self.timesteps[self.current_index + 1]
-            if self.current_index + 1 < len(self.timesteps)
-            else 0.0
-        )
-
-        if t_curr == t_prev:
-            # No step to subdivide
-            return []
-
-        # Create evenly spaced sub-timesteps between t_curr and t_prev
-        sub_timesteps = torch.linspace(t_curr, t_prev, sub_steps + 1)
-
-        # Apply compression/stretching using time_shift if needed
-        if compress != 1.0:
-            # Normalize to [0, 1] range where 1.0 = t_curr and 0.0 = t_prev
-            # This maps the interval [t_prev, t_curr] to [0, 1]
-            normalized = (sub_timesteps - t_prev) / (t_curr - t_prev)
-
-            # Apply time_shift to adjust the spacing
-            adjusted_normalized = time_shift(
-                self.mu, self.sigma, normalized, sub_steps + 1, compress
-            )
-
-            # Denormalize back to original range [t_prev, t_curr]
-            sub_timesteps = adjusted_normalized * (t_curr - t_prev) + t_prev
-
-            # Ensure we maintain the endpoints
-            sub_timesteps[0] = t_curr
-            sub_timesteps[-1] = t_prev
-
-        # Convert to list (exclude the first one as it's the current timestep)
-        new_sub_timesteps = sub_timesteps[1:].tolist()
-
-        # Replace current step with sub-steps
-        self.timesteps = (
-            self.timesteps[: self.current_index + 1]
-            + new_sub_timesteps
-            + self.timesteps[self.current_index + 1 :]
-        )
-
-        return new_sub_timesteps
-
-    def apply_time_shift_to_remaining(
-        self,
-        compress: float = 1.0,
-        steps: Optional[int] = None,
-    ):
-        """
-        Apply time_shift to the remaining schedule and update it.
-        This is a convenience method that calls stretch_compress_schedule.
-
-        Args:
-            compress: >1 compresses (fewer steps), <1 stretches (more steps)
-            steps: Desired number of timesteps for the remaining schedule.
-                   If None, uses the current number of remaining timesteps.
-        """
-        return self.stretch_compress_schedule(compress, steps)
 
     def set_guidance(self, guidance: float):
         """
