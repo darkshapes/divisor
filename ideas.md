@@ -20,7 +20,7 @@ Paint a mask over regions of the intermediate output and request the model to re
 
 Expose key hyper‑parameters (e.g., CFG scale, noise level) as coordinate pairs that update the preview in real time. Users can feel the impact of each tweak while building a visual map of associated effects, all without committing to a full generation.
 
-## 1.2. Brainstorm on Other Potential Features 
+## 1.2. Other Potential Features 
 
 - Ability to run normal denoising for several steps without intervention (or to preview what this would result in) - good for playing with changes that are small but add up over multiple steps.
 - Ability to record/store/export the set of interventions that were performed - perhaps useful for playing around with different variations/seeds.
