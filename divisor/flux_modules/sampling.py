@@ -1,18 +1,32 @@
 # SPDX-License-Identifier:Apache-2.0
 # original BFL Flux code from https://github.com/black-forest-labs/flux
-
 import math
 from typing import Callable
-
-import numpy as np
 import torch
 from einops import rearrange, repeat
-from PIL import Image
 from torch import Tensor
 
-from .model import Flux
-from .modules.autoencoder import AutoEncoder
-from .modules.conditioner import HFEmbedder
+from divisor.flux_modules.model import Flux
+from divisor.flux_modules.text_embedder import HFEmbedder
+
+
+def get_noise(
+    num_samples: int,
+    height: int,
+    width: int,
+    device: torch.device,
+    dtype: torch.dtype,
+    seed: int,
+):
+    return torch.randn(
+        num_samples,
+        16,
+        # allow for packing
+        2 * math.ceil(height / 16),
+        2 * math.ceil(width / 16),
+        dtype=dtype,
+        generator=torch.Generator(device="cpu").manual_seed(seed),
+    ).to(device)
 
 
 def prepare(

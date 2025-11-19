@@ -1,15 +1,30 @@
 [project]
 name = "divisor"
 version = "0.1.0"
-description = "Add your description here"
+description = "fragment / denoise / process"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "accelerate>=1.11.0",
+    "einops>=0.8.1",
+    "fire>=0.7.1",
+    "huggingface-hub[cli,hf-transfer]>=0.36.0",
+    "opencv-python>=4.12.0.88",
+    "pillow>=12.0.0",
+    "sentencepiece>=0.2.1",
     "torch>=2.9.1",
+    "torchvision>=0.24.1",
+    "transformers[hf-xet]>=4.57.1",
 ]
 
 [dependency-groups]
 dev = [
     "pyright>=1.1.407",
     "ruff>=0.14.5",
+]
+[tool.pyright]
+include = ["divisor"]
+exclude = [
+  "**/__pycache__", # cache directories
+  "./typings",      # generated type stubs
 ]

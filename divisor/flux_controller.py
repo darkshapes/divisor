@@ -11,8 +11,8 @@ from dataclasses import dataclass
 import torch
 from torch import Tensor
 
-from .controller import DenoisingState
-from .model import Flux
+from divisor.controller import DenoisingState
+from divisor.flux_modules.model import Flux
 
 
 @dataclass
