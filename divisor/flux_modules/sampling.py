@@ -45,9 +45,7 @@ def get_noise(
     ).to(device)
 
 
-def prepare(
-    t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]
-) -> dict[str, Tensor]:
+def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:
     bs, c, h, w = img.shape
     if bs == 1 and not isinstance(prompt, str):
         bs = len(prompt)
@@ -85,9 +83,7 @@ def time_shift(mu: float, sigma: float, t: Tensor):
     return math.exp(mu) / (math.exp(mu) + (1 / t - 1) ** sigma)
 
 
-def get_lin_function(
-    x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: float = 1.15
-) -> Callable[[float], float]:
+def get_lin_function(x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: float = 1.15) -> Callable[[float], float]:
     m = (y2 - y1) / (x2 - x1)
     b = y1 - m * x1
     return lambda x: m * x + b
@@ -156,29 +152,21 @@ def denoise(
         use_controller: Whether to use ManualTimestepController (default: True)
     """
     # this is ignored for schnell
-    guidance_vec = (
-        torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype) * 0.0
-    ) * 0.0
+    guidance_vec = (torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype) * 0.0) * 0.0
 
     # Store layer_dropout in a mutable container for closure
     current_layer_dropout = [initial_layer_dropout]
 
-    def denoise_step_fn(
-        sample: Tensor, t_curr: float, t_prev: float, guidance_val: float
-    ) -> Tensor:
+    def denoise_step_fn(sample: Tensor, t_curr: float, t_prev: float, guidance_val: float) -> Tensor:
         """Single denoising step function for the controller."""
-        t_vec = torch.full(
-            (sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device
-        )
+        t_vec = torch.full((sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device)
         img_input = sample
         img_input_ids = img_ids
 
         if img_cond is not None:
             img_input = torch.cat((sample, img_cond), dim=-1)
         if img_cond_seq is not None:
-            assert img_cond_seq_ids is not None, (
-                "You need to provide either both or neither of the sequence conditioning"
-            )
+            assert img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
             img_input = torch.cat((img_input, img_cond_seq), dim=1)
             img_input_ids = torch.cat((img_input_ids, img_cond_seq_ids), dim=1)
 
@@ -226,9 +214,7 @@ def denoise(
         state = controller.current_state
         step = state.timestep_index
 
-        print(
-            f"\nStep {step}/{state.total_timesteps} @ noise level {state.current_timestep:.4f}"
-        )
+        print(f"\nStep {step}/{state.total_timesteps} @ noise level {state.current_timestep:.4f}")
         print(f"Guidance: {state.guidance:.2f}")
         print(f"Seed: {current_seed}")
         if state.layer_dropout:
@@ -245,9 +231,7 @@ def denoise(
                 preview_img_input = torch.cat([state.current_sample, img_cond], dim=-1)
             if img_cond_seq is not None and img_cond_seq_ids is not None:
                 preview_img_input = torch.cat([preview_img_input, img_cond_seq], dim=1)
-                preview_img_input_ids = torch.cat(
-                    [preview_img_input_ids, img_cond_seq_ids], dim=1
-                )
+                preview_img_input_ids = torch.cat([preview_img_input_ids, img_cond_seq_ids], dim=1)
 
             t_vec_preview = torch.full(
                 (state.current_sample.shape[0],),
@@ -279,30 +263,21 @@ def denoise(
                 save_image_simple("preview.jpg", intermediate_image)
 
         # User input
-        choice = (
-            input(
-                "Choose an action: (a)dvance, (g)uidance, (l)ayer_dropout, (s)eed, (e)dit: "
-            )
-            .lower()
-            .strip()
-        )
+        # User input
+        choice = input("Choose an action: (g)uidance, (l)ayer_dropout, (s)eed, (e)dit, or press Enter to advance: ").lower().strip()
 
-        if choice == "a":
+        if choice == "":
             controller.step()
         elif choice == "g":
             try:
-                new_guidance = float(
-                    input(f"Enter new guidance value (current: {state.guidance:.2f}): ")
-                )
+                new_guidance = float(input(f"Enter new guidance value (current: {state.guidance:.2f}): "))
                 controller.set_guidance(new_guidance)
                 print(f"Guidance set to {new_guidance:.2f}")
             except ValueError:
                 print("Invalid guidance value, keeping current value")
         elif choice == "l":
             try:
-                dropout_input = input(
-                    "Enter layer indices to drop (comma-separated, or 'none' to clear): "
-                ).strip()
+                dropout_input = input("Enter layer indices to drop (comma-separated, or 'none' to clear): ").strip()
                 if dropout_input.lower() == "none" or dropout_input == "":
                     controller.set_layer_dropout(None)
                     current_layer_dropout[0] = None
@@ -316,9 +291,7 @@ def denoise(
                 print("Invalid layer indices, keeping current value")
         elif choice == "s":
             try:
-                seed_input = input(
-                    f"Enter new seed number (current: {current_seed}, or press Enter for random): "
-                ).strip()
+                seed_input = input(f"Enter new seed number (current: {current_seed}, or press Enter for random): ").strip()
                 if seed_input == "":
                     # Generate random seed
                     current_seed = int(torch.randint(0, 2**31, (1,)).item())

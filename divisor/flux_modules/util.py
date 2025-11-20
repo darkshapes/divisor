@@ -17,10 +17,8 @@ from divisor.flux_modules.model import Flux, FluxLoraWrapper, FluxParams
 from divisor.flux_modules.text_embedder import HFEmbedder
 from divisor.hardware import device
 
-CHECKPOINTS_DIR = Path(
-    snapshot_download(repo_id="black-forest-labs/FLUX.1-dev", local_files_only=False)
-)
-PREFERED_KONTEXT_RESOLUTIONS = [
+CHECKPOINTS_DIR = Path(snapshot_download(repo_id="black-forest-labs/FLUX.1-dev", local_files_only=False))
+PREFERRED_KONTEXT_RESOLUTIONS = [
     (672, 1568),
     (688, 1504),
     (720, 1456),
@@ -48,9 +46,7 @@ def get_checkpoint_path(repo_id: str, filename: str, env_var: str) -> Path:
         if os.path.exists(local_path):
             return Path(local_path)
 
-        print(
-            f"Trying to load model {repo_id}, {filename} from environment variable {env_var}. But file {local_path} does not exist. Falling back to default location."
-        )
+        print(f"Trying to load model {repo_id}, {filename} from environment variable {env_var}. But file {local_path} does not exist. Falling back to default location.")
 
     # Create a safe directory name from repo_id
     safe_repo_name = repo_id.replace("/", "_")
@@ -148,7 +144,7 @@ configs = {
         ),
     ),
     "flux-schnell": ModelSpec(
-        repo_id="cocktailpeanut/xulf-schnell",
+        repo_id="",
         repo_flow="flux1-schnell.safetensors",
         repo_ae="ae.safetensors",
         params=FluxParams(
@@ -402,27 +398,6 @@ configs = {
 }
 
 
-PREFERED_KONTEXT_RESOLUTIONS = [
-    (672, 1568),
-    (688, 1504),
-    (720, 1456),
-    (752, 1392),
-    (800, 1328),
-    (832, 1248),
-    (880, 1184),
-    (944, 1104),
-    (1024, 1024),
-    (1104, 944),
-    (1184, 880),
-    (1248, 832),
-    (1328, 800),
-    (1392, 752),
-    (1456, 720),
-    (1504, 688),
-    (1568, 672),
-]
-
-
 def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> dict:
     """
     Optionally expand the state dict to match the model's parameters shapes.
@@ -430,13 +405,9 @@ def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> di
     for name, param in model.named_parameters():
         if name in state_dict:
             if state_dict[name].shape != param.shape:
-                print(
-                    f"Expanding '{name}' with shape {state_dict[name].shape} to model parameter with shape {param.shape}."
-                )
+                print(f"Expanding '{name}' with shape {state_dict[name].shape} to model parameter with shape {param.shape}.")
                 # expand with zeros:
-                expanded_state_dict_weight = torch.zeros_like(
-                    param, device=state_dict[name].device
-                )
+                expanded_state_dict_weight = torch.zeros_like(param, device=state_dict[name].device)
                 slices = tuple(slice(0, dim) for dim in state_dict[name].shape)
                 expanded_state_dict_weight[slices] = state_dict[name]
                 state_dict[name] = expanded_state_dict_weight
@@ -444,9 +415,7 @@ def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> di
     return state_dict
 
 
-def aspect_ratio_to_height_width(
-    aspect_ratio: str, area: int = 1024**2
-) -> tuple[int, int]:
+def aspect_ratio_to_height_width(aspect_ratio: str, area: int = 1024**2) -> tuple[int, int]:
     width = float(aspect_ratio.split(":")[0])
     height = float(aspect_ratio.split(":")[1])
     ratio = width / height
@@ -478,9 +447,7 @@ def load_flow_model(name: str, device: str | torch.device = device, verbose: boo
 
     if config.lora_repo_id is not None and config.lora_filename is not None:
         print("Loading LoRA")
-        lora_path = str(
-            get_checkpoint_path(config.lora_repo_id, config.lora_filename, "FLUX_LORA")
-        )
+        lora_path = str(get_checkpoint_path(config.lora_repo_id, config.lora_filename, "FLUX_LORA"))
         lora_sd = load_sft(lora_path, device=str(device))
         # loading the lora params + overwriting scale values in the norms
         missing, unexpected = model.load_state_dict(lora_sd, strict=False, assign=True)
@@ -491,9 +458,7 @@ def load_flow_model(name: str, device: str | torch.device = device, verbose: boo
 
 def load_t5(device: str | torch.device = device, max_length: int = 512) -> HFEmbedder:
     # max length 64, 128, 256 and 512 should work (if your sequence is short enough)
-    return HFEmbedder(
-        "google/t5-v1_1-xxl", max_length=max_length, dtype=torch.bfloat16
-    ).to(device)
+    return HFEmbedder("google/t5-v1_1-xxl", max_length=max_length, dtype=torch.bfloat16).to(device)
 
 
 def load_clip(device: str | torch.device = device) -> HFEmbedder:
@@ -535,9 +500,7 @@ def save_image(
 
     img = Image.fromarray((127.5 * (x + 1.0)).cpu().byte().numpy())
     if nsfw_classifier is not None:
-        nsfw_score = [x["score"] for x in nsfw_classifier(img) if x["label"] == "nsfw"][
-            0
-        ]
+        nsfw_score = [x["score"] for x in nsfw_classifier(img) if x["label"] == "nsfw"][0]
     else:
         nsfw_score = nsfw_threshold - 1.0
 
@@ -570,4 +533,4 @@ def save_image_simple(
 
     img = Image.fromarray((127.5 * (x + 1.0)).cpu().byte().numpy())
 
-    img.save(fn, quality=95, subsampling=0)
+    img.save(fn, format="WEBP", lossless=True, subsampling=0)

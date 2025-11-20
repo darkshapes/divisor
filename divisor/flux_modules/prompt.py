@@ -100,7 +100,7 @@ def main(
     num_steps: int | None = None,
     loop: bool = False,
     guidance: float = 2.5,
-    offload: bool = False,
+    offload: bool = True,
     output_dir: str = "output",
     add_sampling_metadata: bool = True,
 ):
@@ -205,7 +205,6 @@ def main(
             t5, clip = t5.cpu(), clip.cpu()
             clear_cache()
             model = model.to(torch_device)
-
         # denoise initial noise
         x = denoise(
             model,
