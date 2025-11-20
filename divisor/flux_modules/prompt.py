@@ -5,7 +5,7 @@ from glob import iglob
 import torch
 from fire import Fire
 from transformers import pipeline
-
+import gc
 from divisor.hardware import clear_cache
 from divisor.hardware import device
 from divisor.flux_modules.sampling import (
@@ -91,7 +91,7 @@ def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
 
 @torch.inference_mode()
 def main(
-    name: str = "flux-dev",
+    name: str = "flux-schnell",
     width: int = 1360,
     height: int = 768,
     seed: int | None = None,
@@ -100,7 +100,7 @@ def main(
     num_steps: int | None = None,
     loop: bool = False,
     guidance: float = 2.5,
-    offload: bool = True,
+    offload: bool = False,
     output_dir: str = "output",
     add_sampling_metadata: bool = True,
 ):
@@ -205,6 +205,8 @@ def main(
             t5, clip = t5.cpu(), clip.cpu()
             clear_cache()
             model = model.to(torch_device)
+        del t5, clip
+        gc.collect()
         # denoise initial noise
         x = denoise(
             model,

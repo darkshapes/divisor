@@ -7,8 +7,10 @@ Allows users to manually increment through timesteps one at a time.
 """
 
 from typing import Optional, Callable, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+import json
 import torch
+from nnll.hyperchain import HyperChain
 
 
 def time_shift(
@@ -45,6 +47,21 @@ def time_shift(
     return torch.exp(torch.tensor(mu)) / (torch.exp(torch.tensor(mu)) + (1 / t_adj - 1) ** torch.tensor(sigma))
 
 
+def serialize_state_for_chain(state: "DenoisingState", current_seed: int) -> str:
+    """Serialize DenoisingState for HyperChain storage, excluding current_sample and adding current_seed.
+
+    :param state: The DenoisingState to serialize
+    :param current_seed: The current seed value to include instead of current_sample
+    :returns: JSON string representation of the state
+    """
+    state_dict = asdict(state)
+    # Remove the tensor (current_sample) as it's not serializable
+    state_dict.pop("current_sample", None)
+    # Add the seed instead
+    state_dict["current_seed"] = current_seed
+    return json.dumps(state_dict, default=str)
+
+
 @dataclass
 class DenoisingState:
     """State of the denoising process at a given timestep."""
@@ -56,6 +73,8 @@ class DenoisingState:
     total_timesteps: int
     guidance: float
     layer_dropout: Optional[list[int]] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
 
 
 class ManualTimestepController:
@@ -75,18 +94,17 @@ class ManualTimestepController:
         mu: float = 0.0,
         sigma: float = 1.0,
         initial_guidance: float = 7.5,
+        hyperchain: Optional[HyperChain] = None,
     ):
-        """
-        Initialize the controller.
+        """Initialize the controller.
 
-        Args:
-            timesteps: List of timestep values to process (typically from 1.0 to 0.0)
-            initial_sample: The initial noisy sample to start denoising from
-            denoise_step_fn: Function that performs one denoising step.
-                            Signature: (sample, t_curr, t_prev, guidance) -> new_sample
-            mu: Schedule parameter for time_shift (default: 0.0)
-            sigma: Schedule parameter for time_shift (default: 1.0)
-            initial_guidance: Initial guidance (CFG) value (default: 7.5)
+        :param timesteps: List of timestep values to process (typically from 1.0 to 0.0)
+        :param initial_sample: The initial noisy sample to start denoising from
+        :param denoise_step_fn: Function that performs one denoising step. Signature: (sample, t_curr, t_prev, guidance) -> new_sample
+        :param mu: Schedule parameter for time_shift (default: 0.0)
+        :param sigma: Schedule parameter for time_shift (default: 1.0)
+        :param initial_guidance: Initial guidance (CFG) value (default: 7.5)
+        :param hyperchain: Optional HyperChain instance for storing state history (default: None)
         """
         self.timesteps = timesteps
         self.original_timesteps = timesteps.copy()
@@ -100,6 +118,11 @@ class ManualTimestepController:
         self.guidance_history: list[float] = [initial_guidance]
         self.layer_dropout: Optional[list[int]] = None
         self.layer_dropout_history: list[Optional[list[int]]] = [None]
+        self.width: Optional[int] = None
+        self.height: Optional[int] = None
+        self.hyperchain: Optional[HyperChain] = hyperchain
+        if self.hyperchain is not None and len(self.hyperchain.chain) == 0:
+            self.hyperchain.synthesize_genesis_block()
 
     @property
     def is_complete(self) -> bool:
@@ -120,6 +143,8 @@ class ManualTimestepController:
             total_timesteps=len(self.timesteps),
             guidance=self.guidance,
             layer_dropout=self.layer_dropout,
+            width=self.width,
+            height=self.height,
         )
 
     def step(self) -> DenoisingState:
@@ -330,11 +355,29 @@ class ManualTimestepController:
         self.guidance = max(0.0, self.guidance + delta)
 
     def set_layer_dropout(self, layer_dropout: Optional[list[int]]):
-        """
-        Set the layer dropout configuration for the next denoising step.
+        """Set the layer dropout configuration for the next denoising step.
 
-        Args:
-            layer_dropout: List of block indices to skip during inference, or None to skip none.
-                          Blocks are indexed starting from 0.
+        :param layer_dropout: List of block indices to skip during inference, or None to skip none. Blocks are indexed starting from 0.
         """
         self.layer_dropout = layer_dropout
+
+    def set_resolution(self, width: int, height: int):
+        """Set the width and height resolution for the denoising process.
+
+        :param width: Width in pixels
+        :param height: Height in pixels
+        """
+        self.width = width
+        self.height = height
+
+    def store_state_in_chain(self, current_seed: int) -> Optional[Any]:
+        """Store the current DenoisingState in HyperChain, excluding current_sample and adding current_seed.
+
+        :param current_seed: The current seed value to include instead of current_sample
+        :returns: The created Block if hyperchain is configured, None otherwise
+        """
+        if self.hyperchain is None:
+            return None
+        state = self.current_state
+        serialized = serialize_state_for_chain(state, current_seed)
+        return self.hyperchain.add_block(serialized)

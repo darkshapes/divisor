@@ -13,11 +13,10 @@ from PIL import ExifTags, Image
 from safetensors.torch import load_file as load_sft
 from divisor.flux_modules.model import Flux, FluxParams, FluxLoraWrapper
 from divisor.flux_modules.autoencoder import AutoEncoder, AutoEncoderParams
-from divisor.flux_modules.model import Flux, FluxLoraWrapper, FluxParams
 from divisor.flux_modules.text_embedder import HFEmbedder
 from divisor.hardware import device
 
-CHECKPOINTS_DIR = Path(snapshot_download(repo_id="black-forest-labs/FLUX.1-dev", local_files_only=False))
+CHECKPOINTS_DIR = Path(snapshot_download(repo_id="black-forest-labs/FLUX.1-schnell", local_files_only=False))
 PREFERRED_KONTEXT_RESOLUTIONS = [
     (672, 1568),
     (688, 1504),
@@ -533,4 +532,4 @@ def save_image_simple(
 
     img = Image.fromarray((127.5 * (x + 1.0)).cpu().byte().numpy())
 
-    img.save(fn, format="WEBP", lossless=True, subsampling=0)
+    img.save(fn, format="WEBP", lossless=True)

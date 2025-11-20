@@ -12,7 +12,7 @@ from divisor.controller import ManualTimestepController
 from divisor.flux_modules.autoencoder import AutoEncoder
 from divisor.flux_modules.model import Flux
 from divisor.flux_modules.text_embedder import HFEmbedder
-from divisor.flux_modules.util import save_image_simple
+from divisor.flux_modules.util import PREFERRED_KONTEXT_RESOLUTIONS, save_image_simple
 from divisor.hardware import seed_planter
 
 
@@ -24,6 +24,80 @@ class SamplingOptions:
     num_steps: int
     guidance: float
     seed: int | None
+
+
+def set_rng_state_from_tensor(tensor: Tensor, device_type: Optional[str] = None) -> None:
+    """Extract part of tensor buffer and use it to set the RNG state.
+
+    :param tensor: The tensor buffer to extract RNG state from
+    :param device_type: Optional device type ("cuda", "mps", or None for CPU). If None, uses the tensor's device.
+    """
+    if device_type is None:
+        device_type = tensor.device.type
+
+    # Flatten tensor and take a slice to use as RNG state data
+    # Use a deterministic slice (first elements) to ensure reproducibility
+    flat_tensor = tensor.flatten()
+    # Take enough elements to potentially fill RNG state, but limit to reasonable size
+    num_elements = min(len(flat_tensor), 1024)
+    tensor_slice = flat_tensor[:num_elements]
+
+    # Convert to CPU and appropriate dtype for RNG state
+    tensor_slice = tensor_slice.cpu().to(torch.uint8 if device_type == "cuda" else torch.uint32)
+
+    if device_type == "cuda":
+        # Get current CUDA RNG state to get the correct size
+        try:
+            current_state = torch.cuda.get_rng_state()
+            state_size = current_state.numel()
+            # Pad or truncate tensor_slice to match state size
+            if tensor_slice.numel() < state_size:
+                # Pad with zeros or repeat pattern
+                padding = torch.zeros(state_size - tensor_slice.numel(), dtype=tensor_slice.dtype)
+                new_state = torch.cat([tensor_slice, padding])
+            elif tensor_slice.numel() > state_size:
+                # Truncate to match state size
+                new_state = tensor_slice[:state_size]
+            else:
+                new_state = tensor_slice
+            torch.cuda.set_rng_state(new_state)
+        except RuntimeError:
+            # Fallback if CUDA RNG state not available
+            pass
+    elif device_type == "mps":
+        # Get current MPS RNG state
+        try:
+            current_state = torch.mps.get_rng_state()
+            state_size = current_state.numel()
+            # Pad or truncate tensor_slice to match state size
+            if tensor_slice.numel() < state_size:
+                padding = torch.zeros(state_size - tensor_slice.numel(), dtype=tensor_slice.dtype)
+                new_state = torch.cat([tensor_slice, padding])
+            elif tensor_slice.numel() > state_size:
+                new_state = tensor_slice[:state_size]
+            else:
+                new_state = tensor_slice
+            torch.mps.set_rng_state(new_state)
+        except RuntimeError:
+            # Fallback if MPS RNG state not available
+            pass
+    else:
+        # CPU: Get current CPU RNG state
+        try:
+            current_state = torch.get_rng_state()
+            state_size = current_state.numel()
+            # Pad or truncate tensor_slice to match state size
+            if tensor_slice.numel() < state_size:
+                padding = torch.zeros(state_size - tensor_slice.numel(), dtype=current_state.dtype)
+                new_state = torch.cat([tensor_slice.to(current_state.dtype), padding])
+            elif tensor_slice.numel() > state_size:
+                new_state = tensor_slice[:state_size].to(current_state.dtype)
+            else:
+                new_state = tensor_slice.to(current_state.dtype)
+            torch.set_rng_state(new_state)
+        except RuntimeError:
+            # Fallback if RNG state not available
+            pass
 
 
 def get_noise(
@@ -202,6 +276,10 @@ def denoise(
     )
     controller.set_layer_dropout(initial_layer_dropout)
 
+    # Initialize width/height from opts if available
+    if opts is not None:
+        controller.set_resolution(opts.width, opts.height)
+
     # Initialize current seed (use from opts if available, otherwise generate random)
     if opts is not None and opts.seed is not None:
         current_seed = int(opts.seed)
@@ -213,10 +291,82 @@ def denoise(
     while not controller.is_complete:
         state = controller.current_state
         step = state.timestep_index
+        choice = input("Choose an action: (g)uidance, (l)ayer_dropout, (r)esolution, (s)eed, (e)dit, or press Enter to advance: ").lower().strip()
+
+        if choice == "":
+            controller.step()
+        elif choice == "g":
+            try:
+                new_guidance = float(input(f"Enter new guidance value (current: {state.guidance:.2f}): "))
+                controller.set_guidance(new_guidance)
+                print(f"Guidance set to {new_guidance:.2f}")
+            except ValueError:
+                print("Invalid guidance value, keeping current value")
+        elif choice == "l":
+            try:
+                dropout_input = input("Enter layer indices to drop (comma-separated, or 'none' to clear): ").strip()
+                if dropout_input.lower() == "none" or dropout_input == "":
+                    layer_indices = None
+                else:
+                    layer_indices = [int(x.strip()) for x in dropout_input.split(",")]
+                # Update immediately so it takes effect for the preview
+                controller.set_layer_dropout(layer_indices)
+                current_layer_dropout[0] = layer_indices
+                if layer_indices is None:
+                    print("Layer dropout cleared")
+                else:
+                    print(f"Layer dropout set to: {layer_indices}")
+            except ValueError:
+                print("Invalid layer indices, keeping current value")
+        elif choice == "r":
+            try:
+                print("\nPreferred resolutions:")
+                for i, (w, h) in enumerate(PREFERRED_KONTEXT_RESOLUTIONS):
+                    current_marker = ""
+                    if state.width == w and state.height == h:
+                        current_marker = " (current)"
+                    print(f"  {i}: {w}x{h}{current_marker}")
+                resolution_input = input(f"\nEnter resolution index (0-{len(PREFERRED_KONTEXT_RESOLUTIONS) - 1}) or 'custom' for custom: ").strip()
+                if resolution_input.lower() == "custom":
+                    width_input = input("Enter width: ").strip()
+                    height_input = input("Enter height: ").strip()
+                    new_width = int(width_input)
+                    new_height = int(height_input)
+                    controller.set_resolution(new_width, new_height)
+                    print(f"Resolution set to: {new_width}x{new_height}")
+                else:
+                    resolution_idx = int(resolution_input)
+                    if 0 <= resolution_idx < len(PREFERRED_KONTEXT_RESOLUTIONS):
+                        new_width, new_height = PREFERRED_KONTEXT_RESOLUTIONS[resolution_idx]
+                        controller.set_resolution(new_width, new_height)
+                        print(f"Resolution set to: {new_width}x{new_height}")
+                    else:
+                        print("Invalid resolution index, keeping current value")
+            except (ValueError, IndexError):
+                print("Invalid resolution input, keeping current value")
+        elif choice == "s":
+            try:
+                seed_input = input(f"Enter new seed number (current: {current_seed}, or press Enter for random): ").strip()
+                if seed_input == "":
+                    # Generate random seed
+                    current_seed = int(torch.randint(0, 2**31, (1,)).item())
+                else:
+                    current_seed = int(seed_input)
+                seed_planter(current_seed)
+                print(f"Seed set to: {current_seed}")
+            except ValueError:
+                print("Invalid seed value, keeping current seed")
+        elif choice == "e":
+            print("Entering edit mode (use c/cont to exit)...")
+            breakpoint()
+        else:
+            print("Invalid choice, please try again")
 
         print(f"\nStep {step}/{state.total_timesteps} @ noise level {state.current_timestep:.4f}")
         print(f"Guidance: {state.guidance:.2f}")
         print(f"Seed: {current_seed}")
+        if state.width is not None and state.height is not None:
+            print(f"Resolution: {state.width}x{state.height}")
         if state.layer_dropout:
             print(f"Layer dropout: {state.layer_dropout}")
         else:
@@ -242,6 +392,7 @@ def denoise(
 
             # TODO: we can reuse the prediction from denoise_step_fn to avoid two model calls per step.
 
+            # Use current_layer_dropout[0] instead of state.layer_dropout to get immediate effect
             pred_preview = model(
                 img=preview_img_input,
                 img_ids=preview_img_input_ids,
@@ -250,7 +401,7 @@ def denoise(
                 y=vec,
                 timesteps=t_vec_preview,
                 guidance=guidance_vec,
-                layer_dropouts=state.layer_dropout,
+                layer_dropouts=current_layer_dropout[0],
             )
 
             if preview_img_input_ids is not None:
@@ -260,52 +411,10 @@ def denoise(
             intermediate = unpack(intermediate.float(), opts.height, opts.width)
             with torch.autocast(device_type=torch_device.type, dtype=torch.bfloat16):
                 intermediate_image = ae.decode(intermediate)
-                save_image_simple("preview.jpg", intermediate_image)
+                save_image_simple("preview.webp", intermediate_image)
 
         # User input
         # User input
-        choice = input("Choose an action: (g)uidance, (l)ayer_dropout, (s)eed, (e)dit, or press Enter to advance: ").lower().strip()
-
-        if choice == "":
-            controller.step()
-        elif choice == "g":
-            try:
-                new_guidance = float(input(f"Enter new guidance value (current: {state.guidance:.2f}): "))
-                controller.set_guidance(new_guidance)
-                print(f"Guidance set to {new_guidance:.2f}")
-            except ValueError:
-                print("Invalid guidance value, keeping current value")
-        elif choice == "l":
-            try:
-                dropout_input = input("Enter layer indices to drop (comma-separated, or 'none' to clear): ").strip()
-                if dropout_input.lower() == "none" or dropout_input == "":
-                    controller.set_layer_dropout(None)
-                    current_layer_dropout[0] = None
-                    print("Layer dropout cleared")
-                else:
-                    layer_indices = [int(x.strip()) for x in dropout_input.split(",")]
-                    controller.set_layer_dropout(layer_indices)
-                    current_layer_dropout[0] = layer_indices
-                    print(f"Layer dropout set to: {layer_indices}")
-            except ValueError:
-                print("Invalid layer indices, keeping current value")
-        elif choice == "s":
-            try:
-                seed_input = input(f"Enter new seed number (current: {current_seed}, or press Enter for random): ").strip()
-                if seed_input == "":
-                    # Generate random seed
-                    current_seed = int(torch.randint(0, 2**31, (1,)).item())
-                else:
-                    current_seed = int(seed_input)
-                seed_planter(current_seed)
-                print(f"Seed set to: {current_seed}")
-            except ValueError:
-                print("Invalid seed value, keeping current seed")
-        elif choice == "e":
-            print("Entering edit mode (use c/cont to exit)...")
-            breakpoint()
-        else:
-            print("Invalid choice, please try again")
 
     return controller.current_sample
 

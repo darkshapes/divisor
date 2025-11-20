@@ -3,6 +3,11 @@ import gc
 from typing import Literal, Optional
 from numpy import random
 
+torch.backends.cudnn.deterministic = False
+
+torch.mps.set_rng_state
+torch.cuda.set_rng_state
+
 
 def set_torch_device(
     device_override: Optional[Literal["cuda", "mps", "cpu"]] = None,
@@ -18,6 +23,7 @@ def set_torch_device(
 
     # Auto-detect best available device
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+
     return device
 
 
