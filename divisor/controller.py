@@ -42,7 +42,7 @@ def time_shift(
     t_adj = new_idx / (steps - 1)
     # Avoid division by zero
     t_adj = torch.clamp(t_adj, min=1e-8, max=1.0 - 1e-8)
-    return torch.exp(mu) / (torch.exp(mu) + (1 / t_adj - 1) ** sigma)
+    return torch.exp(torch.tensor(mu)) / (torch.exp(torch.tensor(mu)) + (1 / t_adj - 1) ** torch.tensor(sigma))
 
 
 @dataclass
@@ -107,11 +107,7 @@ class ManualTimestepController:
     def current_state(self) -> DenoisingState:
         """Get the current state of the denoising process."""
         t_curr = self.timesteps[self.current_index]
-        t_prev = (
-            self.timesteps[self.current_index + 1]
-            if self.current_index + 1 < len(self.timesteps)
-            else None
-        )
+        t_prev = self.timesteps[self.current_index + 1] if self.current_index + 1 < len(self.timesteps) else None
 
         return DenoisingState(
             current_timestep=t_curr,
@@ -140,9 +136,7 @@ class ManualTimestepController:
         t_prev = self.timesteps[self.current_index + 1]
 
         # Perform the denoising step with current guidance
-        self.current_sample = self.denoise_step_fn(
-            self.current_sample, t_curr, t_prev, self.guidance
-        )
+        self.current_sample = self.denoise_step_fn(self.current_sample, t_curr, t_prev, self.guidance)
 
         # Move to next timestep
         self.current_index += 1
@@ -230,9 +224,7 @@ class ManualTimestepController:
         tensor_steps = torch.tensor(remaining_timesteps, dtype=torch.float32)
 
         # Apply time_shift
-        adjusted_timesteps = time_shift(
-            self.mu, self.sigma, tensor_steps, steps, compress
-        )
+        adjusted_timesteps = time_shift(self.mu, self.sigma, tensor_steps, steps, compress)
 
         # Convert back to list
         new_timesteps = adjusted_timesteps.tolist()
@@ -263,11 +255,7 @@ class ManualTimestepController:
             raise ValueError("No current step to subdivide.")
 
         t_curr = self.timesteps[self.current_index]
-        t_prev = (
-            self.timesteps[self.current_index + 1]
-            if self.current_index + 1 < len(self.timesteps)
-            else 0.0
-        )
+        t_prev = self.timesteps[self.current_index + 1] if self.current_index + 1 < len(self.timesteps) else 0.0
 
         if t_curr == t_prev:
             # No step to subdivide
@@ -283,9 +271,7 @@ class ManualTimestepController:
             normalized = (sub_timesteps - t_prev) / (t_curr - t_prev)
 
             # Apply time_shift to adjust the spacing
-            adjusted_normalized = time_shift(
-                self.mu, self.sigma, normalized, sub_steps + 1, compress
-            )
+            adjusted_normalized = time_shift(self.mu, self.sigma, normalized, sub_steps + 1, compress)
 
             # Denormalize back to original range [t_prev, t_curr]
             sub_timesteps = adjusted_normalized * (t_curr - t_prev) + t_prev
@@ -298,11 +284,7 @@ class ManualTimestepController:
         new_sub_timesteps = sub_timesteps[1:].tolist()
 
         # Replace current step with sub-steps
-        self.timesteps = (
-            self.timesteps[: self.current_index + 1]
-            + new_sub_timesteps
-            + self.timesteps[self.current_index + 1 :]
-        )
+        self.timesteps = self.timesteps[: self.current_index + 1] + new_sub_timesteps + self.timesteps[self.current_index + 1 :]
 
         return new_sub_timesteps
 

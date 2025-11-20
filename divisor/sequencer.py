@@ -3,20 +3,11 @@
 
 import torch
 import math
-from controller import ManualTimestepController
-from flux_controller import FluxController
-from flux_divide import FluxDivide
-
-
-device = torch.device(
-    "cuda"
-    if torch.cuda.is_available()
-    else "mps"
-    if torch.backends.mps.is_available()
-    else "cpu"
-)
-dtype = torch.float16
-seed = torch.random.seed()
+from divisor.hardware import device, dtype, seed
+from divisor.controller import ManualTimestepController
+from divisor.flux_controller import FluxController
+from divisor.flux_divide import FluxDivide
+from divisor.flux_modules.util import load_flow_model
 
 
 # BFL Flux noise generation
@@ -42,16 +33,22 @@ def get_noise(
 def flux_sequencer(controller: FluxController):
     while not controller.is_complete:
         state = controller.current_state
-        print(
-            f"\nCurrent timestep: {state.current_timestep} ({state.timestep_index}/{state.total_timesteps})"
-        )
+        print(f"\nCurrent timestep: {state.current_timestep} ({state.timestep_index}/{state.total_timesteps})")
         print(f"Current guidance: {state.guidance:.2f}")
         print(f"Sample: {state.current_sample}")
         controller.step()
         controller.set_guidance(7.0)
 
         # Advanced usage - with branching
-        controller = FluxController(...)
+        controller = FluxController(
+            timesteps=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+            initial_img=get_noise(1, 256, 256, device, dtype, seed),
+            img_ids=torch.zeros(1, 256, 256),
+            txt=torch.zeros(1, 77, 768),
+            txt_ids=torch.zeros(1, 77),
+            vec=torch.zeros(1, 768),
+            model=load_flow_model("flux-dev", device=device),
+        )
         divide = FluxDivide(controller)
 
         # Generate branches
@@ -90,9 +87,7 @@ def example_usage():
     # Manual stepping - user controls when to advance
     while not controller.is_complete:
         state = controller.current_state
-        print(
-            f"\nCurrent timestep: {state.current_timestep} ({state.timestep_index}/{state.total_timesteps})"
-        )
+        print(f"\nCurrent timestep: {state.current_timestep} ({state.timestep_index}/{state.total_timesteps})")
         print(f"Current guidance: {state.guidance:.2f}")
         print(f"Sample: {state.current_sample}")
 
@@ -106,54 +101,39 @@ def example_usage():
         # controller.stretch_compress_schedule(compress=0.8, steps=20)
 
         # User manually triggers next step or adjusts settings
-        user_input = input(
-            "Press Enter to step, 's' to stretch current step, 'c' to compress schedule, "
-            "'g' to set guidance, '+/-' to adjust guidance: "
-        )
+        user_input = input("Press Enter to step, 's' to stretch current step, 'c' to compress schedule, 'g' to set guidance, '+/-' to adjust guidance: ")
 
         if user_input.lower() == "s":
             sub_steps = int(input("Enter number of sub-steps (default 3): ") or "3")
             compress = float(input("Enter compress factor (default 1.0): ") or "1.0")
             new_steps = controller.stretch_compress_current_step(sub_steps, compress)
-            print(
-                f"Subdivided current step into {len(new_steps)} sub-steps: {new_steps}"
-            )
+            print(f"Subdivided current step into {len(new_steps)} sub-steps: {new_steps}")
             continue
         elif user_input.lower() == "c":
             compress = float(input("Enter compress factor (default 1.0): ") or "1.0")
-            steps_input = input(
-                "Enter desired number of steps (press Enter to keep current): "
-            )
+            steps_input = input("Enter desired number of steps (press Enter to keep current): ")
             steps = int(steps_input) if steps_input else None
             new_timesteps = controller.stretch_compress_schedule(compress, steps)
             print(f"Adjusted remaining schedule to {len(new_timesteps)} timesteps")
             continue
         elif user_input.lower() == "g":
-            new_guidance = float(
-                input(f"Enter new guidance value (current: {state.guidance:.2f}): ")
-            )
+            new_guidance = float(input(f"Enter new guidance value (current: {state.guidance:.2f}): "))
             controller.set_guidance(new_guidance)
             print(f"Guidance set to {new_guidance:.2f}")
             continue
         elif user_input == "+":
-            delta = float(
-                input("Enter amount to increase guidance (default 0.5): ") or "0.5"
-            )
+            delta = float(input("Enter amount to increase guidance (default 0.5): ") or "0.5")
             controller.adjust_guidance(delta)
             print(f"Guidance adjusted to {controller.guidance:.2f}")
             continue
         elif user_input == "-":
-            delta = float(
-                input("Enter amount to decrease guidance (default 0.5): ") or "0.5"
-            )
+            delta = float(input("Enter amount to decrease guidance (default 0.5): ") or "0.5")
             controller.adjust_guidance(-delta)
             print(f"Guidance adjusted to {controller.guidance:.2f}")
             continue
 
         state = controller.step()
-        print(
-            f"Stepped to timestep: {state.current_timestep} with guidance: {state.guidance:.2f}"
-        )
+        print(f"Stepped to timestep: {state.current_timestep} with guidance: {state.guidance:.2f}")
 
     print("\nDenoising complete!")
 

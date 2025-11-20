@@ -11,10 +11,11 @@ from einops import rearrange
 from huggingface_hub import snapshot_download
 from PIL import ExifTags, Image
 from safetensors.torch import load_file as load_sft
-
+from divisor.flux_modules.model import Flux, FluxParams, FluxLoraWrapper
 from divisor.flux_modules.autoencoder import AutoEncoder, AutoEncoderParams
 from divisor.flux_modules.model import Flux, FluxLoraWrapper, FluxParams
 from divisor.flux_modules.text_embedder import HFEmbedder
+from divisor.hardware import device
 
 CHECKPOINTS_DIR = Path(
     snapshot_download(repo_id="black-forest-labs/FLUX.1-dev", local_files_only=False)
@@ -454,9 +455,7 @@ def aspect_ratio_to_height_width(
     return 16 * (width // 16), 16 * (height // 16)
 
 
-def load_flow_model(
-    name: str, device: str | torch.device = "cuda", verbose: bool = True
-) -> Flux:
+def load_flow_model(name: str, device: str | torch.device = device, verbose: bool = True) -> Flux:
     # Loading Flux
     print("Init model")
     config = configs[name]
@@ -490,20 +489,18 @@ def load_flow_model(
     return model
 
 
-def load_t5(device: str | torch.device = "cuda", max_length: int = 512) -> HFEmbedder:
+def load_t5(device: str | torch.device = device, max_length: int = 512) -> HFEmbedder:
     # max length 64, 128, 256 and 512 should work (if your sequence is short enough)
     return HFEmbedder(
         "google/t5-v1_1-xxl", max_length=max_length, dtype=torch.bfloat16
     ).to(device)
 
 
-def load_clip(device: str | torch.device = "cuda") -> HFEmbedder:
-    return HFEmbedder(
-        "openai/clip-vit-large-patch14", max_length=77, dtype=torch.bfloat16
-    ).to(device)
+def load_clip(device: str | torch.device = device) -> HFEmbedder:
+    return HFEmbedder("openai/clip-vit-large-patch14", max_length=77, dtype=torch.bfloat16).to(device)
 
 
-def load_ae(name: str, device: str | torch.device = "cuda") -> AutoEncoder:
+def load_ae(name: str, device: str | torch.device = device) -> AutoEncoder:
     config = configs[name]
     ckpt_path = str(get_checkpoint_path(config.repo_id, config.repo_ae, "FLUX_AE"))
 
