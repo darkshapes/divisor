@@ -3,28 +3,11 @@
 
 import torch
 import math
-import gc
-from controller import ManualTimestepController
-from flux_controller import FluxController
-from flux_divide import FluxDivide
-
-
-def set_torch_device():
-    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
-    return device
-
-
-def clear_cache():
-    gc.collect()
-    if device == "cuda":
-        torch.cuda.empty_cache()
-    if device == "mps":
-        torch.mps.empty_cache()
-
-
-device = set_torch_device()
-dtype = torch.float16
-seed = torch.random.seed()
+from divisor.hardware import device, dtype, seed
+from divisor.controller import ManualTimestepController
+from divisor.flux_controller import FluxController
+from divisor.flux_divide import FluxDivide
+from divisor.flux_modules.util import load_flow_model
 
 
 # BFL Flux noise generation
@@ -57,7 +40,15 @@ def flux_sequencer(controller: FluxController):
         controller.set_guidance(7.0)
 
         # Advanced usage - with branching
-        controller = FluxController(...)
+        controller = FluxController(
+            timesteps=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+            initial_img=get_noise(1, 256, 256, device, dtype, seed),
+            img_ids=torch.zeros(1, 256, 256),
+            txt=torch.zeros(1, 77, 768),
+            txt_ids=torch.zeros(1, 77),
+            vec=torch.zeros(1, 768),
+            model=load_flow_model("flux-dev", device=device),
+        )
         divide = FluxDivide(controller)
 
         # Generate branches

@@ -7,6 +7,8 @@ import torch
 from fire import Fire
 from transformers import pipeline
 
+from divisor.hardware import clear_cache
+from divisor.hardware import device
 from divisor.flux_modules.sampling import (
     denoise,
     get_noise,
@@ -22,7 +24,6 @@ from divisor.flux_modules.util import (
     load_t5,
     save_image,
 )
-from divisor.sequencer import set_torch_device
 
 NSFW_THRESHOLD = 0.85
 
@@ -105,7 +106,7 @@ def main(
     height: int = 768,
     seed: int | None = None,
     prompt: str = ('a photo of a forest with mist swirling around the tree trunks. The word "FLUX" is painted over it in big, red brush strokes with visible texture'),
-    device: str = set_torch_device(),
+    device: torch.device = device,
     num_steps: int | None = None,
     loop: bool = False,
     guidance: float = 2.5,
@@ -142,13 +143,13 @@ def main(
 
     assert not ((additional_prompts is not None) and loop), "Do not provide additional prompts and set loop to True"
 
-    nsfw_classifier = pipeline("image-classification", model="Falconsai/nsfw_image_detection", device=device)
+    nsfw_classifier = pipeline("image-classification", model="Falconsai/nsfw_image_detection", device=device.type)
 
     if name not in configs:
         available = ", ".join(configs.keys())
         raise ValueError(f"Got unknown model name: {name}, chose from {available}")
 
-    torch_device = torch.device(device)
+    torch_device = device
     if num_steps is None:
         num_steps = 4 if name == "flux-schnell" else 50
 
