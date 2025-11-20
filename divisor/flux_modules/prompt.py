@@ -1,7 +1,6 @@
 import os
 import re
 import time
-from dataclasses import dataclass
 from glob import iglob
 import torch
 from fire import Fire
@@ -10,6 +9,7 @@ from transformers import pipeline
 from divisor.hardware import clear_cache
 from divisor.hardware import device
 from divisor.flux_modules.sampling import (
+    SamplingOptions,
     denoise,
     get_noise,
     get_schedule,
@@ -26,16 +26,6 @@ from divisor.flux_modules.util import (
 )
 
 NSFW_THRESHOLD = 0.85
-
-
-@dataclass
-class SamplingOptions:
-    prompt: str
-    width: int
-    height: int
-    num_steps: int
-    guidance: float
-    seed: int | None
 
 
 def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
@@ -217,7 +207,15 @@ def main(
             model = model.to(torch_device)
 
         # denoise initial noise
-        x = denoise(model, **inp, timesteps=timesteps, guidance=opts.guidance)
+        x = denoise(
+            model,
+            **inp,
+            timesteps=timesteps,
+            guidance=opts.guidance,
+            ae=ae,
+            torch_device=torch_device,
+            opts=opts,
+        )
 
         # offload model, load autoencoder to gpu
         if offload:

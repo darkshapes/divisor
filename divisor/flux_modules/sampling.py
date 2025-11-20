@@ -1,13 +1,27 @@
 # SPDX-License-Identifier:Apache-2.0
 # original BFL Flux code from https://github.com/black-forest-labs/flux
 import math
+from dataclasses import dataclass
 from typing import Callable
+
 import torch
 from einops import rearrange, repeat
 from torch import Tensor
 
+from divisor.flux_modules.autoencoder import AutoEncoder
 from divisor.flux_modules.model import Flux
 from divisor.flux_modules.text_embedder import HFEmbedder
+from divisor.flux_modules.util import save_image_simple
+
+
+@dataclass
+class SamplingOptions:
+    prompt: str
+    width: int
+    height: int
+    num_steps: int
+    guidance: float
+    seed: int | None
 
 
 def get_noise(
@@ -96,6 +110,7 @@ def get_schedule(
     return timesteps.tolist()
 
 
+@torch.inference_mode()
 def denoise(
     model: Flux,
     # model input
@@ -112,12 +127,18 @@ def denoise(
     # extra img tokens (sequence-wise)
     img_cond_seq: Tensor | None = None,
     img_cond_seq_ids: Tensor | None = None,
+    ae: AutoEncoder | None = None,
+    torch_device: torch.device = torch.device("cuda"),
+    opts: SamplingOptions | None = None,
 ):
     # this is ignored for schnell
-    guidance_vec = torch.full(
-        (img.shape[0],), guidance, device=img.device, dtype=img.dtype
-    )
-    for t_curr, t_prev in zip(timesteps[:-1], timesteps[1:]):
+    guidance_vec = (
+        torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype) * 0.0
+    ) * 0.0
+
+    layer_dropouts = None
+
+    for step, (t_curr, t_prev) in enumerate(zip(timesteps[:-1], timesteps[1:])):
         t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
         img_input = img
         img_input_ids = img_ids
@@ -129,15 +150,50 @@ def denoise(
             )
             img_input = torch.cat((img_input, img_cond_seq), dim=1)
             img_input_ids = torch.cat((img_input_ids, img_cond_seq_ids), dim=1)
-        pred = model(
-            img=img_input,
-            img_ids=img_input_ids,
-            txt=txt,
-            txt_ids=txt_ids,
-            y=vec,
-            timesteps=t_vec,
-            guidance=guidance_vec,
-        )
+
+        while True:
+            print(f"Step {step} @ noise level {t_curr}")
+
+            pred = model(
+                img=img_input,
+                img_ids=img_input_ids,
+                txt=txt,
+                txt_ids=txt_ids,
+                y=vec,
+                timesteps=t_vec,
+                guidance=guidance_vec,
+                layer_dropouts=layer_dropouts,
+            )
+
+            # decode intermediate
+
+            intermediate = img - t_curr * pred
+            intermediate = unpack(intermediate.float(), opts.height, opts.width)
+            with torch.autocast(device_type=torch_device.type, dtype=torch.bfloat16):
+                intermediate_image = ae.decode(intermediate)
+
+                save_image_simple("preview.jpg", intermediate_image)
+
+            choice = input("Choose an action: (a)dvance, (e)dit   ").lower()
+
+            if choice == "a":
+                break
+            elif choice == "e":
+                print("Entering edit mode (use c/cont to exit)...")
+                breakpoint()
+
+        # v_null = model(
+        #     img=img_input,
+        #     img_ids=img_input_ids,
+        #     txt=txt,
+        #     txt_ids=txt_ids,
+        #     y=vec,
+        #     timesteps=t_vec,
+        #     guidance=guidance_vec,
+        # )
+
+        # pred = v_null + (v - v_null) * 2.0
+
         if img_input_ids is not None:
             pred = pred[:, : img.shape[1]]
 

@@ -101,6 +101,7 @@ class Flux(nn.Module):
         timesteps: Tensor,
         y: Tensor,
         guidance: Tensor | None = None,
+        layer_dropouts: list[int] | None = None,
     ) -> Tensor:
         if img.ndim != 3 or txt.ndim != 3:
             raise ValueError("Input img and txt tensors must have 3 dimensions.")
@@ -120,7 +121,11 @@ class Flux(nn.Module):
         ids = torch.cat((txt_ids, img_ids), dim=1)
         pe = self.pe_embedder(ids)
 
-        for block in self.double_blocks:
+        for block_index, block in enumerate(self.double_blocks):
+            if layer_dropouts is not None and block_index in layer_dropouts:
+                print(f"Dropping block {block_index}")
+                continue
+
             img, txt = block(img=img, txt=txt, vec=vec, pe=pe)
 
         img = torch.cat((txt, img), 1)
