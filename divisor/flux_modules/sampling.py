@@ -2,12 +2,13 @@
 # original BFL Flux code from https://github.com/black-forest-labs/flux
 import math
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Optional
 
 import torch
 from einops import rearrange, repeat
 from torch import Tensor
 
+from divisor.controller import ManualTimestepController
 from divisor.flux_modules.autoencoder import AutoEncoder
 from divisor.flux_modules.model import Flux
 from divisor.flux_modules.text_embedder import HFEmbedder
@@ -43,9 +44,7 @@ def get_noise(
     ).to(device)
 
 
-def prepare(
-    t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]
-) -> dict[str, Tensor]:
+def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:
     bs, c, h, w = img.shape
     if bs == 1 and not isinstance(prompt, str):
         bs = len(prompt)
@@ -83,9 +82,7 @@ def time_shift(mu: float, sigma: float, t: Tensor):
     return math.exp(mu) / (math.exp(mu) + (1 / t - 1) ** sigma)
 
 
-def get_lin_function(
-    x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: float = 1.15
-) -> Callable[[float], float]:
+def get_lin_function(x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: float = 1.15) -> Callable[[float], float]:
     m = (y2 - y1) / (x2 - x1)
     b = y1 - m * x1
     return lambda x: m * x + b
@@ -130,76 +127,206 @@ def denoise(
     ae: AutoEncoder | None = None,
     torch_device: torch.device = torch.device("cuda"),
     opts: SamplingOptions | None = None,
+    initial_layer_dropout: Optional[list[int]] = None,
 ):
+    """
+    Denoise using Flux model with optional ManualTimestepController.
+
+    Args:
+        model: Flux model instance
+        img: Initial noisy image tensor
+        img_ids: Image position IDs tensor
+        txt: Text embeddings tensor
+        txt_ids: Text position IDs tensor
+        vec: CLIP embeddings vector tensor
+        timesteps: List of timestep values
+        guidance: Guidance (CFG) value
+        img_cond: Optional channel-wise image conditioning
+        img_cond_seq: Optional sequence-wise image conditioning
+        img_cond_seq_ids: Optional sequence-wise image conditioning IDs
+        ae: AutoEncoder for decoding previews
+        torch_device: PyTorch device
+        opts: Sampling options
+        initial_layer_dropout: Initial layer dropout configuration
+        use_controller: Whether to use ManualTimestepController (default: True)
+    """
     # this is ignored for schnell
-    guidance_vec = (
-        torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype) * 0.0
-    ) * 0.0
+    guidance_vec = (torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype) * 0.0) * 0.0
 
-    layer_dropouts = None
+    # Store layer_dropout in a mutable container for closure
+    current_layer_dropout = [initial_layer_dropout]
 
-    for step, (t_curr, t_prev) in enumerate(zip(timesteps[:-1], timesteps[1:])):
-        t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
-        img_input = img
+    def denoise_step_fn(sample: Tensor, t_curr: float, t_prev: float, guidance_val: float) -> Tensor:
+        """Single denoising step function for the controller."""
+        t_vec = torch.full((sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device)
+        img_input = sample
         img_input_ids = img_ids
+
         if img_cond is not None:
-            img_input = torch.cat((img, img_cond), dim=-1)
+            img_input = torch.cat((sample, img_cond), dim=-1)
         if img_cond_seq is not None:
-            assert img_cond_seq_ids is not None, (
-                "You need to provide either both or neither of the sequence conditioning"
-            )
+            assert img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
             img_input = torch.cat((img_input, img_cond_seq), dim=1)
             img_input_ids = torch.cat((img_input_ids, img_cond_seq_ids), dim=1)
 
-        while True:
-            print(f"Step {step} @ noise level {t_curr}")
+        # Get current layer_dropout from mutable container
+        layer_dropouts = current_layer_dropout[0]
 
-            pred = model(
-                img=img_input,
-                img_ids=img_input_ids,
+        pred = model(
+            img=img_input,
+            img_ids=img_input_ids,
+            txt=txt,
+            txt_ids=txt_ids,
+            y=vec,
+            timesteps=t_vec,
+            guidance=guidance_vec,
+            layer_dropouts=layer_dropouts,
+        )
+
+        if img_input_ids is not None:
+            pred = pred[:, : sample.shape[1]]
+
+        return sample + (t_prev - t_curr) * pred
+
+    # if use_controller:
+    # Create controller
+    controller = ManualTimestepController(
+        timesteps=timesteps,
+        initial_sample=img,
+        denoise_step_fn=denoise_step_fn,
+        initial_guidance=guidance,
+    )
+    controller.set_layer_dropout(initial_layer_dropout)
+
+    # Interactive loop
+    while not controller.is_complete:
+        state = controller.current_state
+        step = state.timestep_index
+
+        print(f"\nStep {step}/{state.total_timesteps} @ noise level {state.current_timestep:.4f}")
+        print(f"Guidance: {state.guidance:.2f}")
+        if state.layer_dropout:
+            print(f"Layer dropout: {state.layer_dropout}")
+        else:
+            print("Layer dropout: None")
+
+        # Generate preview
+        if ae is not None and opts is not None:
+            # Prepare input for preview
+            preview_img_input = state.current_sample
+            preview_img_input_ids = img_ids
+            if img_cond is not None:
+                preview_img_input = torch.cat([state.current_sample, img_cond], dim=-1)
+            if img_cond_seq is not None and img_cond_seq_ids is not None:
+                preview_img_input = torch.cat([preview_img_input, img_cond_seq], dim=1)
+                preview_img_input_ids = torch.cat([preview_img_input_ids, img_cond_seq_ids], dim=1)
+
+            t_vec_preview = torch.full((state.current_sample.shape[0],), state.current_timestep, dtype=state.current_sample.dtype, device=state.current_sample.device)
+
+            pred_preview = model(
+                img=preview_img_input,
+                img_ids=preview_img_input_ids,
                 txt=txt,
                 txt_ids=txt_ids,
                 y=vec,
-                timesteps=t_vec,
+                timesteps=t_vec_preview,
                 guidance=guidance_vec,
-                layer_dropouts=layer_dropouts,
+                layer_dropouts=state.layer_dropout,
             )
 
-            # decode intermediate
+            if preview_img_input_ids is not None:
+                pred_preview = pred_preview[:, : state.current_sample.shape[1]]
 
-            intermediate = img - t_curr * pred
+            intermediate = state.current_sample - state.current_timestep * pred_preview
             intermediate = unpack(intermediate.float(), opts.height, opts.width)
             with torch.autocast(device_type=torch_device.type, dtype=torch.bfloat16):
                 intermediate_image = ae.decode(intermediate)
-
                 save_image_simple("preview.jpg", intermediate_image)
 
-            choice = input("Choose an action: (a)dvance, (e)dit   ").lower()
+        # User input
+        choice = input("Choose an action: (a)dvance, (g)uidance, (l)ayer_dropout, (e)dit: ").lower().strip()
 
-            if choice == "a":
-                break
-            elif choice == "e":
-                print("Entering edit mode (use c/cont to exit)...")
-                breakpoint()
+        if choice == "a":
+            controller.step()
+        elif choice == "g":
+            try:
+                new_guidance = float(input(f"Enter new guidance value (current: {state.guidance:.2f}): "))
+                controller.set_guidance(new_guidance)
+                print(f"Guidance set to {new_guidance:.2f}")
+            except ValueError:
+                print("Invalid guidance value, keeping current value")
+        elif choice == "l":
+            try:
+                dropout_input = input("Enter layer indices to drop (comma-separated, or 'none' to clear): ").strip()
+                if dropout_input.lower() == "none" or dropout_input == "":
+                    controller.set_layer_dropout(None)
+                    current_layer_dropout[0] = None
+                    print("Layer dropout cleared")
+                else:
+                    layer_indices = [int(x.strip()) for x in dropout_input.split(",")]
+                    controller.set_layer_dropout(layer_indices)
+                    current_layer_dropout[0] = layer_indices
+                    print(f"Layer dropout set to: {layer_indices}")
+            except ValueError:
+                print("Invalid layer indices, keeping current value")
+        elif choice == "e":
+            print("Entering edit mode (use c/cont to exit)...")
+            breakpoint()
+        else:
+            print("Invalid choice, please try again")
 
-        # v_null = model(
-        #     img=img_input,
-        #     img_ids=img_input_ids,
-        #     txt=txt,
-        #     txt_ids=txt_ids,
-        #     y=vec,
-        #     timesteps=t_vec,
-        #     guidance=guidance_vec,
-        # )
+    return controller.current_sample
+    # else:
+    #     # Original non-controller behavior
+    #     layer_dropouts = initial_layer_dropout
 
-        # pred = v_null + (v - v_null) * 2.0
+    #     for step, (t_curr, t_prev) in enumerate(zip(timesteps[:-1], timesteps[1:])):
+    #         t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
+    #         img_input = img
+    #         img_input_ids = img_ids
+    #         if img_cond is not None:
+    #             img_input = torch.cat((img, img_cond), dim=-1)
+    #         if img_cond_seq is not None:
+    #             assert img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
+    #             img_input = torch.cat((img_input, img_cond_seq), dim=1)
+    #             img_input_ids = torch.cat((img_input_ids, img_cond_seq_ids), dim=1)
 
-        if img_input_ids is not None:
-            pred = pred[:, : img.shape[1]]
+    #         while True:
+    #             print(f"Step {step} @ noise level {t_curr}")
 
-        img = img + (t_prev - t_curr) * pred
+    #             pred = model(
+    #                 img=img_input,
+    #                 img_ids=img_input_ids,
+    #                 txt=txt,
+    #                 txt_ids=txt_ids,
+    #                 y=vec,
+    #                 timesteps=t_vec,
+    #                 guidance=guidance_vec,
+    #                 layer_dropouts=layer_dropouts,
+    #             )
 
-    return img
+    #             # decode intermediate
+    #             if ae is not None and opts is not None:
+    #                 intermediate = img - t_curr * pred
+    #                 intermediate = unpack(intermediate.float(), opts.height, opts.width)
+    #                 with torch.autocast(device_type=torch_device.type, dtype=torch.bfloat16):
+    #                     intermediate_image = ae.decode(intermediate)
+    #                     save_image_simple("preview.jpg", intermediate_image)
+
+    #             choice = input("Choose an action: (a)dvance, (e)dit   ").lower()
+
+    #             if choice == "a":
+    #                 break
+    #             elif choice == "e":
+    #                 print("Entering edit mode (use c/cont to exit)...")
+    #                 breakpoint()
+
+    #         if img_input_ids is not None:
+    #             pred = pred[:, : img.shape[1]]
+
+    #         img = img + (t_prev - t_curr) * pred
+
+    #     return img
 
 
 def unpack(x: Tensor, height: int, width: int) -> Tensor:

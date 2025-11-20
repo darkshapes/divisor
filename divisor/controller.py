@@ -55,6 +55,7 @@ class DenoisingState:
     timestep_index: int
     total_timesteps: int
     guidance: float
+    layer_dropout: Optional[list[int]] = None
 
 
 class ManualTimestepController:
@@ -97,6 +98,8 @@ class ManualTimestepController:
         self.sigma = sigma
         self.guidance = initial_guidance
         self.guidance_history: list[float] = [initial_guidance]
+        self.layer_dropout: Optional[list[int]] = None
+        self.layer_dropout_history: list[Optional[list[int]]] = [None]
 
     @property
     def is_complete(self) -> bool:
@@ -116,6 +119,7 @@ class ManualTimestepController:
             timestep_index=self.current_index,
             total_timesteps=len(self.timesteps),
             guidance=self.guidance,
+            layer_dropout=self.layer_dropout,
         )
 
     def step(self) -> DenoisingState:
@@ -145,6 +149,7 @@ class ManualTimestepController:
         state = self.current_state
         self.state_history.append(state)
         self.guidance_history.append(self.guidance)
+        self.layer_dropout_history.append(self.layer_dropout)
 
         return state
 
@@ -169,6 +174,7 @@ class ManualTimestepController:
             self.guidance = reset_guidance
         self.state_history.clear()
         self.guidance_history = [self.guidance]
+        self.layer_dropout_history = [self.layer_dropout]
 
     def intervene(self, modified_sample: Any):
         """
@@ -322,3 +328,13 @@ class ManualTimestepController:
             delta: Amount to add to the current guidance value (can be negative).
         """
         self.guidance = max(0.0, self.guidance + delta)
+
+    def set_layer_dropout(self, layer_dropout: Optional[list[int]]):
+        """
+        Set the layer dropout configuration for the next denoising step.
+
+        Args:
+            layer_dropout: List of block indices to skip during inference, or None to skip none.
+                          Blocks are indexed starting from 0.
+        """
+        self.layer_dropout = layer_dropout
