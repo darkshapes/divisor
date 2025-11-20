@@ -117,7 +117,7 @@ def main(
             by the index of the sample
         prompt: Prompt used for sampling
         device: Pytorch device
-        num_steps: number of sampling steps (default 4 for schnell, 50 for guidance distilled)
+        num_steps: number of sampling steps (default 4 for schnell, 28 for guidance distilled)
         loop: start an interactive session and sample multiple times
         guidance: guidance value used for guidance distillation
         add_sampling_metadata: Add the prompt to the image Exif metadata
@@ -141,7 +141,7 @@ def main(
 
     torch_device = device
     if num_steps is None:
-        num_steps = 4 if name == "flux-schnell" else 50
+        num_steps = 4 if name == "flux-schnell" else 28
 
     # allow for packing and conversion to latent space
     height = 16 * (height // 16)

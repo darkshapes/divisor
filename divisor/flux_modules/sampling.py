@@ -9,6 +9,7 @@ from einops import rearrange, repeat
 from torch import Tensor
 
 from divisor.controller import ManualTimestepController
+from divisor.hardware import seed_planter
 from divisor.flux_modules.autoencoder import AutoEncoder
 from divisor.flux_modules.model import Flux
 from divisor.flux_modules.text_embedder import HFEmbedder
@@ -198,6 +199,13 @@ def denoise(
     )
     controller.set_layer_dropout(initial_layer_dropout)
 
+    # Initialize current seed (use from opts if available, otherwise generate random)
+    if opts is not None and opts.seed is not None:
+        current_seed = int(opts.seed)
+    else:
+        current_seed = int(torch.randint(0, 2**31, (1,)).item())
+    seed_planter(current_seed)
+
     # Interactive loop
     while not controller.is_complete:
         state = controller.current_state
@@ -205,6 +213,7 @@ def denoise(
 
         print(f"\nStep {step}/{state.total_timesteps} @ noise level {state.current_timestep:.4f}")
         print(f"Guidance: {state.guidance:.2f}")
+        print(f"Seed: {current_seed}")
         if state.layer_dropout:
             print(f"Layer dropout: {state.layer_dropout}")
         else:
@@ -244,7 +253,7 @@ def denoise(
                 save_image_simple("preview.jpg", intermediate_image)
 
         # User input
-        choice = input("Choose an action: (a)dvance, (g)uidance, (l)ayer_dropout, (e)dit: ").lower().strip()
+        choice = input("Choose an action: (a)dvance, (g)uidance, (l)ayer_dropout, (s)eed, (e)dit: ").lower().strip()
 
         if choice == "a":
             controller.step()
@@ -269,6 +278,18 @@ def denoise(
                     print(f"Layer dropout set to: {layer_indices}")
             except ValueError:
                 print("Invalid layer indices, keeping current value")
+        elif choice == "s":
+            try:
+                seed_input = input(f"Enter new seed number (current: {current_seed}, or press Enter for random): ").strip()
+                if seed_input == "":
+                    # Generate random seed
+                    current_seed = int(torch.randint(0, 2**31, (1,)).item())
+                else:
+                    current_seed = int(seed_input)
+                seed_planter(current_seed)
+                print(f"Seed set to: {current_seed}")
+            except ValueError:
+                print("Invalid seed value, keeping current seed")
         elif choice == "e":
             print("Entering edit mode (use c/cont to exit)...")
             breakpoint()
@@ -276,57 +297,6 @@ def denoise(
             print("Invalid choice, please try again")
 
     return controller.current_sample
-    # else:
-    #     # Original non-controller behavior
-    #     layer_dropouts = initial_layer_dropout
-
-    #     for step, (t_curr, t_prev) in enumerate(zip(timesteps[:-1], timesteps[1:])):
-    #         t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
-    #         img_input = img
-    #         img_input_ids = img_ids
-    #         if img_cond is not None:
-    #             img_input = torch.cat((img, img_cond), dim=-1)
-    #         if img_cond_seq is not None:
-    #             assert img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
-    #             img_input = torch.cat((img_input, img_cond_seq), dim=1)
-    #             img_input_ids = torch.cat((img_input_ids, img_cond_seq_ids), dim=1)
-
-    #         while True:
-    #             print(f"Step {step} @ noise level {t_curr}")
-
-    #             pred = model(
-    #                 img=img_input,
-    #                 img_ids=img_input_ids,
-    #                 txt=txt,
-    #                 txt_ids=txt_ids,
-    #                 y=vec,
-    #                 timesteps=t_vec,
-    #                 guidance=guidance_vec,
-    #                 layer_dropouts=layer_dropouts,
-    #             )
-
-    #             # decode intermediate
-    #             if ae is not None and opts is not None:
-    #                 intermediate = img - t_curr * pred
-    #                 intermediate = unpack(intermediate.float(), opts.height, opts.width)
-    #                 with torch.autocast(device_type=torch_device.type, dtype=torch.bfloat16):
-    #                     intermediate_image = ae.decode(intermediate)
-    #                     save_image_simple("preview.jpg", intermediate_image)
-
-    #             choice = input("Choose an action: (a)dvance, (e)dit   ").lower()
-
-    #             if choice == "a":
-    #                 break
-    #             elif choice == "e":
-    #                 print("Entering edit mode (use c/cont to exit)...")
-    #                 breakpoint()
-
-    #         if img_input_ids is not None:
-    #             pred = pred[:, : img.shape[1]]
-
-    #         img = img + (t_prev - t_curr) * pred
-
-    #     return img
 
 
 def unpack(x: Tensor, height: int, width: int) -> Tensor:
