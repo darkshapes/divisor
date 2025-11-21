@@ -7,8 +7,10 @@ Allows users to manually increment through timesteps one at a time.
 """
 
 from typing import Optional, Callable, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+import json
 import torch
+from nnll.hyperchain import HyperChain
 
 
 def time_shift(
@@ -18,19 +20,14 @@ def time_shift(
     steps: int,
     compress: float = 1.0,
 ) -> torch.Tensor:
-    """
-    Adjustable noise schedule.
-    Compress or stretch any schedule to match a dynamic step sequence length.
+    """Adjustable noise schedule. Compress or stretch any schedule to match a dynamic step sequence length.
 
-    Args:
-        mu: Original schedule parameter.
-        sigma: Original schedule parameter.
-        tensor_step: Tensor of original timesteps in [0,1].
-        steps: Desired number of timesteps.
-        compress: >1 compresses (fewer steps), <1 stretches (more steps).
-
-    Returns:
-        Adjusted timestep tensor.
+    :param mu: Original schedule parameter.
+    :param sigma: Original schedule parameter.
+    :param tensor_step: Tensor of original timesteps in [0,1].
+    :param steps: Desired number of timesteps.
+    :param compress: >1 compresses (fewer steps), <1 stretches (more steps).
+    :returns: Adjusted timestep tensor.
     """
     # Handle edge case where steps is 1
     if steps == 1:
@@ -42,7 +39,71 @@ def time_shift(
     t_adj = new_idx / (steps - 1)
     # Avoid division by zero
     t_adj = torch.clamp(t_adj, min=1e-8, max=1.0 - 1e-8)
-    return torch.exp(mu) / (torch.exp(mu) + (1 / t_adj - 1) ** sigma)
+    return torch.exp(torch.tensor(mu)) / (torch.exp(torch.tensor(mu)) + (1 / t_adj - 1) ** torch.tensor(sigma))
+
+
+def serialize_state_for_chain(state: "DenoisingState", current_seed: int) -> str:
+    """Serialize DenoisingState for HyperChain storage, excluding current_sample and adding current_seed.
+
+    :param state: The DenoisingState to serialize
+    :param current_seed: The current seed value to include instead of current_sample
+    :returns: JSON string representation of the state
+    """
+    state_dict = asdict(state)
+    # Remove the tensor (current_sample) as it's not serializable
+    state_dict.pop("current_sample", None)
+    # Add the seed instead
+    state_dict["current_seed"] = current_seed
+    return json.dumps(state_dict, default=str)
+
+
+def serialize_state_to_int(state: "DenoisingState", current_seed: int) -> int:
+    """Serialize DenoisingState to an integer representation.
+
+    :param state: The DenoisingState to serialize
+    :param current_seed: The current seed value to include instead of current_sample
+    :returns: Integer representation of the state (reversible)
+    """
+    state_dict = asdict(state)  # serialize to JSON string
+    state_dict.pop("current_sample", None)  # Remove the tensor (current_sample) as it's not serializable
+    state_dict["current_seed"] = current_seed
+    json_str = json.dumps(state_dict, default=str)
+    json_bytes = json_str.encode("utf-8")
+    state_int = int.from_bytes(json_bytes, byteorder="big", signed=False)  # big-endian byte to int
+    return state_int
+
+
+def deserialize_state_from_int(state_int: int) -> tuple[dict, int]:
+    """Deserialize integer representation back to state dictionary and seed.
+
+    :param state_int: Integer representation of the state
+    :returns: Tuple of (state_dict, current_seed) where state_dict can be used to reconstruct DenoisingState
+    """
+    json_bytes = state_int.to_bytes((state_int.bit_length() + 7) // 8, byteorder="big", signed=False)
+    json_str = json_bytes.decode("utf-8")
+    state_dict = json.loads(json_str)
+    current_seed = state_dict.pop("current_seed", None)
+    return state_dict, current_seed
+
+
+def reconstruct_state_from_dict(state_dict: dict, current_sample: torch.Tensor) -> "DenoisingState":
+    """Reconstruct DenoisingState from dictionary and current sample tensor.
+
+    :param state_dict: Dictionary containing state fields (from deserialize_state_from_int)
+    :param current_sample: The current sample tensor to include in the state
+    :returns: Reconstructed DenoisingState object
+    """
+    return DenoisingState(
+        current_timestep=state_dict["current_timestep"],
+        previous_timestep=state_dict.get("previous_timestep"),
+        current_sample=current_sample,
+        timestep_index=state_dict["timestep_index"],
+        total_timesteps=state_dict["total_timesteps"],
+        guidance=state_dict["guidance"],
+        layer_dropout=state_dict.get("layer_dropout"),
+        width=state_dict.get("width"),
+        height=state_dict.get("height"),
+    )
 
 
 @dataclass
@@ -55,6 +116,9 @@ class DenoisingState:
     timestep_index: int
     total_timesteps: int
     guidance: float
+    layer_dropout: Optional[list[int]] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
 
 
 class ManualTimestepController:
@@ -66,6 +130,8 @@ class ManualTimestepController:
     to intervene between steps.
     """
 
+    hyperchain: HyperChain = HyperChain()
+
     def __init__(
         self,
         timesteps: list[float],
@@ -75,17 +141,15 @@ class ManualTimestepController:
         sigma: float = 1.0,
         initial_guidance: float = 7.5,
     ):
-        """
-        Initialize the controller.
+        """Initialize the controller.
 
-        Args:
-            timesteps: List of timestep values to process (typically from 1.0 to 0.0)
-            initial_sample: The initial noisy sample to start denoising from
-            denoise_step_fn: Function that performs one denoising step.
-                            Signature: (sample, t_curr, t_prev, guidance) -> new_sample
-            mu: Schedule parameter for time_shift (default: 0.0)
-            sigma: Schedule parameter for time_shift (default: 1.0)
-            initial_guidance: Initial guidance (CFG) value (default: 7.5)
+        :param timesteps: List of timestep values to process (typically from 1.0 to 0.0)
+        :param initial_sample: The initial noisy sample to start denoising from
+        :param denoise_step_fn: Function that performs one denoising step. Signature: (sample, t_curr, t_prev, guidance) -> new_sample
+        :param mu: Schedule parameter for time_shift (default: 0.0)
+        :param sigma: Schedule parameter for time_shift (default: 1.0)
+        :param initial_guidance: Initial guidance (CFG) value (default: 7.5)
+        :param hyperchain: Optional HyperChain instance for storing state history (default: None)
         """
         self.timesteps = timesteps
         self.original_timesteps = timesteps.copy()
@@ -97,6 +161,12 @@ class ManualTimestepController:
         self.sigma = sigma
         self.guidance = initial_guidance
         self.guidance_history: list[float] = [initial_guidance]
+        self.layer_dropout: Optional[list[int]] = None
+        self.layer_dropout_history: list[Optional[list[int]]] = [None]
+        self.width: Optional[int] = None
+        self.height: Optional[int] = None
+        if self.hyperchain is not None and len(self.hyperchain.chain) == 0:
+            self.hyperchain.synthesize_genesis_block()
 
     @property
     def is_complete(self) -> bool:
@@ -107,11 +177,7 @@ class ManualTimestepController:
     def current_state(self) -> DenoisingState:
         """Get the current state of the denoising process."""
         t_curr = self.timesteps[self.current_index]
-        t_prev = (
-            self.timesteps[self.current_index + 1]
-            if self.current_index + 1 < len(self.timesteps)
-            else None
-        )
+        t_prev = self.timesteps[self.current_index + 1] if self.current_index + 1 < len(self.timesteps) else None
 
         return DenoisingState(
             current_timestep=t_curr,
@@ -120,18 +186,16 @@ class ManualTimestepController:
             timestep_index=self.current_index,
             total_timesteps=len(self.timesteps),
             guidance=self.guidance,
+            layer_dropout=self.layer_dropout,
+            width=self.width,
+            height=self.height,
         )
 
     def step(self) -> DenoisingState:
-        """
-        Manually increment to the next timestep and perform one denoising step.
-        Uses the current guidance value.
+        """Manually increment to the next timestep and perform one denoising step. Uses the current guidance value.
 
-        Returns:
-            The new state after the step.
-
-        Raises:
-            ValueError: If all timesteps have already been processed.
+        :returns: The new state after the step.
+        :raises ValueError: If all timesteps have already been processed.
         """
         if self.is_complete:
             raise ValueError("All timesteps have been processed. Cannot step further.")
@@ -140,9 +204,7 @@ class ManualTimestepController:
         t_prev = self.timesteps[self.current_index + 1]
 
         # Perform the denoising step with current guidance
-        self.current_sample = self.denoise_step_fn(
-            self.current_sample, t_curr, t_prev, self.guidance
-        )
+        self.current_sample = self.denoise_step_fn(self.current_sample, t_curr, t_prev, self.guidance)
 
         # Move to next timestep
         self.current_index += 1
@@ -151,6 +213,7 @@ class ManualTimestepController:
         state = self.current_state
         self.state_history.append(state)
         self.guidance_history.append(self.guidance)
+        self.layer_dropout_history.append(self.layer_dropout)
 
         return state
 
@@ -159,14 +222,10 @@ class ManualTimestepController:
         new_initial_sample: Optional[Any] = None,
         reset_guidance: Optional[float] = None,
     ):
-        """
-        Reset the controller to the beginning.
+        """Reset the controller to the beginning.
 
-        Args:
-            new_initial_sample: Optional new initial sample to use.
-                               If None, keeps the original initial sample.
-            reset_guidance: Optional new guidance value to use.
-                          If None, keeps the current guidance value.
+        :param new_initial_sample: Optional new initial sample to use. If None, keeps the original initial sample.
+        :param reset_guidance: Optional new guidance value to use. If None, keeps the current guidance value.
         """
         self.current_index = 0
         if new_initial_sample is not None:
@@ -175,28 +234,20 @@ class ManualTimestepController:
             self.guidance = reset_guidance
         self.state_history.clear()
         self.guidance_history = [self.guidance]
+        self.layer_dropout_history = [self.layer_dropout]
 
     def intervene(self, modified_sample: Any):
-        """
-        Allow user intervention by modifying the current sample.
-        This replaces the current sample with a user-modified version.
+        """Allow user intervention by modifying the current sample. This replaces the current sample with a user-modified version.
 
-        Args:
-            modified_sample: The user-modified sample to use going forward.
+        :param modified_sample: The user-modified sample to use going forward.
         """
         self.current_sample = modified_sample
 
     def preview_final(self, preview_fn: Callable[[Any], Any]) -> Any:
-        """
-        Generate a preview of what the final result would look like
-        from the current state, using a single-step x₀ prediction.
+        """Generate a preview of what the final result would look like from the current state, using a single-step x₀ prediction.
 
-        Args:
-            preview_fn: Function that generates a preview from current sample.
-                       Signature: (sample) -> preview_sample
-
-        Returns:
-            Preview of the final result.
+        :param preview_fn: Function that generates a preview from current sample. Signature: (sample) -> preview_sample
+        :returns: Preview of the final result.
         """
         return preview_fn(self.current_sample)
 
@@ -205,16 +256,11 @@ class ManualTimestepController:
         compress: float,
         steps: Optional[int] = None,
     ) -> list[float]:
-        """
-        Stretch or compress the remaining timesteps in the schedule using time_shift.
+        """Stretch or compress the remaining timesteps in the schedule using time_shift.
 
-        Args:
-            compress: >1 compresses (fewer steps), <1 stretches (more steps)
-            steps: Desired number of timesteps for the remaining schedule.
-                   If None, uses the current number of remaining timesteps.
-
-        Returns:
-            New list of timesteps for the remaining schedule.
+        :param compress: >1 compresses (fewer steps), <1 stretches (more steps)
+        :param steps: Desired number of timesteps for the remaining schedule. If None, uses the current number of remaining timesteps.
+        :returns: New list of timesteps for the remaining schedule.
         """
         if self.is_complete:
             return []
@@ -230,9 +276,7 @@ class ManualTimestepController:
         tensor_steps = torch.tensor(remaining_timesteps, dtype=torch.float32)
 
         # Apply time_shift
-        adjusted_timesteps = time_shift(
-            self.mu, self.sigma, tensor_steps, steps, compress
-        )
+        adjusted_timesteps = time_shift(self.mu, self.sigma, tensor_steps, steps, compress)
 
         # Convert back to list
         new_timesteps = adjusted_timesteps.tolist()
@@ -247,27 +291,17 @@ class ManualTimestepController:
         sub_steps: int,
         compress: float = 1.0,
     ) -> list[float]:
-        """
-        Stretch or compress the current step by subdividing it into multiple steps.
-        This allows finer control over a single denoising step.
+        """Stretch or compress the current step by subdividing it into multiple steps. This allows finer control over a single denoising step.
 
-        Args:
-            sub_steps: Number of sub-steps to divide the current step into
-            compress: >1 compresses the sub-steps (closer spacing), <1 stretches them
-                     (wider spacing). Affects the distribution of sub-steps.
-
-        Returns:
-            List of new timesteps that replace the current step.
+        :param sub_steps: Number of sub-steps to divide the current step into
+        :param compress: >1 compresses the sub-steps (closer spacing), <1 stretches them (wider spacing). Affects the distribution of sub-steps.
+        :returns: List of new timesteps that replace the current step.
         """
         if self.is_complete:
             raise ValueError("No current step to subdivide.")
 
         t_curr = self.timesteps[self.current_index]
-        t_prev = (
-            self.timesteps[self.current_index + 1]
-            if self.current_index + 1 < len(self.timesteps)
-            else 0.0
-        )
+        t_prev = self.timesteps[self.current_index + 1] if self.current_index + 1 < len(self.timesteps) else 0.0
 
         if t_curr == t_prev:
             # No step to subdivide
@@ -283,9 +317,7 @@ class ManualTimestepController:
             normalized = (sub_timesteps - t_prev) / (t_curr - t_prev)
 
             # Apply time_shift to adjust the spacing
-            adjusted_normalized = time_shift(
-                self.mu, self.sigma, normalized, sub_steps + 1, compress
-            )
+            adjusted_normalized = time_shift(self.mu, self.sigma, normalized, sub_steps + 1, compress)
 
             # Denormalize back to original range [t_prev, t_curr]
             sub_timesteps = adjusted_normalized * (t_curr - t_prev) + t_prev
@@ -298,11 +330,7 @@ class ManualTimestepController:
         new_sub_timesteps = sub_timesteps[1:].tolist()
 
         # Replace current step with sub-steps
-        self.timesteps = (
-            self.timesteps[: self.current_index + 1]
-            + new_sub_timesteps
-            + self.timesteps[self.current_index + 1 :]
-        )
+        self.timesteps = self.timesteps[: self.current_index + 1] + new_sub_timesteps + self.timesteps[self.current_index + 1 :]
 
         return new_sub_timesteps
 
@@ -311,32 +339,61 @@ class ManualTimestepController:
         compress: float = 1.0,
         steps: Optional[int] = None,
     ):
-        """
-        Apply time_shift to the remaining schedule and update it.
-        This is a convenience method that calls stretch_compress_schedule.
+        """Apply time_shift to the remaining schedule and update it. This is a convenience method that calls stretch_compress_schedule.
 
-        Args:
-            compress: >1 compresses (fewer steps), <1 stretches (more steps)
-            steps: Desired number of timesteps for the remaining schedule.
-                   If None, uses the current number of remaining timesteps.
+        :param compress: >1 compresses (fewer steps), <1 stretches (more steps)
+        :param steps: Desired number of timesteps for the remaining schedule. If None, uses the current number of remaining timesteps.
         """
         return self.stretch_compress_schedule(compress, steps)
 
     def set_guidance(self, guidance: float):
-        """
-        Set the guidance value for the next denoising step.
+        """Set the guidance value for the next denoising step.
 
-        Args:
-            guidance: New guidance (CFG) value to use. Typically ranges from 1.0 to 20.0.
-                     Higher values provide stronger adherence to the conditioning.
+        :param guidance: New guidance (CFG) value to use. Typically ranges from 1.0 to 20.0. Higher values provide stronger adherence to the conditioning.
         """
         self.guidance = guidance
 
     def adjust_guidance(self, delta: float):
-        """
-        Adjust the guidance value by a delta amount.
+        """Adjust the guidance value by a delta amount.
 
-        Args:
-            delta: Amount to add to the current guidance value (can be negative).
+        :param delta: Amount to add to the current guidance value (can be negative).
         """
         self.guidance = max(0.0, self.guidance + delta)
+
+    def set_layer_dropout(self, layer_dropout: Optional[list[int]]):
+        """Set the layer dropout configuration for the next denoising step.
+
+        :param layer_dropout: List of block indices to skip during inference, or None to skip none. Blocks are indexed starting from 0.
+        """
+        self.layer_dropout = layer_dropout
+
+    def set_resolution(self, width: int, height: int):
+        """Set the width and height resolution for the denoising process.
+
+        :param width: Width in pixels
+        :param height: Height in pixels
+        """
+        self.width = width
+        self.height = height
+
+    def store_state_in_chain(self, current_seed: int | None = None, serialized_state_int: int | None = None) -> Optional[Any]:
+        """Store the current DenoisingState in HyperChain, excluding current_sample and adding current_seed.
+
+        :param current_seed: The current seed value to include instead of current_sample. Required if serialized_state_int is None.
+        :param serialized_state_int: Optional pre-serialized state as integer. If provided, current_seed is ignored.
+        :returns: The created Block if hyperchain is configured, None otherwise
+        """
+        if self.hyperchain is None:
+            return None
+
+        if serialized_state_int is not None:
+            # Deserialize the int back to JSON string for HyperChain
+            json_bytes = serialized_state_int.to_bytes((serialized_state_int.bit_length() + 7) // 8, byteorder="big", signed=False)
+            serialized = json_bytes.decode("utf-8")
+        else:
+            if current_seed is None:
+                raise ValueError("Either current_seed or serialized_state_int must be provided")
+            state = self.current_state
+            serialized = serialize_state_for_chain(state, current_seed)
+
+        return self.hyperchain.add_block(serialized)

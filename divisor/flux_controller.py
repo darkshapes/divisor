@@ -44,23 +44,21 @@ class FluxController:
         img_cond_seq: Optional[Tensor] = None,
         img_cond_seq_ids: Optional[Tensor] = None,
     ):
-        """
-        Initialize the Flux controller.
+        """Initialize the Flux controller.
 
-        Args:
-            model: The Flux model instance
-            timesteps: List of timestep values to process (typically from 1.0 to 0.0)
-            initial_img: The initial noisy image tensor
-            img_ids: Image position IDs tensor
-            txt: Text embeddings tensor
-            txt_ids: Text position IDs tensor
-            vec: CLIP embeddings vector tensor
-            mu: Schedule parameter for time_shift (default: 0.0)
-            sigma: Schedule parameter for time_shift (default: 1.0)
-            initial_guidance: Initial guidance (CFG) value (default: 4.0)
-            img_cond: Optional channel-wise image conditioning tokens
-            img_cond_seq: Optional sequence-wise image conditioning tokens
-            img_cond_seq_ids: Optional sequence-wise image conditioning IDs
+        :param model: The Flux model instance
+        :param timesteps: List of timestep values to process (typically from 1.0 to 0.0)
+        :param initial_img: The initial noisy image tensor
+        :param img_ids: Image position IDs tensor
+        :param txt: Text embeddings tensor
+        :param txt_ids: Text position IDs tensor
+        :param vec: CLIP embeddings vector tensor
+        :param mu: Schedule parameter for time_shift (default: 0.0)
+        :param sigma: Schedule parameter for time_shift (default: 1.0)
+        :param initial_guidance: Initial guidance (CFG) value (default: 4.0)
+        :param img_cond: Optional channel-wise image conditioning tokens
+        :param img_cond_seq: Optional sequence-wise image conditioning tokens
+        :param img_cond_seq_ids: Optional sequence-wise image conditioning IDs
         """
         self.model = model
         self.timesteps = timesteps
@@ -112,19 +110,13 @@ class FluxController:
         t_prev: float,
         guidance: float,
     ) -> Tensor:
-        """
-        Perform a single denoising step using the Flux model.
+        """Perform a single denoising step using the Flux model. This extracts the single-step logic from the denoise function.
 
-        This extracts the single-step logic from the denoise function.
-
-        Args:
-            img: Current image tensor
-            t_curr: Current timestep
-            t_prev: Previous timestep
-            guidance: Guidance (CFG) value
-
-        Returns:
-            Updated image tensor after one denoising step
+        :param img: Current image tensor
+        :param t_curr: Current timestep
+        :param t_prev: Previous timestep
+        :param guidance: Guidance (CFG) value
+        :returns: Updated image tensor after one denoising step
         """
         guidance_vec = torch.full(
             (img.shape[0],), guidance, device=img.device, dtype=img.dtype
@@ -166,15 +158,10 @@ class FluxController:
         return img
 
     def step(self) -> FluxDenoisingState:
-        """
-        Manually increment to the next timestep and perform one denoising step.
-        Uses the current guidance value.
+        """Manually increment to the next timestep and perform one denoising step. Uses the current guidance value.
 
-        Returns:
-            The new state after the step.
-
-        Raises:
-            ValueError: If all timesteps have already been processed.
+        :returns: The new state after the step.
+        :raises ValueError: If all timesteps have already been processed.
         """
         if self.is_complete:
             raise ValueError("All timesteps have been processed. Cannot step further.")
@@ -200,14 +187,10 @@ class FluxController:
         new_initial_img: Optional[Tensor] = None,
         reset_guidance: Optional[float] = None,
     ):
-        """
-        Reset the controller to the beginning.
+        """Reset the controller to the beginning.
 
-        Args:
-            new_initial_img: Optional new initial image to use.
-                            If None, keeps the original initial image.
-            reset_guidance: Optional new guidance value to use.
-                          If None, keeps the current guidance value.
+        :param new_initial_img: Optional new initial image to use. If None, keeps the original initial image.
+        :param reset_guidance: Optional new guidance value to use. If None, keeps the current guidance value.
         """
         self.current_index = 0
         if new_initial_img is not None:
@@ -218,45 +201,31 @@ class FluxController:
         self.guidance_history = [self.guidance]
 
     def intervene(self, modified_img: Tensor):
-        """
-        Allow user intervention by modifying the current image.
-        This replaces the current image with a user-modified version.
+        """Allow user intervention by modifying the current image. This replaces the current image with a user-modified version.
 
-        Args:
-            modified_img: The user-modified image tensor to use next.
+        :param modified_img: The user-modified image tensor to use next.
         """
         self.img = modified_img
 
     def preview_final(self, preview_fn) -> Tensor:
-        """
-        Generate a preview of what the final result would look like
-        from the current state, using a single-step x₀ prediction.
+        """Generate a preview of what the final result would look like from the current state, using a single-step x₀ prediction.
 
-        Args:
-            preview_fn: Function that generates a preview from current image.
-                       Signature: (img) -> preview_img
-
-        Returns:
-            Preview of the final result.
+        :param preview_fn: Function that generates a preview from current image. Signature: (img) -> preview_img
+        :returns: Preview of the final result.
         """
         return preview_fn(self.img)
 
     def set_guidance(self, guidance: float):
-        """
-        Set the guidance value for the next denoising step.
+        """Set the guidance value for the next denoising step.
 
-        Args:
-            guidance: New guidance (CFG) value to use. Typically ranges from 1.0 to 20.0.
-                     Higher values provide stronger adherence to the conditioning.
+        :param guidance: New guidance (CFG) value to use. Typically ranges from 1.0 to 20.0. Higher values provide stronger adherence to the conditioning.
         """
         self.guidance = guidance
 
     def adjust_guidance(self, delta: float):
-        """
-        Adjust the guidance value by a delta amount.
+        """Adjust the guidance value by a delta amount.
 
-        Args:
-            delta: Amount to add to the current guidance value (can be negative).
+        :param delta: Amount to add to the current guidance value (can be negative).
         """
         self.guidance = max(0.0, self.guidance + delta)
 
@@ -269,17 +238,14 @@ class FluxController:
         img_cond_seq: Optional[Tensor] = None,
         img_cond_seq_ids: Optional[Tensor] = None,
     ):
-        """
-        Update conditioning parameters during denoising.
-        Useful for dynamic prompt changes or conditioning adjustments.
+        """Update conditioning parameters during denoising. Useful for dynamic prompt changes or conditioning adjustments.
 
-        Args:
-            txt: Optional new text embeddings tensor
-            txt_ids: Optional new text position IDs tensor
-            vec: Optional new CLIP embeddings vector tensor
-            img_cond: Optional new channel-wise image conditioning tokens
-            img_cond_seq: Optional new sequence-wise image conditioning tokens
-            img_cond_seq_ids: Optional new sequence-wise image conditioning IDs
+        :param txt: Optional new text embeddings tensor
+        :param txt_ids: Optional new text position IDs tensor
+        :param vec: Optional new CLIP embeddings vector tensor
+        :param img_cond: Optional new channel-wise image conditioning tokens
+        :param img_cond_seq: Optional new sequence-wise image conditioning tokens
+        :param img_cond_seq_ids: Optional new sequence-wise image conditioning IDs
         """
         if txt is not None:
             self.txt = txt

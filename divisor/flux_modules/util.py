@@ -1,23 +1,23 @@
 # SPDX-License-Identifier:Apache-2.0
 # original BFL Flux code from https://github.com/black-forest-labs/flux
 
-import os
-from PIL import ExifTags, Image
-from pathlib import Path
-from dataclasses import dataclass
 import math
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
 import torch
 from einops import rearrange
+from huggingface_hub import snapshot_download
+from PIL import ExifTags, Image
 from safetensors.torch import load_file as load_sft
-from divisor.flux_modules.model import Flux, FluxParams
+from divisor.flux_modules.model import Flux, FluxParams, FluxLoraWrapper
 from divisor.flux_modules.autoencoder import AutoEncoder, AutoEncoderParams
 from divisor.flux_modules.text_embedder import HFEmbedder
-from divisor.flux_modules.model import FluxLoraWrapper
+from divisor.hardware import device
 
-CHECKPOINTS_DIR = Path(
-    "~/.cache/huggingface/hub/models--cocktailpeanut--xulf-dev/snapshots/ffb13f48ae8b0d5e60907b312f3d7b6532afa7c9"
-)
-PREFERED_KONTEXT_RESOLUTIONS = [
+CHECKPOINTS_DIR = Path(snapshot_download(repo_id="black-forest-labs/FLUX.1-schnell", local_files_only=False))
+PREFERRED_KONTEXT_RESOLUTIONS = [
     (672, 1568),
     (688, 1504),
     (720, 1456),
@@ -39,17 +39,19 @@ PREFERED_KONTEXT_RESOLUTIONS = [
 
 
 def get_checkpoint_path(repo_id: str, filename: str, env_var: str) -> Path:
-    """Get the local path for a checkpoint file, downloading if necessary."""
+    """Get the local path for a checkpoint file, downloading if necessary.
+
+    :param repo_id: Repository ID for the checkpoint
+    :param filename: Name of the checkpoint file
+    :param env_var: Environment variable name to check for custom path
+    :returns: Path to the checkpoint file
+    """
     if os.environ.get(env_var) is not None:
         local_path = os.environ[env_var]
         if os.path.exists(local_path):
             return Path(local_path)
 
-        print(
-            f"Trying to load model {repo_id}, {filename} from environment "
-            f"variable {env_var}. But file {local_path} does not exist. "
-            "Falling back to default location."
-        )
+        print(f"Trying to load model {repo_id}, {filename} from environment variable {env_var}. But file {local_path} does not exist. Falling back to default location.")
 
     # Create a safe directory name from repo_id
     safe_repo_name = repo_id.replace("/", "_")
@@ -85,7 +87,7 @@ class ModelSpec:
 
 configs = {
     "flux-dev": ModelSpec(
-        repo_id="cocktailpeanut/xulf-dev",
+        repo_id="",
         repo_flow="flux1-dev.safetensors",
         repo_ae="ae.safetensors",
         params=FluxParams(
@@ -147,7 +149,7 @@ configs = {
         ),
     ),
     "flux-schnell": ModelSpec(
-        repo_id="cocktailpeanut/xulf-schnell",
+        repo_id="",
         repo_flow="flux1-schnell.safetensors",
         repo_ae="ae.safetensors",
         params=FluxParams(
@@ -401,41 +403,19 @@ configs = {
 }
 
 
-PREFERED_KONTEXT_RESOLUTIONS = [
-    (672, 1568),
-    (688, 1504),
-    (720, 1456),
-    (752, 1392),
-    (800, 1328),
-    (832, 1248),
-    (880, 1184),
-    (944, 1104),
-    (1024, 1024),
-    (1104, 944),
-    (1184, 880),
-    (1248, 832),
-    (1328, 800),
-    (1392, 752),
-    (1456, 720),
-    (1504, 688),
-    (1568, 672),
-]
-
-
 def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> dict:
-    """
-    Optionally expand the state dict to match the model's parameters shapes.
+    """Optionally expand the state dict to match the model's parameters shapes.
+
+    :param model: The model to match parameters against
+    :param state_dict: The state dictionary to expand
+    :returns: The expanded state dictionary
     """
     for name, param in model.named_parameters():
         if name in state_dict:
             if state_dict[name].shape != param.shape:
-                print(
-                    f"Expanding '{name}' with shape {state_dict[name].shape} to model parameter with shape {param.shape}."
-                )
+                print(f"Expanding '{name}' with shape {state_dict[name].shape} to model parameter with shape {param.shape}.")
                 # expand with zeros:
-                expanded_state_dict_weight = torch.zeros_like(
-                    param, device=state_dict[name].device
-                )
+                expanded_state_dict_weight = torch.zeros_like(param, device=state_dict[name].device)
                 slices = tuple(slice(0, dim) for dim in state_dict[name].shape)
                 expanded_state_dict_weight[slices] = state_dict[name]
                 state_dict[name] = expanded_state_dict_weight
@@ -443,9 +423,7 @@ def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> di
     return state_dict
 
 
-def aspect_ratio_to_height_width(
-    aspect_ratio: str, area: int = 1024**2
-) -> tuple[int, int]:
+def aspect_ratio_to_height_width(aspect_ratio: str, area: int = 1024**2) -> tuple[int, int]:
     width = float(aspect_ratio.split(":")[0])
     height = float(aspect_ratio.split(":")[1])
     ratio = width / height
@@ -454,9 +432,7 @@ def aspect_ratio_to_height_width(
     return 16 * (width // 16), 16 * (height // 16)
 
 
-def load_flow_model(
-    name: str, device: str | torch.device = "cuda", verbose: bool = True
-) -> Flux:
+def load_flow_model(name: str, device: str | torch.device = device, verbose: bool = True) -> Flux:
     # Loading Flux
     print("Init model")
     config = configs[name]
@@ -479,9 +455,7 @@ def load_flow_model(
 
     if config.lora_repo_id is not None and config.lora_filename is not None:
         print("Loading LoRA")
-        lora_path = str(
-            get_checkpoint_path(config.lora_repo_id, config.lora_filename, "FLUX_LORA")
-        )
+        lora_path = str(get_checkpoint_path(config.lora_repo_id, config.lora_filename, "FLUX_LORA"))
         lora_sd = load_sft(lora_path, device=str(device))
         # loading the lora params + overwriting scale values in the norms
         missing, unexpected = model.load_state_dict(lora_sd, strict=False, assign=True)
@@ -490,20 +464,16 @@ def load_flow_model(
     return model
 
 
-def load_t5(device: str | torch.device = "cuda", max_length: int = 512) -> HFEmbedder:
+def load_t5(device: str | torch.device = device, max_length: int = 512) -> HFEmbedder:
     # max length 64, 128, 256 and 512 should work (if your sequence is short enough)
-    return HFEmbedder(
-        "google/t5-v1_1-xxl", max_length=max_length, torch_dtype=torch.bfloat16
-    ).to(device)
+    return HFEmbedder("google/t5-v1_1-xxl", max_length=max_length, dtype=torch.bfloat16).to(device)
 
 
-def load_clip(device: str | torch.device = "cuda") -> HFEmbedder:
-    return HFEmbedder(
-        "openai/clip-vit-large-patch14", max_length=77, torch_dtype=torch.bfloat16
-    ).to(device)
+def load_clip(device: str | torch.device = device) -> HFEmbedder:
+    return HFEmbedder("openai/clip-vit-large-patch14", max_length=77, dtype=torch.bfloat16).to(device)
 
 
-def load_ae(name: str, device: str | torch.device = "cuda") -> AutoEncoder:
+def load_ae(name: str, device: str | torch.device = device) -> AutoEncoder:
     config = configs[name]
     ckpt_path = str(get_checkpoint_path(config.repo_id, config.repo_ae, "FLUX_AE"))
 
@@ -520,15 +490,12 @@ def load_ae(name: str, device: str | torch.device = "cuda") -> AutoEncoder:
 
 
 def save_image(
-    nsfw_classifier,
     name: str,
     output_name: str,
     idx: int,
     x: torch.Tensor,
     add_sampling_metadata: bool,
     prompt: str,
-    nsfw_threshold: float = 0.85,
-    track_usage: bool = False,
 ) -> int:
     fn = output_name.format(idx=idx)
     print(f"Saving {fn}")
@@ -537,26 +504,30 @@ def save_image(
     x = rearrange(x[0], "c h w -> h w c")
 
     img = Image.fromarray((127.5 * (x + 1.0)).cpu().byte().numpy())
-    if nsfw_classifier is not None:
-        nsfw_score = [x["score"] for x in nsfw_classifier(img) if x["label"] == "nsfw"][
-            0
-        ]
+    exif_data = Image.Exif()
+    if name in ["flux-dev", "flux-schnell"]:
+        exif_data[ExifTags.Base.Software] = "AI generated;txt2img;flux"
     else:
-        nsfw_score = nsfw_threshold - 1.0
-
-    if nsfw_score < nsfw_threshold:
-        exif_data = Image.Exif()
-        if name in ["flux-dev", "flux-schnell"]:
-            exif_data[ExifTags.Base.Software] = "AI generated;txt2img;flux"
-        else:
-            exif_data[ExifTags.Base.Software] = "AI generated;img2img;flux"
-        exif_data[ExifTags.Base.Make] = "Black Forest Labs"
-        exif_data[ExifTags.Base.Model] = name
-        if add_sampling_metadata:
-            exif_data[ExifTags.Base.ImageDescription] = prompt
-        img.save(fn, exif=exif_data, quality=95, subsampling=0)
-        idx += 1
-    else:
-        print("Your generated image may contain NSFW content.")
+        exif_data[ExifTags.Base.Software] = "AI generated;img2img;flux"
+    exif_data[ExifTags.Base.Make] = "Black Forest Labs"
+    exif_data[ExifTags.Base.Model] = name
+    if add_sampling_metadata:
+        exif_data[ExifTags.Base.ImageDescription] = prompt
+    img.save(fn, exif=exif_data, quality=95, subsampling=0)
+    idx += 1
 
     return idx
+
+
+def save_image_simple(
+    fn: str,
+    x: torch.Tensor,
+) -> None:
+    print(f"Saving {fn}")
+    # bring into PIL format and save
+    x = x.clamp(-1, 1)
+    x = rearrange(x[0], "c h w -> h w c")
+
+    img = Image.fromarray((127.5 * (x + 1.0)).cpu().byte().numpy())
+
+    img.save(fn, format="WEBP", lossless=True)

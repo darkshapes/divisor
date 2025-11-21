@@ -13,8 +13,8 @@ from typing import Optional
 import torch
 from torch import Tensor
 
-from .controller import time_shift
-from .flux_controller import FluxController
+from divisor.controller import time_shift
+from divisor.flux_controller import FluxController
 
 
 class FluxDivide:
@@ -27,11 +27,9 @@ class FluxDivide:
     """
 
     def __init__(self, controller: FluxController):
-        """
-        Initialize FluxDivide with a FluxController instance.
+        """Initialize FluxDivide with a FluxController instance.
 
-        Args:
-            controller: The FluxController instance to wrap and extend
+        :param controller: The FluxController instance to wrap and extend
         """
         self.controller = controller
         self._preview_cache: Optional[dict] = None
@@ -41,30 +39,11 @@ class FluxDivide:
         parameter_variations: list[dict],
         preview_steps: int = 1,
     ) -> list[tuple[dict, Tensor]]:
-        """
-        Generate multiple preview branches with different parameter variations
-        without modifying the main controller state.
+        """Generate multiple preview branches with different parameter variations without modifying the main controller state. This creates parallel exploration paths from the current state, allowing you to compare different parameter settings (e.g., different guidance values) before committing to a path. The results are cached so they can be restored later.
 
-        This creates parallel exploration paths from the current state, allowing
-        you to compare different parameter settings (e.g., different guidance values)
-        before committing to a path.
-
-        The results are cached so they can be restored later.
-
-        Args:
-            parameter_variations: List of dictionaries, each containing parameter
-                                overrides. Keys can include:
-                                - 'guidance': float (guidance value)
-                                - 'txt': Tensor (text embeddings)
-                                - 'vec': Tensor (CLIP embeddings)
-                                - 'img_cond': Tensor (image conditioning)
-                                - 'img_cond_seq': Tensor (sequence conditioning)
-                                - 'img_cond_seq_ids': Tensor (sequence conditioning IDs)
-            preview_steps: Number of denoising steps to take for each branch
-                          (default: 1 for single-step preview)
-
-        Returns:
-            List of tuples: (parameter_dict, preview_img_tensor) for each branch
+        :param parameter_variations: List of dictionaries, each containing parameter overrides. Keys can include: 'guidance' (float), 'txt' (Tensor), 'vec' (Tensor), 'img_cond' (Tensor), 'img_cond_seq' (Tensor), 'img_cond_seq_ids' (Tensor)
+        :param preview_steps: Number of denoising steps to take for each branch (default: 1 for single-step preview)
+        :returns: List of tuples: (parameter_dict, preview_img_tensor) for each branch
         """
         if self.controller.is_complete:
             return []
@@ -84,12 +63,8 @@ class FluxDivide:
             branch_txt = params.get("txt", self.controller.txt)
             branch_vec = params.get("vec", self.controller.vec)
             branch_img_cond = params.get("img_cond", self.controller.img_cond)
-            branch_img_cond_seq = params.get(
-                "img_cond_seq", self.controller.img_cond_seq
-            )
-            branch_img_cond_seq_ids = params.get(
-                "img_cond_seq_ids", self.controller.img_cond_seq_ids
-            )
+            branch_img_cond_seq = params.get("img_cond_seq", self.controller.img_cond_seq)
+            branch_img_cond_seq_ids = params.get("img_cond_seq_ids", self.controller.img_cond_seq_ids)
 
             # Apply preview steps
             branch_index = current_index
@@ -122,13 +97,9 @@ class FluxDivide:
                     img_input = torch.cat((branch_img, branch_img_cond), dim=-1)
 
                 if branch_img_cond_seq is not None:
-                    assert branch_img_cond_seq_ids is not None, (
-                        "You need to provide either both or neither of the sequence conditioning"
-                    )
+                    assert branch_img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
                     img_input = torch.cat((img_input, branch_img_cond_seq), dim=1)
-                    img_input_ids = torch.cat(
-                        (img_input_ids, branch_img_cond_seq_ids), dim=1
-                    )
+                    img_input_ids = torch.cat((img_input_ids, branch_img_cond_seq_ids), dim=1)
 
                 # Run model prediction with branch parameters
                 pred = self.controller.model(
@@ -158,27 +129,11 @@ class FluxDivide:
             "snapshot_index": current_index,
             "preview_steps": preview_steps,
             "snapshot_guidance": self.controller.guidance,
-            "snapshot_txt": (
-                self.controller.txt.clone() if self.controller.txt is not None else None
-            ),
-            "snapshot_vec": (
-                self.controller.vec.clone() if self.controller.vec is not None else None
-            ),
-            "snapshot_img_cond": (
-                self.controller.img_cond.clone()
-                if self.controller.img_cond is not None
-                else None
-            ),
-            "snapshot_img_cond_seq": (
-                self.controller.img_cond_seq.clone()
-                if self.controller.img_cond_seq is not None
-                else None
-            ),
-            "snapshot_img_cond_seq_ids": (
-                self.controller.img_cond_seq_ids.clone()
-                if self.controller.img_cond_seq_ids is not None
-                else None
-            ),
+            "snapshot_txt": (self.controller.txt.clone() if self.controller.txt is not None else None),
+            "snapshot_vec": (self.controller.vec.clone() if self.controller.vec is not None else None),
+            "snapshot_img_cond": (self.controller.img_cond.clone() if self.controller.img_cond is not None else None),
+            "snapshot_img_cond_seq": (self.controller.img_cond_seq.clone() if self.controller.img_cond_seq is not None else None),
+            "snapshot_img_cond_seq_ids": (self.controller.img_cond_seq_ids.clone() if self.controller.img_cond_seq_ids is not None else None),
         }
 
         return results
@@ -188,43 +143,29 @@ class FluxDivide:
         guidance_values: list[float],
         preview_steps: int = 1,
     ) -> list[tuple[float, Tensor]]:
-        """
-        Generate preview branches with different guidance values.
-        Convenience method that wraps preview_branches for guidance-only variations.
+        """Generate preview branches with different guidance values. Convenience method that wraps preview_branches for guidance-only variations.
 
-        Args:
-            guidance_values: List of guidance values to test
-            preview_steps: Number of steps to preview (default: 1)
-
-        Returns:
-            List of tuples: (guidance_value, preview_img_tensor)
+        :param guidance_values: List of guidance values to test
+        :param preview_steps: Number of steps to preview (default: 1)
+        :returns: List of tuples: (guidance_value, preview_img_tensor)
         """
         variations = [{"guidance": g} for g in guidance_values]
         results = self.preview_branches(variations, preview_steps)
         return [(r[0]["guidance"], r[1]) for r in results]
 
     def restore_from_preview_cache(self, branch_index: int) -> bool:
-        """
-        Restore the controller state from a cached preview branch.
-        This allows you to "commit" to one of the preview branches.
+        """Restore the controller state from a cached preview branch. This allows you to "commit" to one of the preview branches.
 
-        Args:
-            branch_index: Index of the branch to restore (from preview_branches results)
-
-        Returns:
-            True if restoration was successful, False if no cache exists or index is invalid
-
-        Raises:
-            ValueError: If branch_index is out of range
+        :param branch_index: Index of the branch to restore (from preview_branches results)
+        :returns: True if restoration was successful, False if no cache exists or index is invalid
+        :raises ValueError: If branch_index is out of range
         """
         if self._preview_cache is None:
             return False
 
         results = self._preview_cache["results"]
         if branch_index < 0 or branch_index >= len(results):
-            raise ValueError(
-                f"Branch index {branch_index} out of range [0, {len(results) - 1}]"
-            )
+            raise ValueError(f"Branch index {branch_index} out of range [0, {len(results) - 1}]")
 
         # Get the selected branch
         params, preview_img = results[branch_index]
@@ -264,11 +205,9 @@ class FluxDivide:
         return True
 
     def get_preview_cache(self) -> Optional[dict]:
-        """
-        Get the current preview cache without modifying it.
+        """Get the current preview cache without modifying it.
 
-        Returns:
-            Dictionary containing cached preview results and snapshot state, or None
+        :returns: Dictionary containing cached preview results and snapshot state, or None
         """
         return self._preview_cache
 
@@ -283,16 +222,11 @@ class FluxDivide:
         compress: float,
         steps: Optional[int] = None,
     ) -> list[float]:
-        """
-        Stretch or compress the remaining timesteps in the schedule using time_shift.
+        """Stretch or compress the remaining timesteps in the schedule using time_shift.
 
-        Args:
-            compress: >1 compresses (fewer steps), <1 stretches (more steps)
-            steps: Desired number of timesteps for the remaining schedule.
-                   If None, uses the current number of remaining timesteps.
-
-        Returns:
-            New list of timesteps for the remaining schedule.
+        :param compress: >1 compresses (fewer steps), <1 stretches (more steps)
+        :param steps: Desired number of timesteps for the remaining schedule. If None, uses the current number of remaining timesteps.
+        :returns: New list of timesteps for the remaining schedule.
         """
         if self.controller.is_complete:
             return []
@@ -308,17 +242,13 @@ class FluxDivide:
         tensor_steps = torch.tensor(remaining_timesteps, dtype=torch.float32)
 
         # Apply time_shift
-        adjusted_timesteps = time_shift(
-            self.controller.mu, self.controller.sigma, tensor_steps, steps, compress
-        )
+        adjusted_timesteps = time_shift(self.controller.mu, self.controller.sigma, tensor_steps, steps, compress)
 
         # Convert back to list
         new_timesteps = adjusted_timesteps.tolist()
 
         # Update the schedule (keep processed timesteps, replace remaining)
-        self.controller.timesteps = (
-            self.controller.timesteps[: self.controller.current_index] + new_timesteps
-        )
+        self.controller.timesteps = self.controller.timesteps[: self.controller.current_index] + new_timesteps
 
         return new_timesteps
 
@@ -327,27 +257,17 @@ class FluxDivide:
         sub_steps: int,
         compress: float = 1.0,
     ) -> list[float]:
-        """
-        Stretch or compress the current step by subdividing it into multiple steps.
-        This allows finer control over a single denoising step.
+        """Stretch or compress the current step by subdividing it into multiple steps. This allows finer control over a single denoising step.
 
-        Args:
-            sub_steps: Number of sub-steps to divide the current step into
-            compress: >1 compresses the sub-steps (closer spacing), <1 stretches them
-                     (wider spacing). Affects the distribution of sub-steps.
-
-        Returns:
-            List of new timesteps that replace the current step.
+        :param sub_steps: Number of sub-steps to divide the current step into
+        :param compress: >1 compresses the sub-steps (closer spacing), <1 stretches them (wider spacing). Affects the distribution of sub-steps.
+        :returns: List of new timesteps that replace the current step.
         """
         if self.controller.is_complete:
             raise ValueError("No current step to subdivide.")
 
         t_curr = self.controller.timesteps[self.controller.current_index]
-        t_prev = (
-            self.controller.timesteps[self.controller.current_index + 1]
-            if self.controller.current_index + 1 < len(self.controller.timesteps)
-            else 0.0
-        )
+        t_prev = self.controller.timesteps[self.controller.current_index + 1] if self.controller.current_index + 1 < len(self.controller.timesteps) else 0.0
 
         if t_curr == t_prev:
             # No step to subdivide
@@ -383,9 +303,7 @@ class FluxDivide:
 
         # Replace current step with sub-steps
         self.controller.timesteps = (
-            self.controller.timesteps[: self.controller.current_index + 1]
-            + new_sub_timesteps
-            + self.controller.timesteps[self.controller.current_index + 1 :]
+            self.controller.timesteps[: self.controller.current_index + 1] + new_sub_timesteps + self.controller.timesteps[self.controller.current_index + 1 :]
         )
 
         return new_sub_timesteps
@@ -395,13 +313,9 @@ class FluxDivide:
         compress: float = 1.0,
         steps: Optional[int] = None,
     ):
-        """
-        Apply time_shift to the remaining schedule and update it.
-        This is a convenience method that calls stretch_compress_schedule.
+        """Apply time_shift to the remaining schedule and update it. This is a convenience method that calls stretch_compress_schedule.
 
-        Args:
-            compress: >1 compresses (fewer steps), <1 stretches (more steps)
-            steps: Desired number of timesteps for the remaining schedule.
-                   If None, uses the current number of remaining timesteps.
+        :param compress: >1 compresses (fewer steps), <1 stretches (more steps)
+        :param steps: Desired number of timesteps for the remaining schedule. If None, uses the current number of remaining timesteps.
         """
         return self.stretch_compress_schedule(compress, steps)

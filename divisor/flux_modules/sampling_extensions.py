@@ -15,7 +15,7 @@ from divisor.flux_modules.image_embedder import (
     DepthImageEncoder,
     ReduxImageEncoder,
 )
-from .util import PREFERED_KONTEXT_RESOLUTIONS
+from divisor.flux_modules.util import PREFERRED_KONTEXT_RESOLUTIONS
 
 from divisor.flux_modules.sampling import prepare
 
@@ -180,9 +180,7 @@ def prepare_kontext(
     width, height = img_cond.size
     aspect_ratio = width / height
     # Kontext is trained on specific resolutions, using one of them is recommended
-    _, width, height = min(
-        (abs(aspect_ratio - w / h), w, h) for w, h in PREFERED_KONTEXT_RESOLUTIONS
-    )
+    _, width, height = min((abs(aspect_ratio - w / h), w, h) for w, h in PREFERED_KONTEXT_RESOLUTIONS)
     width = 2 * int(width / 16)
     height = 2 * int(height / 16)
 
