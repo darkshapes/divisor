@@ -5,16 +5,20 @@
 import math
 from dataclasses import dataclass
 from typing import Callable, Optional
-
+import gc
 import torch
+import time
 from einops import rearrange, repeat
 from torch import Tensor
-
+from nnll.constants import ExtensionType
+from nnll.save_generation import name_save_file_as, save_with_hyperchain
+from nnll.console import nfo
 from divisor.controller import ManualTimestepController
 from divisor.flux_modules.autoencoder import AutoEncoder
 from divisor.flux_modules.model import Flux
 from divisor.flux_modules.text_embedder import HFEmbedder
-from divisor.flux_modules.util import PREFERRED_KONTEXT_RESOLUTIONS, save_image_simple
+from divisor.flux_modules.util import PREFERRED_KONTEXT_RESOLUTIONS
+
 from divisor.hardware import seed_planter
 
 
@@ -71,7 +75,8 @@ def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[st
     vec = clip(prompt)
     if vec.shape[0] == 1 and bs > 1:
         vec = repeat(vec, "1 ... -> bs ...", bs=bs)
-
+    del t5, clip
+    gc.collect()
     return {
         "img": img,
         "img_ids": img_ids.to(img.device),
@@ -288,9 +293,9 @@ def denoise(
                 # Invalidate cache since guidance changed
                 cached_prediction[0] = None
                 cached_prediction_state[0] = None
-                print(f"Guidance set to {new_guidance:.2f}")
+                nfo(f"Guidance set to {new_guidance:.2f}")
             except ValueError:
-                print("Invalid guidance value, keeping current value")
+                nfo("Invalid guidance value, keeping current value")
         elif choice == "l":
             try:
                 dropout_input = input("Enter layer indices to drop (comma-separated, or 'none' to clear): ").strip()
@@ -305,19 +310,19 @@ def denoise(
                 cached_prediction[0] = None
                 cached_prediction_state[0] = None
                 if layer_indices is None:
-                    print("Layer dropout cleared")
+                    nfo("Layer dropout cleared")
                 else:
-                    print(f"Layer dropout set to: {layer_indices}")
+                    nfo(f"Layer dropout set to: {layer_indices}")
             except ValueError:
-                print("Invalid layer indices, keeping current value")
+                nfo("Invalid layer indices, keeping current value")
         elif choice == "r":
             try:
-                print("\nPreferred resolutions:")
+                nfo("\nPreferred resolutions:")
                 for i, (w, h) in enumerate(PREFERRED_KONTEXT_RESOLUTIONS):
                     current_marker = ""
                     if state.width == w and state.height == h:
                         current_marker = " (current)"
-                    print(f"  {i}: {w}x{h}{current_marker}")
+                    nfo(f"  {i}: {w}x{h}{current_marker}")
                 resolution_input = input(f"\nEnter resolution index (0-{len(PREFERRED_KONTEXT_RESOLUTIONS) - 1}) or 'custom' for custom: ").strip()
                 if resolution_input.lower() == "custom":
                     width_input = input("Enter width: ").strip()
@@ -325,17 +330,17 @@ def denoise(
                     new_width = int(width_input)
                     new_height = int(height_input)
                     controller.set_resolution(new_width, new_height)
-                    print(f"Resolution set to: {new_width}x{new_height}")
+                    nfo(f"Resolution set to: {new_width}x{new_height}")
                 else:
                     resolution_idx = int(resolution_input)
                     if 0 <= resolution_idx < len(PREFERRED_KONTEXT_RESOLUTIONS):
                         new_width, new_height = PREFERRED_KONTEXT_RESOLUTIONS[resolution_idx]
                         controller.set_resolution(new_width, new_height)
-                        print(f"Resolution set to: {new_width}x{new_height}")
+                        nfo(f"Resolution set to: {new_width}x{new_height}")
                     else:
-                        print("Invalid resolution index, keeping current value")
+                        nfo("Invalid resolution index, keeping current value")
             except (ValueError, IndexError):
-                print("Invalid resolution input, keeping current value")
+                nfo("Invalid resolution input, keeping current value")
         elif choice == "s":
             try:
                 seed_input = input(f"Enter new seed number (current: {current_seed}, or press Enter for random): ").strip()
@@ -345,64 +350,65 @@ def denoise(
                 else:
                     current_seed = int(seed_input)
                 seed_planter(current_seed)
-                print(f"Seed set to: {current_seed}")
+                nfo(f"Seed set to: {current_seed}")
             except ValueError:
-                print("Invalid seed value, keeping current seed")
+                nfo("Invalid seed value, keeping current seed")
         elif choice == "b":
             try:
                 use_previous_as_mask[0] = not use_previous_as_mask[0]
-                print(f"Previous step tensor mask: {'ENABLED' if use_previous_as_mask[0] else 'DISABLED'}")
+                nfo(f"Previous step tensor mask: {'ENABLED' if use_previous_as_mask[0] else 'DISABLED'}")
             except Exception as e:
-                print(f"Error setting buffer options: {e}")
+                nfo(f"Error setting buffer options: {e}")
         elif choice == "v":
             try:
                 if ae is None:
-                    print("AutoEncoder not available, cannot set VAE shift")
+                    nfo("AutoEncoder not available, cannot set VAE shift")
                 else:
                     shift_input = input(f"Enter VAE shift offset (current: {vae_shift_offset[0]:.4f}, or press Enter to reset to 0.0): ").strip()
                     if shift_input == "":
                         vae_shift_offset[0] = 0.0
-                        print("VAE shift offset reset to 0.0")
+                        nfo("VAE shift offset reset to 0.0")
                     else:
                         vae_shift_offset[0] = float(shift_input)
-                        print(f"VAE shift offset set to: {vae_shift_offset[0]:.4f}")
+                        nfo(f"VAE shift offset set to: {vae_shift_offset[0]:.4f}")
             except ValueError:
-                print("Invalid VAE shift value, keeping current value")
+                nfo("Invalid VAE shift value, keeping current value")
         elif choice == "c":
             try:
                 if ae is None:
-                    print("AutoEncoder not available, cannot set VAE scale")
+                    nfo("AutoEncoder not available, cannot set VAE scale")
                 else:
                     scale_input = input(f"Enter VAE scale offset (current: {vae_scale_offset[0]:.4f}, or press Enter to reset to 0.0): ").strip()
                     if scale_input == "":
                         vae_scale_offset[0] = 0.0
-                        print("VAE scale offset reset to 0.0")
+                        nfo("VAE scale offset reset to 0.0")
                     else:
                         vae_scale_offset[0] = float(scale_input)
-                        print(f"VAE scale offset set to: {vae_scale_offset[0]:.4f}")
+                        nfo(f"VAE scale offset set to: {vae_scale_offset[0]:.4f}")
             except ValueError:
-                print("Invalid VAE scale value, keeping current value")
+                nfo("Invalid VAE scale value, keeping current value")
         elif choice == "e":
-            print("Entering edit mode (use c/cont to exit)...")
+            nfo("Entering edit mode (use c/cont to exit)...")
             breakpoint()
         else:
-            print("Invalid choice, please try again")
+            nfo("Invalid choice, please try again")
 
-        print(f"\nStep {step}/{state.total_timesteps} @ noise level {state.current_timestep:.4f}")
-        print(f"Guidance: {state.guidance:.2f}")
-        print(f"Seed: {current_seed}")
+        nfo(f"\nStep {step}/{state.total_timesteps} @ noise level {state.current_timestep:.4f}")
+        nfo(f"Guidance: {state.guidance:.2f}")
+        nfo(f"Seed: {current_seed}")
         if state.width is not None and state.height is not None:
-            print(f"Resolution: {state.width}x{state.height}")
+            nfo(f"Resolution: {state.width}x{state.height}")
         if state.layer_dropout:
-            print(f"Layer dropout: {state.layer_dropout}")
+            nfo(f"Layer dropout: {state.layer_dropout}")
         else:
-            print("Layer dropout: None")
-        print(f"Buffer mask: {'ON' if use_previous_as_mask[0] else 'OFF'}")
+            nfo("Layer dropout: None")
+        nfo(f"Buffer mask: {'ON' if use_previous_as_mask[0] else 'OFF'}")
         if ae is not None:
-            print(f"VAE shift offset: {vae_shift_offset[0]:.4f}")
-            print(f"VAE scale offset: {vae_scale_offset[0]:.4f}")
+            nfo(f"VAE shift offset: {vae_shift_offset[0]:.4f}")
+            nfo(f"VAE scale offset: {vae_scale_offset[0]:.4f}")
 
         # Generate preview
+        t0 = time.perf_counter()
         seed_planter(current_seed)
         if ae is not None and opts is not None:
             # Reuse cached prediction if available, otherwise generate it
@@ -411,6 +417,15 @@ def denoise(
 
             intermediate = state.current_sample - state.current_timestep * pred_preview
             intermediate = unpack(intermediate.float(), opts.height, opts.width)
+
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            elif torch.mps.is_available():
+                torch.mps.synchronize()
+            t1 = time.perf_counter()
+
+            nfo(f"Elapsed time: {t1 - t0:.1f}s")
+
             with torch.autocast(device_type=torch_device.type, dtype=torch.bfloat16):
                 # Apply VAE shift offset by manually adjusting the decode operation
                 if vae_shift_offset[0] != 0.0:
@@ -419,8 +434,9 @@ def denoise(
                     intermediate_image = ae.decoder(z_adjusted)
                 else:
                     intermediate_image = ae.decode(intermediate)
-                save_image_simple("preview.webp", intermediate_image)
+                file_path_named = name_save_file_as(ExtensionType.WEBP)
                 controller.store_state_in_chain(current_seed=current_seed)
+                save_with_hyperchain(file_path_named, intermediate_image, controller.hyperchain, ExtensionType.WEBP)
     return controller.current_sample
 
 
