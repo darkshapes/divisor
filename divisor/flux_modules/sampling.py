@@ -420,7 +420,7 @@ def denoise(
                 else:
                     intermediate_image = ae.decode(intermediate)
                 save_image_simple("preview.webp", intermediate_image)
-
+                controller.store_state_in_chain(current_seed=current_seed)
     return controller.current_sample
 
 
