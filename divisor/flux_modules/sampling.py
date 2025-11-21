@@ -1,5 +1,7 @@
-# SPDX-License-Identifier:Apache-2.0
-# original BFL Flux code from https://github.com/black-forest-labs/flux
+# SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
+# <!-- // /*  d a r k s h a p e s */ -->
+# adapted BFL Flux code from https://github.com/black-forest-labs/flux
+
 import math
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -117,54 +119,76 @@ def denoise(
     txt: Tensor,
     txt_ids: Tensor,
     vec: Tensor,
-    # sampling parameters
-    timesteps: list[float],
+    timesteps: list[float],  # sampling parameters
     guidance: float = 4.0,
-    # extra img tokens (channel-wise)
-    img_cond: Tensor | None = None,
-    # extra img tokens (sequence-wise)
-    img_cond_seq: Tensor | None = None,
+    img_cond: Tensor | None = None,  # extra img tokens (channel-wise)
+    img_cond_seq: Tensor | None = None,  # extra img tokens (sequence-wise)
     img_cond_seq_ids: Tensor | None = None,
     ae: AutoEncoder | None = None,
     torch_device: torch.device = torch.device("cuda"),
     opts: SamplingOptions | None = None,
     initial_layer_dropout: Optional[list[int]] = None,
 ):
-    """
-    Denoise using Flux model with optional ManualTimestepController.
+    """Denoise using Flux model with optional ManualTimestepController.
 
-    Args:
-        model: Flux model instance
-        img: Initial noisy image tensor
-        img_ids: Image position IDs tensor
-        txt: Text embeddings tensor
-        txt_ids: Text position IDs tensor
-        vec: CLIP embeddings vector tensor
-        timesteps: List of timestep values
-        guidance: Guidance (CFG) value
-        img_cond: Optional channel-wise image conditioning
-        img_cond_seq: Optional sequence-wise image conditioning
-        img_cond_seq_ids: Optional sequence-wise image conditioning IDs
-        ae: AutoEncoder for decoding previews
-        torch_device: PyTorch device
-        opts: Sampling options
-        initial_layer_dropout: Initial layer dropout configuration
-        use_controller: Whether to use ManualTimestepController (default: True)
+    :param model: Flux model instance
+    :param img: Initial noisy image tensor
+    :param img_ids: Image position IDs tensor
+    :param txt: Text embeddings tensor
+    :param txt_ids: Text position IDs tensor
+    :param vec: CLIP embeddings vector tensor
+    :param timesteps: List of timestep values
+    :param guidance: Guidance (CFG) value
+    :param img_cond: Optional channel-wise image conditioning
+    :param img_cond_seq: Optional sequence-wise image conditioning
+    :param img_cond_seq_ids: Optional sequence-wise image conditioning IDs
+    :param ae: AutoEncoder for decoding previews
+    :param torch_device: PyTorch device
+    :param opts: Sampling options
+    :param initial_layer_dropout: Initial layer dropout configuration
     """
     # this is ignored for schnell
     guidance_vec = (torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype) * 0.0) * 0.0
-
-    # Store layer_dropout in a mutable container for closure
     current_layer_dropout = [initial_layer_dropout]
-    # Store tensor buffer RNG and mask settings
-    use_tensor_buffer_rng = [False]
     use_previous_as_mask = [False]
     previous_step_tensor: list[Optional[Tensor]] = [None]  # Store previous step's tensor for masking
+    cached_prediction: list[Optional[Tensor]] = [None]  # Cache prediction to avoid duplicate model calls
+    cached_prediction_state: list[Optional[dict]] = [None]  # Cache state when prediction was generated
+    vae_shift_offset: list[float] = [0.0]  # Offset to add to shift_factor in autoencoder decode
+    vae_scale_offset: list[float] = [0.0]  # Offset to add to scale_factor in autoencoder decode
 
-    def denoise_step_fn(sample: Tensor, t_curr: float, t_prev: float, guidance_val: float) -> Tensor:
-        """Single denoising step function for the controller."""
-        # Set RNG from tensor buffer if enabled
+    def get_prediction(sample: Tensor, t_curr: float, guidance_val: float, layer_dropouts_val: Optional[list[int]]) -> Tensor:
+        """Generate model prediction, reusing cached prediction if state hasn't changed.
 
+        :param sample: Current sample tensor
+        :param t_curr: Current timestep
+        :param guidance_val: Guidance value
+        :param layer_dropouts_val: Layer dropout configuration
+        :returns: Model prediction
+        """
+        # Create a simple hash of the sample tensor for cache key (using first few values)
+        # This is faster than hashing the entire tensor but should be sufficient for cache invalidation
+        sample_hash = hash((sample.shape, float(sample[0, 0, 0].item()) if sample.numel() > 0 else 0))
+
+        # Check if we can reuse cached prediction
+        current_state = {
+            "sample_hash": sample_hash,
+            "t_curr": t_curr,
+            "guidance": guidance_val,
+            "layer_dropout": layer_dropouts_val,
+        }
+
+        if (
+            cached_prediction[0] is not None
+            and cached_prediction_state[0] is not None
+            and cached_prediction_state[0]["sample_hash"] == current_state["sample_hash"]
+            and cached_prediction_state[0]["t_curr"] == current_state["t_curr"]
+            and cached_prediction_state[0]["guidance"] == current_state["guidance"]
+            and cached_prediction_state[0]["layer_dropout"] == current_state["layer_dropout"]
+        ):
+            return cached_prediction[0]
+
+        # Generate new prediction
         t_vec = torch.full((sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device)
         img_input = sample
         img_input_ids = img_ids
@@ -176,9 +200,6 @@ def denoise(
             img_input = torch.cat((img_input, img_cond_seq), dim=1)
             img_input_ids = torch.cat((img_input_ids, img_cond_seq_ids), dim=1)
 
-        # Get current layer_dropout from mutable container
-        layer_dropouts = current_layer_dropout[0]
-
         pred = model(
             img=img_input,
             img_ids=img_input_ids,
@@ -187,11 +208,26 @@ def denoise(
             y=vec,
             timesteps=t_vec,
             guidance=guidance_vec,
-            layer_dropouts=layer_dropouts,
+            layer_dropouts=layer_dropouts_val,
         )
 
         if img_input_ids is not None:
             pred = pred[:, : sample.shape[1]]
+
+        # Cache the prediction
+        cached_prediction[0] = pred
+        cached_prediction_state[0] = current_state
+
+        return pred
+
+    def denoise_step_fn(sample: Tensor, t_curr: float, t_prev: float, guidance_val: float) -> Tensor:
+        """Single denoising step function for the controller."""
+
+        # Get current layer_dropout from mutable container
+        layer_dropouts = current_layer_dropout[0]
+
+        # Get prediction (may reuse cached)
+        pred = get_prediction(sample, t_curr, guidance_val, layer_dropouts)
 
         # Apply mask from previous step if enabled
         if use_previous_as_mask[0] and previous_step_tensor[0] is not None:
@@ -220,8 +256,6 @@ def denoise(
 
         return result
 
-    # if use_controller:
-    # Create controller
     controller = ManualTimestepController(
         timesteps=timesteps,
         initial_sample=img,
@@ -230,7 +264,6 @@ def denoise(
     )
     controller.set_layer_dropout(initial_layer_dropout)
 
-    # Initialize width/height from opts if available
     if opts is not None:
         controller.set_resolution(opts.width, opts.height)
 
@@ -239,13 +272,12 @@ def denoise(
         current_seed = int(opts.seed)
     else:
         current_seed = int(torch.randint(0, 2**31, (1,)).item())
-    seed_planter(current_seed)
 
     # Interactive loop
     while not controller.is_complete:
         state = controller.current_state
         step = state.timestep_index
-        choice = input("Choose an action: (g)uidance, (l)ayer_dropout, (r)esolution, (s)eed, (b)uffer_rng, (e)dit, or press Enter to advance: ").lower().strip()
+        choice = input(": (l)ayer_dropout, (r)esolution, (s)eed, (b)uffer_mask, (g)uidance, (v)ae_shift, vae_s(c)ale, (e)dit, or advance with Enter: ").lower().strip()
 
         if choice == "":
             controller.step()
@@ -253,6 +285,9 @@ def denoise(
             try:
                 new_guidance = float(input(f"Enter new guidance value (current: {state.guidance:.2f}): "))
                 controller.set_guidance(new_guidance)
+                # Invalidate cache since guidance changed
+                cached_prediction[0] = None
+                cached_prediction_state[0] = None
                 print(f"Guidance set to {new_guidance:.2f}")
             except ValueError:
                 print("Invalid guidance value, keeping current value")
@@ -266,6 +301,9 @@ def denoise(
                 # Update immediately so it takes effect for the preview
                 controller.set_layer_dropout(layer_indices)
                 current_layer_dropout[0] = layer_indices
+                # Invalidate cache since layer_dropout changed
+                cached_prediction[0] = None
+                cached_prediction_state[0] = None
                 if layer_indices is None:
                     print("Layer dropout cleared")
                 else:
@@ -312,11 +350,38 @@ def denoise(
                 print("Invalid seed value, keeping current seed")
         elif choice == "b":
             try:
-                print("\nTensor Buffer Options:")
                 use_previous_as_mask[0] = not use_previous_as_mask[0]
-                print(f"Previous step mask: {'ENABLED' if use_previous_as_mask[0] else 'DISABLED'}")
+                print(f"Previous step tensor mask: {'ENABLED' if use_previous_as_mask[0] else 'DISABLED'}")
             except Exception as e:
                 print(f"Error setting buffer options: {e}")
+        elif choice == "v":
+            try:
+                if ae is None:
+                    print("AutoEncoder not available, cannot set VAE shift")
+                else:
+                    shift_input = input(f"Enter VAE shift offset (current: {vae_shift_offset[0]:.4f}, or press Enter to reset to 0.0): ").strip()
+                    if shift_input == "":
+                        vae_shift_offset[0] = 0.0
+                        print("VAE shift offset reset to 0.0")
+                    else:
+                        vae_shift_offset[0] = float(shift_input)
+                        print(f"VAE shift offset set to: {vae_shift_offset[0]:.4f}")
+            except ValueError:
+                print("Invalid VAE shift value, keeping current value")
+        elif choice == "c":
+            try:
+                if ae is None:
+                    print("AutoEncoder not available, cannot set VAE scale")
+                else:
+                    scale_input = input(f"Enter VAE scale offset (current: {vae_scale_offset[0]:.4f}, or press Enter to reset to 0.0): ").strip()
+                    if scale_input == "":
+                        vae_scale_offset[0] = 0.0
+                        print("VAE scale offset reset to 0.0")
+                    else:
+                        vae_scale_offset[0] = float(scale_input)
+                        print(f"VAE scale offset set to: {vae_scale_offset[0]:.4f}")
+            except ValueError:
+                print("Invalid VAE scale value, keeping current value")
         elif choice == "e":
             print("Entering edit mode (use c/cont to exit)...")
             breakpoint()
@@ -332,52 +397,29 @@ def denoise(
             print(f"Layer dropout: {state.layer_dropout}")
         else:
             print("Layer dropout: None")
-        print(f"Tensor buffer RNG: {'ON' if use_tensor_buffer_rng[0] else 'OFF'}")
-        print(f"Previous step mask: {'ON' if use_previous_as_mask[0] else 'OFF'}")
+        print(f"Buffer mask: {'ON' if use_previous_as_mask[0] else 'OFF'}")
+        if ae is not None:
+            print(f"VAE shift offset: {vae_shift_offset[0]:.4f}")
+            print(f"VAE scale offset: {vae_scale_offset[0]:.4f}")
 
         # Generate preview
+        seed_planter(current_seed)
         if ae is not None and opts is not None:
-            # Prepare input for preview
-            preview_img_input = state.current_sample
-            preview_img_input_ids = img_ids
-            if img_cond is not None:
-                preview_img_input = torch.cat([state.current_sample, img_cond], dim=-1)
-            if img_cond_seq is not None and img_cond_seq_ids is not None:
-                preview_img_input = torch.cat([preview_img_input, img_cond_seq], dim=1)
-                preview_img_input_ids = torch.cat([preview_img_input_ids, img_cond_seq_ids], dim=1)
-
-            t_vec_preview = torch.full(
-                (state.current_sample.shape[0],),
-                state.current_timestep,
-                dtype=state.current_sample.dtype,
-                device=state.current_sample.device,
-            )
-
-            # TODO: we can reuse the prediction from denoise_step_fn to avoid two model calls per step.
-
-            # Use current_layer_dropout[0] instead of state.layer_dropout to get immediate effect
-            pred_preview = model(
-                img=preview_img_input,
-                img_ids=preview_img_input_ids,
-                txt=txt,
-                txt_ids=txt_ids,
-                y=vec,
-                timesteps=t_vec_preview,
-                guidance=guidance_vec,
-                layer_dropouts=current_layer_dropout[0],
-            )
-
-            if preview_img_input_ids is not None:
-                pred_preview = pred_preview[:, : state.current_sample.shape[1]]
+            # Reuse cached prediction if available, otherwise generate it
+            # This will be cached and reused in denoise_step_fn when advancing
+            pred_preview = get_prediction(state.current_sample, state.current_timestep, state.guidance, current_layer_dropout[0])
 
             intermediate = state.current_sample - state.current_timestep * pred_preview
             intermediate = unpack(intermediate.float(), opts.height, opts.width)
             with torch.autocast(device_type=torch_device.type, dtype=torch.bfloat16):
-                intermediate_image = ae.decode(intermediate)
+                # Apply VAE shift offset by manually adjusting the decode operation
+                if vae_shift_offset[0] != 0.0:
+                    # Decode with offset: z = z / scale_factor + (shift_factor + offset)
+                    z_adjusted = intermediate / (ae.scale_factor + vae_scale_offset[0]) + (ae.shift_factor + vae_shift_offset[0])
+                    intermediate_image = ae.decoder(z_adjusted)
+                else:
+                    intermediate_image = ae.decode(intermediate)
                 save_image_simple("preview.webp", intermediate_image)
-
-        # User input
-        # User input
 
     return controller.current_sample
 

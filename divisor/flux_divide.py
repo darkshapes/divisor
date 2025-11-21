@@ -27,11 +27,9 @@ class FluxDivide:
     """
 
     def __init__(self, controller: FluxController):
-        """
-        Initialize FluxDivide with a FluxController instance.
+        """Initialize FluxDivide with a FluxController instance.
 
-        Args:
-            controller: The FluxController instance to wrap and extend
+        :param controller: The FluxController instance to wrap and extend
         """
         self.controller = controller
         self._preview_cache: Optional[dict] = None
@@ -41,30 +39,11 @@ class FluxDivide:
         parameter_variations: list[dict],
         preview_steps: int = 1,
     ) -> list[tuple[dict, Tensor]]:
-        """
-        Generate multiple preview branches with different parameter variations
-        without modifying the main controller state.
+        """Generate multiple preview branches with different parameter variations without modifying the main controller state. This creates parallel exploration paths from the current state, allowing you to compare different parameter settings (e.g., different guidance values) before committing to a path. The results are cached so they can be restored later.
 
-        This creates parallel exploration paths from the current state, allowing
-        you to compare different parameter settings (e.g., different guidance values)
-        before committing to a path.
-
-        The results are cached so they can be restored later.
-
-        Args:
-            parameter_variations: List of dictionaries, each containing parameter
-                                overrides. Keys can include:
-                                - 'guidance': float (guidance value)
-                                - 'txt': Tensor (text embeddings)
-                                - 'vec': Tensor (CLIP embeddings)
-                                - 'img_cond': Tensor (image conditioning)
-                                - 'img_cond_seq': Tensor (sequence conditioning)
-                                - 'img_cond_seq_ids': Tensor (sequence conditioning IDs)
-            preview_steps: Number of denoising steps to take for each branch
-                          (default: 1 for single-step preview)
-
-        Returns:
-            List of tuples: (parameter_dict, preview_img_tensor) for each branch
+        :param parameter_variations: List of dictionaries, each containing parameter overrides. Keys can include: 'guidance' (float), 'txt' (Tensor), 'vec' (Tensor), 'img_cond' (Tensor), 'img_cond_seq' (Tensor), 'img_cond_seq_ids' (Tensor)
+        :param preview_steps: Number of denoising steps to take for each branch (default: 1 for single-step preview)
+        :returns: List of tuples: (parameter_dict, preview_img_tensor) for each branch
         """
         if self.controller.is_complete:
             return []
@@ -164,34 +143,22 @@ class FluxDivide:
         guidance_values: list[float],
         preview_steps: int = 1,
     ) -> list[tuple[float, Tensor]]:
-        """
-        Generate preview branches with different guidance values.
-        Convenience method that wraps preview_branches for guidance-only variations.
+        """Generate preview branches with different guidance values. Convenience method that wraps preview_branches for guidance-only variations.
 
-        Args:
-            guidance_values: List of guidance values to test
-            preview_steps: Number of steps to preview (default: 1)
-
-        Returns:
-            List of tuples: (guidance_value, preview_img_tensor)
+        :param guidance_values: List of guidance values to test
+        :param preview_steps: Number of steps to preview (default: 1)
+        :returns: List of tuples: (guidance_value, preview_img_tensor)
         """
         variations = [{"guidance": g} for g in guidance_values]
         results = self.preview_branches(variations, preview_steps)
         return [(r[0]["guidance"], r[1]) for r in results]
 
     def restore_from_preview_cache(self, branch_index: int) -> bool:
-        """
-        Restore the controller state from a cached preview branch.
-        This allows you to "commit" to one of the preview branches.
+        """Restore the controller state from a cached preview branch. This allows you to "commit" to one of the preview branches.
 
-        Args:
-            branch_index: Index of the branch to restore (from preview_branches results)
-
-        Returns:
-            True if restoration was successful, False if no cache exists or index is invalid
-
-        Raises:
-            ValueError: If branch_index is out of range
+        :param branch_index: Index of the branch to restore (from preview_branches results)
+        :returns: True if restoration was successful, False if no cache exists or index is invalid
+        :raises ValueError: If branch_index is out of range
         """
         if self._preview_cache is None:
             return False
@@ -238,11 +205,9 @@ class FluxDivide:
         return True
 
     def get_preview_cache(self) -> Optional[dict]:
-        """
-        Get the current preview cache without modifying it.
+        """Get the current preview cache without modifying it.
 
-        Returns:
-            Dictionary containing cached preview results and snapshot state, or None
+        :returns: Dictionary containing cached preview results and snapshot state, or None
         """
         return self._preview_cache
 
@@ -257,16 +222,11 @@ class FluxDivide:
         compress: float,
         steps: Optional[int] = None,
     ) -> list[float]:
-        """
-        Stretch or compress the remaining timesteps in the schedule using time_shift.
+        """Stretch or compress the remaining timesteps in the schedule using time_shift.
 
-        Args:
-            compress: >1 compresses (fewer steps), <1 stretches (more steps)
-            steps: Desired number of timesteps for the remaining schedule.
-                   If None, uses the current number of remaining timesteps.
-
-        Returns:
-            New list of timesteps for the remaining schedule.
+        :param compress: >1 compresses (fewer steps), <1 stretches (more steps)
+        :param steps: Desired number of timesteps for the remaining schedule. If None, uses the current number of remaining timesteps.
+        :returns: New list of timesteps for the remaining schedule.
         """
         if self.controller.is_complete:
             return []
@@ -297,17 +257,11 @@ class FluxDivide:
         sub_steps: int,
         compress: float = 1.0,
     ) -> list[float]:
-        """
-        Stretch or compress the current step by subdividing it into multiple steps.
-        This allows finer control over a single denoising step.
+        """Stretch or compress the current step by subdividing it into multiple steps. This allows finer control over a single denoising step.
 
-        Args:
-            sub_steps: Number of sub-steps to divide the current step into
-            compress: >1 compresses the sub-steps (closer spacing), <1 stretches them
-                     (wider spacing). Affects the distribution of sub-steps.
-
-        Returns:
-            List of new timesteps that replace the current step.
+        :param sub_steps: Number of sub-steps to divide the current step into
+        :param compress: >1 compresses the sub-steps (closer spacing), <1 stretches them (wider spacing). Affects the distribution of sub-steps.
+        :returns: List of new timesteps that replace the current step.
         """
         if self.controller.is_complete:
             raise ValueError("No current step to subdivide.")
@@ -359,13 +313,9 @@ class FluxDivide:
         compress: float = 1.0,
         steps: Optional[int] = None,
     ):
-        """
-        Apply time_shift to the remaining schedule and update it.
-        This is a convenience method that calls stretch_compress_schedule.
+        """Apply time_shift to the remaining schedule and update it. This is a convenience method that calls stretch_compress_schedule.
 
-        Args:
-            compress: >1 compresses (fewer steps), <1 stretches (more steps)
-            steps: Desired number of timesteps for the remaining schedule.
-                   If None, uses the current number of remaining timesteps.
+        :param compress: >1 compresses (fewer steps), <1 stretches (more steps)
+        :param steps: Desired number of timesteps for the remaining schedule. If None, uses the current number of remaining timesteps.
         """
         return self.stretch_compress_schedule(compress, steps)

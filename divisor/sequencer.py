@@ -3,7 +3,7 @@
 
 import torch
 import math
-from divisor.hardware import device, dtype, seed
+from divisor.hardware import device, dtype, seed_planter
 from divisor.controller import ManualTimestepController
 from divisor.flux_controller import FluxController
 from divisor.flux_divide import FluxDivide
@@ -42,7 +42,7 @@ def flux_sequencer(controller: FluxController):
         # Advanced usage - with branching
         controller = FluxController(
             timesteps=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-            initial_img=get_noise(1, 256, 256, device, dtype, seed),
+            initial_img=get_noise(1, 256, 256, device, dtype, seed_planter()),
             img_ids=torch.zeros(1, 256, 256),
             txt=torch.zeros(1, 77, 768),
             txt_ids=torch.zeros(1, 77),
@@ -69,7 +69,7 @@ def example_usage():
     timesteps = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0]
 
     # Example initial sample (would be actual tensor/image in real usage)
-    initial_sample = get_noise(1, 256, 256, device, dtype, seed)
+    initial_sample = get_noise(1, 256, 256, device, dtype, seed_planter())
 
     # Example denoising function (now accepts guidance parameter)
     def denoise_step(sample, t_curr, t_prev, guidance):

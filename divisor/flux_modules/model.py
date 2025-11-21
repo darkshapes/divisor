@@ -35,9 +35,7 @@ class FluxParams:
 
 
 class Flux(nn.Module):
-    """
-    Transformer model for flow matching on sequences.
-    """
+    """Transformer model for flow matching on sequences."""
 
     def __init__(self, params: FluxParams):
         super().__init__()

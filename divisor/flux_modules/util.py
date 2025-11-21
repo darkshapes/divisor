@@ -39,7 +39,13 @@ PREFERRED_KONTEXT_RESOLUTIONS = [
 
 
 def get_checkpoint_path(repo_id: str, filename: str, env_var: str) -> Path:
-    """Get the local path for a checkpoint file, downloading if necessary."""
+    """Get the local path for a checkpoint file, downloading if necessary.
+
+    :param repo_id: Repository ID for the checkpoint
+    :param filename: Name of the checkpoint file
+    :param env_var: Environment variable name to check for custom path
+    :returns: Path to the checkpoint file
+    """
     if os.environ.get(env_var) is not None:
         local_path = os.environ[env_var]
         if os.path.exists(local_path):
@@ -398,8 +404,11 @@ configs = {
 
 
 def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> dict:
-    """
-    Optionally expand the state dict to match the model's parameters shapes.
+    """Optionally expand the state dict to match the model's parameters shapes.
+
+    :param model: The model to match parameters against
+    :param state_dict: The state dictionary to expand
+    :returns: The expanded state dictionary
     """
     for name, param in model.named_parameters():
         if name in state_dict:
@@ -481,15 +490,12 @@ def load_ae(name: str, device: str | torch.device = device) -> AutoEncoder:
 
 
 def save_image(
-    nsfw_classifier,
     name: str,
     output_name: str,
     idx: int,
     x: torch.Tensor,
     add_sampling_metadata: bool,
     prompt: str,
-    nsfw_threshold: float = 0.85,
-    track_usage: bool = False,
 ) -> int:
     fn = output_name.format(idx=idx)
     print(f"Saving {fn}")
@@ -498,25 +504,17 @@ def save_image(
     x = rearrange(x[0], "c h w -> h w c")
 
     img = Image.fromarray((127.5 * (x + 1.0)).cpu().byte().numpy())
-    if nsfw_classifier is not None:
-        nsfw_score = [x["score"] for x in nsfw_classifier(img) if x["label"] == "nsfw"][0]
+    exif_data = Image.Exif()
+    if name in ["flux-dev", "flux-schnell"]:
+        exif_data[ExifTags.Base.Software] = "AI generated;txt2img;flux"
     else:
-        nsfw_score = nsfw_threshold - 1.0
-
-    if nsfw_score < nsfw_threshold:
-        exif_data = Image.Exif()
-        if name in ["flux-dev", "flux-schnell"]:
-            exif_data[ExifTags.Base.Software] = "AI generated;txt2img;flux"
-        else:
-            exif_data[ExifTags.Base.Software] = "AI generated;img2img;flux"
-        exif_data[ExifTags.Base.Make] = "Black Forest Labs"
-        exif_data[ExifTags.Base.Model] = name
-        if add_sampling_metadata:
-            exif_data[ExifTags.Base.ImageDescription] = prompt
-        img.save(fn, exif=exif_data, quality=95, subsampling=0)
-        idx += 1
-    else:
-        print("Your generated image may contain NSFW content.")
+        exif_data[ExifTags.Base.Software] = "AI generated;img2img;flux"
+    exif_data[ExifTags.Base.Make] = "Black Forest Labs"
+    exif_data[ExifTags.Base.Model] = name
+    if add_sampling_metadata:
+        exif_data[ExifTags.Base.ImageDescription] = prompt
+    img.save(fn, exif=exif_data, quality=95, subsampling=0)
+    idx += 1
 
     return idx
 

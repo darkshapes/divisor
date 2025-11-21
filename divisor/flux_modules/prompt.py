@@ -1,3 +1,6 @@
+# SPDX-License-Identifier:Apache-2.0
+# original BFL Flux code from https://github.com/black-forest-labs/flux
+
 import os
 import re
 import time
@@ -24,8 +27,6 @@ from divisor.flux_modules.util import (
     load_t5,
     save_image,
 )
-
-NSFW_THRESHOLD = 0.85
 
 
 def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
@@ -104,23 +105,19 @@ def main(
     output_dir: str = "output",
     add_sampling_metadata: bool = True,
 ):
-    """
-    Sample the flux model. Either interactively (set `--loop`) or run for a
-    single image.
+    """Sample the flux model. Either interactively (set `--loop`) or run for a single image.
 
-    Args:
-        name: Name of the model to load
-        height: height of the sample in pixels (should be a multiple of 16)
-        width: width of the sample in pixels (should be a multiple of 16)
-        seed: Set a seed for sampling
-        output_name: where to save the output image, `{idx}` will be replaced
-            by the index of the sample
-        prompt: Prompt used for sampling
-        device: Pytorch device
-        num_steps: number of sampling steps (default 4 for schnell, 28 for guidance distilled)
-        loop: start an interactive session and sample multiple times
-        guidance: guidance value used for guidance distillation
-        add_sampling_metadata: Add the prompt to the image Exif metadata
+    :param name: Name of the model to load
+    :param height: height of the sample in pixels (should be a multiple of 16)
+    :param width: width of the sample in pixels (should be a multiple of 16)
+    :param seed: Set a seed for sampling
+    :param output_name: where to save the output image, `{idx}` will be replaced by the index of the sample
+    :param prompt: Prompt used for sampling
+    :param device: Pytorch device
+    :param num_steps: number of sampling steps (default 4 for schnell, 28 for guidance distilled)
+    :param loop: start an interactive session and sample multiple times
+    :param guidance: guidance value used for guidance distillation
+    :param add_sampling_metadata: Add the prompt to the image Exif metadata
     """
 
     prompt_parts = prompt.split("|")
@@ -132,8 +129,6 @@ def main(
         prompt = prompt_parts[0]
 
     assert not ((additional_prompts is not None) and loop), "Do not provide additional prompts and set loop to True"
-
-    nsfw_classifier = pipeline("image-classification", model="Falconsai/nsfw_image_detection", device=device.type)
 
     if name not in configs:
         available = ", ".join(configs.keys())
@@ -236,7 +231,7 @@ def main(
         fn = output_name.format(idx=idx)
         print(f"Done in {t1 - t0:.1f}s. Saving {fn}")
 
-        idx = save_image(nsfw_classifier, name, output_name, idx, x, add_sampling_metadata, prompt)
+        idx = save_image(name, output_name, idx, x, add_sampling_metadata, prompt)
 
         if loop:
             print("-" * 80)

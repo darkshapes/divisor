@@ -20,19 +20,14 @@ def time_shift(
     steps: int,
     compress: float = 1.0,
 ) -> torch.Tensor:
-    """
-    Adjustable noise schedule.
-    Compress or stretch any schedule to match a dynamic step sequence length.
+    """Adjustable noise schedule. Compress or stretch any schedule to match a dynamic step sequence length.
 
-    Args:
-        mu: Original schedule parameter.
-        sigma: Original schedule parameter.
-        tensor_step: Tensor of original timesteps in [0,1].
-        steps: Desired number of timesteps.
-        compress: >1 compresses (fewer steps), <1 stretches (more steps).
-
-    Returns:
-        Adjusted timestep tensor.
+    :param mu: Original schedule parameter.
+    :param sigma: Original schedule parameter.
+    :param tensor_step: Tensor of original timesteps in [0,1].
+    :param steps: Desired number of timesteps.
+    :param compress: >1 compresses (fewer steps), <1 stretches (more steps).
+    :returns: Adjusted timestep tensor.
     """
     # Handle edge case where steps is 1
     if steps == 1:
@@ -148,15 +143,10 @@ class ManualTimestepController:
         )
 
     def step(self) -> DenoisingState:
-        """
-        Manually increment to the next timestep and perform one denoising step.
-        Uses the current guidance value.
+        """Manually increment to the next timestep and perform one denoising step. Uses the current guidance value.
 
-        Returns:
-            The new state after the step.
-
-        Raises:
-            ValueError: If all timesteps have already been processed.
+        :returns: The new state after the step.
+        :raises ValueError: If all timesteps have already been processed.
         """
         if self.is_complete:
             raise ValueError("All timesteps have been processed. Cannot step further.")
@@ -183,14 +173,10 @@ class ManualTimestepController:
         new_initial_sample: Optional[Any] = None,
         reset_guidance: Optional[float] = None,
     ):
-        """
-        Reset the controller to the beginning.
+        """Reset the controller to the beginning.
 
-        Args:
-            new_initial_sample: Optional new initial sample to use.
-                               If None, keeps the original initial sample.
-            reset_guidance: Optional new guidance value to use.
-                          If None, keeps the current guidance value.
+        :param new_initial_sample: Optional new initial sample to use. If None, keeps the original initial sample.
+        :param reset_guidance: Optional new guidance value to use. If None, keeps the current guidance value.
         """
         self.current_index = 0
         if new_initial_sample is not None:
@@ -202,26 +188,17 @@ class ManualTimestepController:
         self.layer_dropout_history = [self.layer_dropout]
 
     def intervene(self, modified_sample: Any):
-        """
-        Allow user intervention by modifying the current sample.
-        This replaces the current sample with a user-modified version.
+        """Allow user intervention by modifying the current sample. This replaces the current sample with a user-modified version.
 
-        Args:
-            modified_sample: The user-modified sample to use going forward.
+        :param modified_sample: The user-modified sample to use going forward.
         """
         self.current_sample = modified_sample
 
     def preview_final(self, preview_fn: Callable[[Any], Any]) -> Any:
-        """
-        Generate a preview of what the final result would look like
-        from the current state, using a single-step x₀ prediction.
+        """Generate a preview of what the final result would look like from the current state, using a single-step x₀ prediction.
 
-        Args:
-            preview_fn: Function that generates a preview from current sample.
-                       Signature: (sample) -> preview_sample
-
-        Returns:
-            Preview of the final result.
+        :param preview_fn: Function that generates a preview from current sample. Signature: (sample) -> preview_sample
+        :returns: Preview of the final result.
         """
         return preview_fn(self.current_sample)
 
@@ -230,16 +207,11 @@ class ManualTimestepController:
         compress: float,
         steps: Optional[int] = None,
     ) -> list[float]:
-        """
-        Stretch or compress the remaining timesteps in the schedule using time_shift.
+        """Stretch or compress the remaining timesteps in the schedule using time_shift.
 
-        Args:
-            compress: >1 compresses (fewer steps), <1 stretches (more steps)
-            steps: Desired number of timesteps for the remaining schedule.
-                   If None, uses the current number of remaining timesteps.
-
-        Returns:
-            New list of timesteps for the remaining schedule.
+        :param compress: >1 compresses (fewer steps), <1 stretches (more steps)
+        :param steps: Desired number of timesteps for the remaining schedule. If None, uses the current number of remaining timesteps.
+        :returns: New list of timesteps for the remaining schedule.
         """
         if self.is_complete:
             return []
@@ -270,17 +242,11 @@ class ManualTimestepController:
         sub_steps: int,
         compress: float = 1.0,
     ) -> list[float]:
-        """
-        Stretch or compress the current step by subdividing it into multiple steps.
-        This allows finer control over a single denoising step.
+        """Stretch or compress the current step by subdividing it into multiple steps. This allows finer control over a single denoising step.
 
-        Args:
-            sub_steps: Number of sub-steps to divide the current step into
-            compress: >1 compresses the sub-steps (closer spacing), <1 stretches them
-                     (wider spacing). Affects the distribution of sub-steps.
-
-        Returns:
-            List of new timesteps that replace the current step.
+        :param sub_steps: Number of sub-steps to divide the current step into
+        :param compress: >1 compresses the sub-steps (closer spacing), <1 stretches them (wider spacing). Affects the distribution of sub-steps.
+        :returns: List of new timesteps that replace the current step.
         """
         if self.is_complete:
             raise ValueError("No current step to subdivide.")
@@ -324,33 +290,24 @@ class ManualTimestepController:
         compress: float = 1.0,
         steps: Optional[int] = None,
     ):
-        """
-        Apply time_shift to the remaining schedule and update it.
-        This is a convenience method that calls stretch_compress_schedule.
+        """Apply time_shift to the remaining schedule and update it. This is a convenience method that calls stretch_compress_schedule.
 
-        Args:
-            compress: >1 compresses (fewer steps), <1 stretches (more steps)
-            steps: Desired number of timesteps for the remaining schedule.
-                   If None, uses the current number of remaining timesteps.
+        :param compress: >1 compresses (fewer steps), <1 stretches (more steps)
+        :param steps: Desired number of timesteps for the remaining schedule. If None, uses the current number of remaining timesteps.
         """
         return self.stretch_compress_schedule(compress, steps)
 
     def set_guidance(self, guidance: float):
-        """
-        Set the guidance value for the next denoising step.
+        """Set the guidance value for the next denoising step.
 
-        Args:
-            guidance: New guidance (CFG) value to use. Typically ranges from 1.0 to 20.0.
-                     Higher values provide stronger adherence to the conditioning.
+        :param guidance: New guidance (CFG) value to use. Typically ranges from 1.0 to 20.0. Higher values provide stronger adherence to the conditioning.
         """
         self.guidance = guidance
 
     def adjust_guidance(self, delta: float):
-        """
-        Adjust the guidance value by a delta amount.
+        """Adjust the guidance value by a delta amount.
 
-        Args:
-            delta: Amount to add to the current guidance value (can be negative).
+        :param delta: Amount to add to the current guidance value (can be negative).
         """
         self.guidance = max(0.0, self.guidance + delta)
 

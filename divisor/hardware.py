@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
+# <!-- // /*  d a r k s h a p e s */ -->
 import torch
 import gc
 from typing import Literal, Optional
-from numpy import random
+from numpy import random as np_random
 
 torch.backends.cudnn.deterministic = False
-torch.backends.mps.torch.use_deterministic_algorithms(False)
+torch.use_deterministic_algorithms(False)
 
 
 def set_torch_device(
@@ -27,7 +29,6 @@ def set_torch_device(
 
 device = set_torch_device()
 dtype = torch.float16
-seed = torch.random.seed()
 
 
 def seed_planter(seed: int = torch.random.seed()) -> int:
@@ -37,7 +38,7 @@ def seed_planter(seed: int = torch.random.seed()) -> int:
 
     torch.set_num_threads(1)
     torch.manual_seed(seed)
-    random.seed(seed)
+    np_random.seed(seed)
     if "cuda" in device.type:
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
@@ -47,8 +48,8 @@ def seed_planter(seed: int = torch.random.seed()) -> int:
 
 
 def clear_cache(device_override: Optional[Literal["cuda", "mps", "cpu"]] = None):
-    gc.collect()
     if device.type == "cuda" or device_override == "cuda":
         torch.cuda.empty_cache()
     if device.type == "mps" or device_override == "mps":
         torch.mps.empty_cache()
+    gc.collect()
