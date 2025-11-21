@@ -57,39 +57,10 @@ def serialize_state_for_chain(state: "DenoisingState", current_seed: int) -> str
     return json.dumps(state_dict, default=str)
 
 
-def serialize_state_to_int(state: "DenoisingState", current_seed: int) -> int:
-    """Serialize DenoisingState to an integer representation.
-
-    :param state: The DenoisingState to serialize
-    :param current_seed: The current seed value to include instead of current_sample
-    :returns: Integer representation of the state (reversible)
-    """
-    state_dict = asdict(state)  # serialize to JSON string
-    state_dict.pop("current_sample", None)  # Remove the tensor (current_sample) as it's not serializable
-    state_dict["current_seed"] = current_seed
-    json_str = json.dumps(state_dict, default=str)
-    json_bytes = json_str.encode("utf-8")
-    state_int = int.from_bytes(json_bytes, byteorder="big", signed=False)  # big-endian byte to int
-    return state_int
-
-
-def deserialize_state_from_int(state_int: int) -> tuple[dict, int]:
-    """Deserialize integer representation back to state dictionary and seed.
-
-    :param state_int: Integer representation of the state
-    :returns: Tuple of (state_dict, current_seed) where state_dict can be used to reconstruct DenoisingState
-    """
-    json_bytes = state_int.to_bytes((state_int.bit_length() + 7) // 8, byteorder="big", signed=False)
-    json_str = json_bytes.decode("utf-8")
-    state_dict = json.loads(json_str)
-    current_seed = state_dict.pop("current_seed", None)
-    return state_dict, current_seed
-
-
 def reconstruct_state_from_dict(state_dict: dict, current_sample: torch.Tensor) -> "DenoisingState":
     """Reconstruct DenoisingState from dictionary and current sample tensor.
 
-    :param state_dict: Dictionary containing state fields (from deserialize_state_from_int)
+    :param state_dict: Dictionary containing state fields
     :param current_sample: The current sample tensor to include in the state
     :returns: Reconstructed DenoisingState object
     """

@@ -1,14 +1,9 @@
 # SPDX-License-Identifier:Apache-2.0
 # original BFL Flux code from https://github.com/black-forest-labs/flux
 
-import os
-import re
-import time
-from glob import iglob
 import torch
 from fire import Fire
-from transformers import pipeline
-import gc
+
 from divisor.hardware import clear_cache
 from divisor.hardware import device
 from divisor.flux_modules.sampling import (
@@ -17,7 +12,6 @@ from divisor.flux_modules.sampling import (
     get_noise,
     get_schedule,
     prepare,
-    unpack,
 )
 from divisor.flux_modules.util import (
     configs,
@@ -25,7 +19,6 @@ from divisor.flux_modules.util import (
     load_clip,
     load_flow_model,
     load_t5,
-    save_image,
 )
 
 
@@ -142,17 +135,6 @@ def main(
     height = 16 * (height // 16)
     width = 16 * (width // 16)
 
-    output_name = os.path.join(output_dir, "img_{idx}.jpg")
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-        idx = 0
-    else:
-        fns = [fn for fn in iglob(output_name.format(idx="*")) if re.search(r"img_[0-9]+\.jpg$", fn)]
-        if len(fns) > 0:
-            idx = max(int(fn.split("_")[-1].split(".")[0]) for fn in fns) + 1
-        else:
-            idx = 0
-
     t5 = load_t5(torch_device, max_length=256 if name == "flux-schnell" else 512)
     clip = load_clip(torch_device)
     model = load_flow_model(name, device="cpu" if offload else torch_device)
@@ -175,7 +157,6 @@ def main(
         if opts.seed is None:
             opts.seed = rng.seed()
         print(f"Generating with seed {opts.seed}:\n{opts.prompt}")
-        t0 = time.perf_counter()
 
         # prepare input
         x = get_noise(
@@ -200,38 +181,17 @@ def main(
             t5, clip = t5.cpu(), clip.cpu()
             clear_cache()
             model = model.to(torch_device)
-        del t5, clip
-        gc.collect()
+
         # denoise initial noise
         x = denoise(
             model,
-            **inp,
+            **inp,  # type: ignore
             timesteps=timesteps,
             guidance=opts.guidance,
             ae=ae,
             torch_device=torch_device,
             opts=opts,
         )
-
-        # offload model, load autoencoder to gpu
-        if offload:
-            model.cpu()
-            clear_cache()
-            ae.decoder.to(x.device)
-
-        # decode latents to pixel space
-        x = unpack(x.float(), opts.height, opts.width)
-        with torch.autocast(device_type=torch_device.type, dtype=torch.bfloat16):
-            x = ae.decode(x)
-
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-        t1 = time.perf_counter()
-
-        fn = output_name.format(idx=idx)
-        print(f"Done in {t1 - t0:.1f}s. Saving {fn}")
-
-        idx = save_image(name, output_name, idx, x, add_sampling_metadata, prompt)
 
         if loop:
             print("-" * 80)
