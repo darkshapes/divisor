@@ -4,8 +4,8 @@
 import torch
 from fire import Fire
 
-from divisor.hardware import clear_cache
-from divisor.hardware import device
+from divisor.hardware import clear_cache, device
+from divisor.controller import DenoisingState
 from divisor.flux_modules.sampling import (
     SamplingOptions,
     denoise,
@@ -140,7 +140,8 @@ def main(
     model = load_flow_model(name, device="cpu" if offload else torch_device)
     ae = load_ae(name, device="cpu" if offload else torch_device)
 
-    rng = torch.Generator(device="cpu")
+    rng_type_a = torch.Generator(device="cpu")
+    rng_type_b = int(torch.randint(0, 2**31, (1,)).item())
     opts = SamplingOptions(
         prompt=prompt,
         width=width,
@@ -155,10 +156,9 @@ def main(
 
     while opts is not None:
         if opts.seed is None:
-            opts.seed = rng.seed()
+            opts.seed = rng_type_a.seed()
         print(f"Generating with seed {opts.seed}:\n{opts.prompt}")
 
-        # prepare input
         x = get_noise(
             1,
             opts.height,
@@ -167,6 +167,9 @@ def main(
             dtype=torch.bfloat16,
             seed=opts.seed,
         )
+
+        # prepare input
+
         opts.seed = None
         if offload:
             ae = ae.cpu()
@@ -175,22 +178,34 @@ def main(
             t5, clip = t5.to(torch_device), clip.to(torch_device)
         inp = prepare(t5, clip, x, prompt=opts.prompt)
         timesteps = get_schedule(opts.num_steps, inp["img"].shape[1], shift=(name != "flux-schnell"))
-
+        state = DenoisingState(
+            current_timestep=0,
+            previous_timestep=None,
+            current_sample=x,
+            timestep_index=0,
+            total_timesteps=len(timesteps),
+            layer_dropout=None,
+            guidance=opts.guidance,
+            seed=opts.seed,
+            width=opts.width,
+            height=opts.height,
+            prompt=opts.prompt,
+            num_steps=opts.num_steps,
+        )
         # offload TEs to CPU, load model to gpu
         if offload:
             t5, clip = t5.cpu(), clip.cpu()
             clear_cache()
-            model = model.to(torch_device)
+            model = model.to(device)
 
         # denoise initial noise
         x = denoise(
             model,
             **inp,  # type: ignore
             timesteps=timesteps,
-            guidance=opts.guidance,
+            state=state,
             ae=ae,
             torch_device=torch_device,
-            opts=opts,
         )
 
         if loop:

@@ -2,7 +2,7 @@
 # <!-- // /*  d a r k s h a p e s */ -->
 import torch
 import gc
-from typing import Literal, Optional
+from typing import Literal
 from numpy import random as np_random
 
 torch.backends.cudnn.deterministic = False
@@ -10,7 +10,7 @@ torch.use_deterministic_algorithms(False)
 
 
 def set_torch_device(
-    device_override: Optional[Literal["cuda", "mps", "cpu"]] = None,
+    device_override: Literal["cuda", "mps", "cpu"] | None = None,
 ) -> torch.device:
     """Set the PyTorch device, with optional manual override.\n
     :param device_override: Optional device to use. "cuda", "mps", or "cpu"
@@ -21,7 +21,6 @@ def set_torch_device(
             raise ValueError(f"device_override must be one of 'cuda', 'mps', or 'cpu', got '{device_override}'")
         return torch.device(device_override)
 
-    # Auto-detect best available device
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
     return device
@@ -29,6 +28,15 @@ def set_torch_device(
 
 device = set_torch_device()
 dtype = torch.float16
+
+
+def sync_torch(device: torch.device):
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    if device.type == "mps":
+        torch.mps.synchronize()
+    if device.type == "cpu":
+        pass
 
 
 def seed_planter(seed: int = torch.random.seed()) -> int:
@@ -47,7 +55,7 @@ def seed_planter(seed: int = torch.random.seed()) -> int:
     return seed
 
 
-def clear_cache(device_override: Optional[Literal["cuda", "mps", "cpu"]] = None):
+def clear_cache(device_override: Literal["cuda", "mps", "cpu"] | None = None):
     if device.type == "cuda" or device_override == "cuda":
         torch.cuda.empty_cache()
     if device.type == "mps" or device_override == "mps":

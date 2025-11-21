@@ -74,6 +74,12 @@ def reconstruct_state_from_dict(state_dict: dict, current_sample: torch.Tensor) 
         layer_dropout=state_dict.get("layer_dropout"),
         width=state_dict.get("width"),
         height=state_dict.get("height"),
+        seed=state_dict.get("seed"),
+        prompt=state_dict.get("prompt"),
+        num_steps=state_dict.get("num_steps"),
+        vae_shift_offset=state_dict.get("vae_shift_offset", 0.0),
+        vae_scale_offset=state_dict.get("vae_scale_offset", 0.0),
+        use_previous_as_mask=state_dict.get("use_previous_as_mask", False),
     )
 
 
@@ -90,6 +96,12 @@ class DenoisingState:
     layer_dropout: Optional[list[int]] = None
     width: Optional[int] = None
     height: Optional[int] = None
+    seed: Optional[int] = None
+    prompt: Optional[str] = None
+    num_steps: Optional[int] = None
+    vae_shift_offset: float = 0.0
+    vae_scale_offset: float = 0.0
+    use_previous_as_mask: bool = False
 
 
 class ManualTimestepController:
@@ -136,6 +148,12 @@ class ManualTimestepController:
         self.layer_dropout_history: list[Optional[list[int]]] = [None]
         self.width: Optional[int] = None
         self.height: Optional[int] = None
+        self.seed: Optional[int] = None
+        self.prompt: Optional[str] = None
+        self.num_steps: Optional[int] = None
+        self.vae_shift_offset: float = 0.0
+        self.vae_scale_offset: float = 0.0
+        self.use_previous_as_mask: bool = False
         if self.hyperchain is not None and len(self.hyperchain.chain) == 0:
             self.hyperchain.synthesize_genesis_block()
 
@@ -160,6 +178,12 @@ class ManualTimestepController:
             layer_dropout=self.layer_dropout,
             width=self.width,
             height=self.height,
+            seed=self.seed,
+            prompt=self.prompt,
+            num_steps=self.num_steps,
+            vae_shift_offset=self.vae_shift_offset,
+            vae_scale_offset=self.vae_scale_offset,
+            use_previous_as_mask=self.use_previous_as_mask,
         )
 
     def step(self) -> DenoisingState:
@@ -346,6 +370,48 @@ class ManualTimestepController:
         """
         self.width = width
         self.height = height
+
+    def set_seed(self, seed: int):
+        """Set the seed value for the denoising process.
+
+        :param seed: Seed value for random number generation
+        """
+        self.seed = seed
+
+    def set_prompt(self, prompt: str):
+        """Set the prompt text for the denoising process.
+
+        :param prompt: Prompt text
+        """
+        self.prompt = prompt
+
+    def set_num_steps(self, num_steps: int):
+        """Set the number of steps for the denoising process.
+
+        :param num_steps: Number of denoising steps
+        """
+        self.num_steps = num_steps
+
+    def set_vae_shift_offset(self, offset: float):
+        """Set the VAE shift offset for autoencoder decode.
+
+        :param offset: Offset to add to shift_factor in autoencoder decode
+        """
+        self.vae_shift_offset = offset
+
+    def set_vae_scale_offset(self, offset: float):
+        """Set the VAE scale offset for autoencoder decode.
+
+        :param offset: Offset to add to scale_factor in autoencoder decode
+        """
+        self.vae_scale_offset = offset
+
+    def set_use_previous_as_mask(self, use_mask: bool):
+        """Set whether to use previous step tensor as mask.
+
+        :param use_mask: Whether to use previous step tensor as mask for next step
+        """
+        self.use_previous_as_mask = use_mask
 
     def store_state_in_chain(self, current_seed: int | None = None, serialized_state_int: int | None = None) -> Optional[Any]:
         """Store the current DenoisingState in HyperChain, excluding current_sample and adding current_seed.
