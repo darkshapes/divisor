@@ -4,9 +4,7 @@ from typing import Literal, Optional
 from numpy import random
 
 torch.backends.cudnn.deterministic = False
-
-torch.mps.set_rng_state
-torch.cuda.set_rng_state
+torch.backends.mps.torch.use_deterministic_algorithms(False)
 
 
 def set_torch_device(

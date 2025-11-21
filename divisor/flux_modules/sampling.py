@@ -26,80 +26,6 @@ class SamplingOptions:
     seed: int | None
 
 
-def set_rng_state_from_tensor(tensor: Tensor, device_type: Optional[str] = None) -> None:
-    """Extract part of tensor buffer and use it to set the RNG state.
-
-    :param tensor: The tensor buffer to extract RNG state from
-    :param device_type: Optional device type ("cuda", "mps", or None for CPU). If None, uses the tensor's device.
-    """
-    if device_type is None:
-        device_type = tensor.device.type
-
-    # Flatten tensor and take a slice to use as RNG state data
-    # Use a deterministic slice (first elements) to ensure reproducibility
-    flat_tensor = tensor.flatten()
-    # Take enough elements to potentially fill RNG state, but limit to reasonable size
-    num_elements = min(len(flat_tensor), 1024)
-    tensor_slice = flat_tensor[:num_elements]
-
-    # Convert to CPU and appropriate dtype for RNG state
-    tensor_slice = tensor_slice.cpu().to(torch.uint8 if device_type == "cuda" else torch.uint32)
-
-    if device_type == "cuda":
-        # Get current CUDA RNG state to get the correct size
-        try:
-            current_state = torch.cuda.get_rng_state()
-            state_size = current_state.numel()
-            # Pad or truncate tensor_slice to match state size
-            if tensor_slice.numel() < state_size:
-                # Pad with zeros or repeat pattern
-                padding = torch.zeros(state_size - tensor_slice.numel(), dtype=tensor_slice.dtype)
-                new_state = torch.cat([tensor_slice, padding])
-            elif tensor_slice.numel() > state_size:
-                # Truncate to match state size
-                new_state = tensor_slice[:state_size]
-            else:
-                new_state = tensor_slice
-            torch.cuda.set_rng_state(new_state)
-        except RuntimeError:
-            # Fallback if CUDA RNG state not available
-            pass
-    elif device_type == "mps":
-        # Get current MPS RNG state
-        try:
-            current_state = torch.mps.get_rng_state()
-            state_size = current_state.numel()
-            # Pad or truncate tensor_slice to match state size
-            if tensor_slice.numel() < state_size:
-                padding = torch.zeros(state_size - tensor_slice.numel(), dtype=tensor_slice.dtype)
-                new_state = torch.cat([tensor_slice, padding])
-            elif tensor_slice.numel() > state_size:
-                new_state = tensor_slice[:state_size]
-            else:
-                new_state = tensor_slice
-            torch.mps.set_rng_state(new_state)
-        except RuntimeError:
-            # Fallback if MPS RNG state not available
-            pass
-    else:
-        # CPU: Get current CPU RNG state
-        try:
-            current_state = torch.get_rng_state()
-            state_size = current_state.numel()
-            # Pad or truncate tensor_slice to match state size
-            if tensor_slice.numel() < state_size:
-                padding = torch.zeros(state_size - tensor_slice.numel(), dtype=current_state.dtype)
-                new_state = torch.cat([tensor_slice.to(current_state.dtype), padding])
-            elif tensor_slice.numel() > state_size:
-                new_state = tensor_slice[:state_size].to(current_state.dtype)
-            else:
-                new_state = tensor_slice.to(current_state.dtype)
-            torch.set_rng_state(new_state)
-        except RuntimeError:
-            # Fallback if RNG state not available
-            pass
-
-
 def get_noise(
     num_samples: int,
     height: int,
@@ -230,9 +156,15 @@ def denoise(
 
     # Store layer_dropout in a mutable container for closure
     current_layer_dropout = [initial_layer_dropout]
+    # Store tensor buffer RNG and mask settings
+    use_tensor_buffer_rng = [False]
+    use_previous_as_mask = [False]
+    previous_step_tensor: list[Optional[Tensor]] = [None]  # Store previous step's tensor for masking
 
     def denoise_step_fn(sample: Tensor, t_curr: float, t_prev: float, guidance_val: float) -> Tensor:
         """Single denoising step function for the controller."""
+        # Set RNG from tensor buffer if enabled
+
         t_vec = torch.full((sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device)
         img_input = sample
         img_input_ids = img_ids
@@ -261,10 +193,32 @@ def denoise(
         if img_input_ids is not None:
             pred = pred[:, : sample.shape[1]]
 
+        # Apply mask from previous step if enabled
+        if use_previous_as_mask[0] and previous_step_tensor[0] is not None:
+            # Normalize previous tensor to [0, 1] range for masking
+            prev_tensor = previous_step_tensor[0]
+            # Ensure shapes match
+            if prev_tensor.shape == pred.shape:
+                # Normalize previous tensor values to create a mask
+                prev_min = prev_tensor.min()
+                prev_max = prev_tensor.max()
+                if prev_max > prev_min:
+                    mask = (prev_tensor - prev_min) / (prev_max - prev_min)
+                else:
+                    mask = torch.ones_like(prev_tensor)
+                # Apply mask to prediction: mask controls how much the prediction affects the result
+                # Higher mask values = more effect from prediction, lower = less effect
+                pred = pred * mask
+
         dt = t_prev - t_curr
         x0 = sample - t_curr * pred
 
-        return (1 - (t_curr + dt)) * x0 + (t_curr + dt) * torch.randn_like(x0)
+        result = (1 - (t_curr + dt)) * x0 + (t_curr + dt) * torch.randn_like(x0)
+
+        # Store current sample as previous for next step
+        previous_step_tensor[0] = sample.clone()
+
+        return result
 
     # if use_controller:
     # Create controller
@@ -291,7 +245,7 @@ def denoise(
     while not controller.is_complete:
         state = controller.current_state
         step = state.timestep_index
-        choice = input("Choose an action: (g)uidance, (l)ayer_dropout, (r)esolution, (s)eed, (e)dit, or press Enter to advance: ").lower().strip()
+        choice = input("Choose an action: (g)uidance, (l)ayer_dropout, (r)esolution, (s)eed, (b)uffer_rng, (e)dit, or press Enter to advance: ").lower().strip()
 
         if choice == "":
             controller.step()
@@ -356,6 +310,13 @@ def denoise(
                 print(f"Seed set to: {current_seed}")
             except ValueError:
                 print("Invalid seed value, keeping current seed")
+        elif choice == "b":
+            try:
+                print("\nTensor Buffer Options:")
+                use_previous_as_mask[0] = not use_previous_as_mask[0]
+                print(f"Previous step mask: {'ENABLED' if use_previous_as_mask[0] else 'DISABLED'}")
+            except Exception as e:
+                print(f"Error setting buffer options: {e}")
         elif choice == "e":
             print("Entering edit mode (use c/cont to exit)...")
             breakpoint()
@@ -371,6 +332,8 @@ def denoise(
             print(f"Layer dropout: {state.layer_dropout}")
         else:
             print("Layer dropout: None")
+        print(f"Tensor buffer RNG: {'ON' if use_tensor_buffer_rng[0] else 'OFF'}")
+        print(f"Previous step mask: {'ON' if use_previous_as_mask[0] else 'OFF'}")
 
         # Generate preview
         if ae is not None and opts is not None:
