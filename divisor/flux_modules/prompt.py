@@ -3,8 +3,9 @@
 
 import torch
 from fire import Fire
+from nnll.init_gpu import clear_cache, device
 
-from divisor.hardware import clear_cache, device
+
 from divisor.controller import DenoisingState
 from divisor.flux_modules.sampling import (
     SamplingOptions,
@@ -85,17 +86,18 @@ def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
 
 @torch.inference_mode()
 def main(
-    name: str = "flux-schnell",
+    name: str = "flux-dev",
     width: int = 1360,
     height: int = 768,
     seed: int | None = None,
-    prompt: str = ('a photo of a forest with mist swirling around the tree trunks. The word "FLUX" is painted over it in big, red brush strokes with visible texture'),
+    prompt: str = (""),
+    # ('a photo of a forest with mist swirling around the tree trunks. The word "FLUX" is painted over it in big, red brush strokes with visible texture'),
     device: torch.device = device,
     num_steps: int | None = None,
     loop: bool = False,
-    guidance: float = 2.5,
+    guidance: float = 4.0,  # 2.5,
     offload: bool = False,
-    output_dir: str = "output",
+    output_dir: str = ".output",
     add_sampling_metadata: bool = True,
 ):
     """Sample the flux model. Either interactively (set `--loop`) or run for a single image.

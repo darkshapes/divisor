@@ -7,14 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import torch
-from einops import rearrange
 from huggingface_hub import snapshot_download
-from PIL import ExifTags, Image
 from safetensors.torch import load_file as load_sft
+from nnll.init_gpu import device
+
 from divisor.flux_modules.model import Flux, FluxParams, FluxLoraWrapper
 from divisor.flux_modules.autoencoder import AutoEncoder, AutoEncoderParams
 from divisor.flux_modules.text_embedder import HFEmbedder
-from divisor.hardware import device
 
 CHECKPOINTS_DIR = Path(snapshot_download(repo_id="black-forest-labs/FLUX.1-schnell", local_files_only=False))
 PREFERRED_KONTEXT_RESOLUTIONS = [
