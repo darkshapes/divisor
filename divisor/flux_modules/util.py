@@ -8,16 +8,20 @@ from pathlib import Path
 
 import torch
 from huggingface_hub import snapshot_download
-from safetensors.torch import load_file as load_sft
 from nnll.init_gpu import device
+from safetensors.torch import load_file as load_sft
 
-from divisor.flux_modules.model import Flux, FluxParams, FluxLoraWrapper
 from divisor.flux_modules.autoencoder import AutoEncoder, AutoEncoderParams
+from divisor.flux_modules.model import Flux, FluxLoraWrapper, FluxParams
 from divisor.flux_modules.text_embedder import HFEmbedder
 
-MODEL_TYPE = "schnell"
+MODEL_TYPE = "dev"
 
-CHECKPOINTS_DIR = Path(snapshot_download(repo_id=f"black-forest-labs/FLUX.1-{MODEL_TYPE}", local_files_only=False))
+CHECKPOINTS_DIR = Path(
+    snapshot_download(
+        repo_id=f"black-forest-labs/FLUX.1-{MODEL_TYPE}", local_files_only=False
+    )
+)
 PREFERRED_KONTEXT_RESOLUTIONS = [
     (672, 1568),
     (688, 1504),
@@ -52,7 +56,9 @@ def get_checkpoint_path(repo_id: str, filename: str, env_var: str) -> Path:
         if os.path.exists(local_path):
             return Path(local_path)
 
-        print(f"Trying to load model {repo_id}, {filename} from environment variable {env_var}. But file {local_path} does not exist. Falling back to default location.")
+        print(
+            f"Trying to load model {repo_id}, {filename} from environment variable {env_var}. But file {local_path} does not exist. Falling back to default location."
+        )
 
     # Create a safe directory name from repo_id
     safe_repo_name = repo_id.replace("/", "_")
@@ -414,9 +420,13 @@ def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> di
     for name, param in model.named_parameters():
         if name in state_dict:
             if state_dict[name].shape != param.shape:
-                print(f"Expanding '{name}' with shape {state_dict[name].shape} to model parameter with shape {param.shape}.")
+                print(
+                    f"Expanding '{name}' with shape {state_dict[name].shape} to model parameter with shape {param.shape}."
+                )
                 # expand with zeros:
-                expanded_state_dict_weight = torch.zeros_like(param, device=state_dict[name].device)
+                expanded_state_dict_weight = torch.zeros_like(
+                    param, device=state_dict[name].device
+                )
                 slices = tuple(slice(0, dim) for dim in state_dict[name].shape)
                 expanded_state_dict_weight[slices] = state_dict[name]
                 state_dict[name] = expanded_state_dict_weight
@@ -424,7 +434,9 @@ def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> di
     return state_dict
 
 
-def aspect_ratio_to_height_width(aspect_ratio: str, area: int = 1024**2) -> tuple[int, int]:
+def aspect_ratio_to_height_width(
+    aspect_ratio: str, area: int = 1024**2
+) -> tuple[int, int]:
     width = float(aspect_ratio.split(":")[0])
     height = float(aspect_ratio.split(":")[1])
     ratio = width / height
@@ -433,7 +445,9 @@ def aspect_ratio_to_height_width(aspect_ratio: str, area: int = 1024**2) -> tupl
     return 16 * (width // 16), 16 * (height // 16)
 
 
-def load_flow_model(name: str, device: str | torch.device = device, verbose: bool = True) -> Flux:
+def load_flow_model(
+    name: str, device: str | torch.device = device, verbose: bool = True
+) -> Flux:
     # Loading Flux
     print("Init model")
     config = configs[name]
@@ -456,7 +470,9 @@ def load_flow_model(name: str, device: str | torch.device = device, verbose: boo
 
     if config.lora_repo_id is not None and config.lora_filename is not None:
         print("Loading LoRA")
-        lora_path = str(get_checkpoint_path(config.lora_repo_id, config.lora_filename, "FLUX_LORA"))
+        lora_path = str(
+            get_checkpoint_path(config.lora_repo_id, config.lora_filename, "FLUX_LORA")
+        )
         lora_sd = load_sft(lora_path, device=str(device))
         # loading the lora params + overwriting scale values in the norms
         missing, unexpected = model.load_state_dict(lora_sd, strict=False, assign=True)
@@ -467,11 +483,15 @@ def load_flow_model(name: str, device: str | torch.device = device, verbose: boo
 
 def load_t5(device: str | torch.device = device, max_length: int = 512) -> HFEmbedder:
     # max length 64, 128, 256 and 512 should work (if your sequence is short enough)
-    return HFEmbedder("google/t5-v1_1-xxl", max_length=max_length, dtype=torch.bfloat16).to(device)
+    return HFEmbedder(
+        "google/t5-v1_1-xxl", max_length=max_length, dtype=torch.bfloat16
+    ).to(device)
 
 
 def load_clip(device: str | torch.device = device) -> HFEmbedder:
-    return HFEmbedder("openai/clip-vit-large-patch14", max_length=77, dtype=torch.bfloat16).to(device)
+    return HFEmbedder(
+        "openai/clip-vit-large-patch14", max_length=77, dtype=torch.bfloat16
+    ).to(device)
 
 
 def load_ae(name: str, device: str | torch.device = device) -> AutoEncoder:

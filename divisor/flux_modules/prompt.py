@@ -5,21 +5,28 @@ import torch
 from fire import Fire
 from nnll.init_gpu import clear_cache, device
 
-
 from divisor.controller import DenoisingState, rng
-from divisor.flux_modules.sampling import SamplingOptions, denoise, get_noise, get_schedule, prepare
+from divisor.flux_modules.sampling import (
+    SamplingOptions,
+    denoise,
+    get_noise,
+    get_schedule,
+    prepare,
+)
 from divisor.flux_modules.util import (
+    MODEL_TYPE,
     configs,
     load_ae,
     load_clip,
     load_flow_model,
     load_t5,
-    MODEL_TYPE,
 )
 
 
 def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
-    user_question = "Next prompt (write /h for help, /q to quit and leave empty to repeat):\n"
+    user_question = (
+        "Next prompt (write /h for help, /q to quit and leave empty to repeat):\n"
+    )
     usage = (
         "Usage: Either write your prompt directly, leave this field empty "
         "to repeat the prompt or write a command starting with a slash:\n"
@@ -38,14 +45,18 @@ def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
                 continue
             _, width = prompt.split()
             options.width = 16 * (int(width) // 16)
-            print(f"Setting resolution to {options.width} x {options.height} ({options.height * options.width / 1e6:.2f}MP)")
+            print(
+                f"Setting resolution to {options.width} x {options.height} ({options.height * options.width / 1e6:.2f}MP)"
+            )
         elif prompt.startswith("/h"):
             if prompt.count(" ") != 1:
                 print(f"Got invalid command '{prompt}'\n{usage}")
                 continue
             _, height = prompt.split()
             options.height = 16 * (int(height) // 16)
-            print(f"Setting resolution to {options.width} x {options.height} ({options.height * options.width / 1e6:.2f}MP)")
+            print(
+                f"Setting resolution to {options.width} x {options.height} ({options.height * options.width / 1e6:.2f}MP)"
+            )
         elif prompt.startswith("/g"):
             if prompt.count(" ") != 1:
                 print(f"Got invalid command '{prompt}'\n{usage}")
@@ -115,7 +126,9 @@ def main(
         additional_prompts = prompt_parts[1:]
         prompt = prompt_parts[0]
 
-    assert not ((additional_prompts is not None) and loop), "Do not provide additional prompts and set loop to True"
+    assert not ((additional_prompts is not None) and loop), (
+        "Do not provide additional prompts and set loop to True"
+    )
 
     if name not in configs:
         available = ", ".join(configs.keys())
@@ -173,13 +186,15 @@ def main(
 
             t5, clip = t5.to(torch_device), clip.to(torch_device)
         inp = prepare(t5, clip, x, prompt=opts.prompt)
-        timesteps = get_schedule(opts.num_steps, inp["img"].shape[1], shift=(name != "flux-schnell"))
+        timesteps = get_schedule(
+            opts.num_steps, inp["img"].shape[1], shift=(name != "flux-schnell")
+        )
         state = DenoisingState(
             current_timestep=0,
             previous_timestep=None,
             current_sample=x,
             timestep_index=0,
-            total_timesteps=len(timesteps) - 1,
+            total_timesteps=len(timesteps),
             layer_dropout=None,
             guidance=opts.guidance,
             seed=rng.seed,

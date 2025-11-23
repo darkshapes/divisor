@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "divisor"
-version = "0.1.0"
+version = "0.1.1"
 description = "fragment / denoise / process"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -27,6 +31,12 @@ exclude = [
   "**/__pycache__", # cache directories
   "./typings",      # generated type stubs
 ]
+[tool.setuptools]
+packages = ["divisor"]
+
+[tool.setuptools.package-data]
+"*" = ["*.txt", "*.md"]
+
 [tool.uv]
 package = true
 preview = true
