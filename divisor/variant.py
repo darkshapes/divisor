@@ -4,7 +4,7 @@
 """Variation noise functions for denoising process."""
 
 import math
-from typing import Callable, Optional
+from typing import Callable
 import torch
 from torch import Tensor
 from nnll.console import nfo

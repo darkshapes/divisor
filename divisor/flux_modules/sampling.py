@@ -57,11 +57,7 @@ def get_noise(
     :param seed: Seed for the random number generator
     :returns: Noise tensor"""
     # Get the generator's device to ensure compatibility
-    generator_device = (
-        rng._torch_generator.device
-        if rng._torch_generator is not None
-        else torch.device("cpu")
-    )
+    generator_device = rng._torch_generator.device if rng._torch_generator is not None else torch.device("cpu")
 
     # Create tensor on generator's device first (required for MPS compatibility)
     noise = torch.randn(
@@ -82,9 +78,7 @@ def get_noise(
     return noise
 
 
-def prepare(
-    t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]
-) -> dict[str, Tensor]:
+def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:
     """Prepare the text embeddings for the model.\n
     :param t5: T5 embedder
     :param clip: CLIP embedder
@@ -135,9 +129,7 @@ def time_shift(mu: float, sigma: float, t: Tensor) -> Tensor:
     return math.exp(mu) / (math.exp(mu) + (1 / t - 1) ** sigma)
 
 
-def get_lin_function(
-    x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: float = 1.15
-) -> Callable[[float], float]:
+def get_lin_function(x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: float = 1.15) -> Callable[[float], float]:
     m = (y2 - y1) / (x2 - x1)
     b = y1 - m * x1
     return lambda x: m * x + b
@@ -186,6 +178,8 @@ def denoise(
     img_cond_seq_ids: Tensor | None = None,
     torch_device: torch.device = device,
     initial_layer_dropout: Optional[list[int]] = None,
+    t5: Optional[HFEmbedder] = None,  # T5 embedder for prompt changes
+    clip: Optional[HFEmbedder] = None,  # CLIP embedder for prompt changes
 ):
     """Denoise using Flux model with optional ManualTimestepController.\n
     :param model: Flux model instance
@@ -201,27 +195,55 @@ def denoise(
     :param img_cond_seq_ids: Optional sequence-wise image conditioning IDs
     :param ae: AutoEncoder for decoding previews
     :param torch_device: PyTorch device
-    :param initial_layer_dropout: Initial layer dropout configuration"""
+    :param initial_layer_dropout: Initial layer dropout configuration
+    :param t5: Optional T5 embedder for recomputing text embeddings when prompt changes
+    :param clip: Optional CLIP embedder for recomputing text embeddings when prompt changes"""
 
     # this is ignored for schnell
     current_layer_dropout = [initial_layer_dropout]
-    previous_step_tensor: list[Optional[Tensor]] = [
-        None
-    ]  # Store previous step's tensor for masking
-    cached_prediction: list[Optional[Tensor]] = [
-        None
-    ]  # Cache prediction to avoid duplicate model calls
-    cached_prediction_state: list[Optional[dict]] = [
-        None
-    ]  # Cache state when prediction was generated
-    controller_ref: list[Optional["ManualTimestepController"]] = [
-        None
-    ]  # Reference to controller for closure access
+    previous_step_tensor: list[Optional[Tensor]] = [None]  # Store previous step's tensor for masking
+    cached_prediction: list[Optional[Tensor]] = [None]  # Cache prediction to avoid duplicate model calls
+    cached_prediction_state: list[Optional[dict]] = [None]  # Cache state when prediction was generated
+    controller_ref: list[Optional["ManualTimestepController"]] = [None]  # Reference to controller for closure access
+
+    # Store embeddings in mutable containers so they can be updated when prompt changes
+    current_txt: list[Tensor] = [txt]
+    current_txt_ids: list[Tensor] = [txt_ids]
+    current_vec: list[Tensor] = [vec]
+    current_prompt: list[Optional[str]] = [state.prompt]  # Track current prompt to detect changes
 
     def clear_prediction_cache():
         """Empty the prediction cache.\n"""
         cached_prediction[0] = None
         cached_prediction_state[0] = None
+
+    def recompute_text_embeddings(prompt: str) -> None:
+        """Recompute text embeddings when prompt changes.\n
+        :param prompt: New prompt text"""
+        if t5 is None or clip is None:
+            return
+
+        bs = img.shape[0]
+        prompt_list = [prompt] if isinstance(prompt, str) else prompt
+
+        # Compute new embeddings
+        new_txt = t5(prompt_list)
+        if new_txt.shape[0] == 1 and bs > 1:
+            new_txt = repeat(new_txt, "1 ... -> bs ...", bs=bs)
+        new_txt_ids = torch.zeros(bs, new_txt.shape[1], 3)
+
+        new_vec = clip(prompt_list)
+        if new_vec.shape[0] == 1 and bs > 1:
+            new_vec = repeat(new_vec, "1 ... -> bs ...", bs=bs)
+
+        # Update embeddings and move to correct device
+        current_txt[0] = new_txt.to(img.device)
+        current_txt_ids[0] = new_txt_ids.to(img.device)
+        current_vec[0] = new_vec.to(img.device)
+        current_prompt[0] = prompt
+
+        # Clear prediction cache since embeddings changed
+        clear_prediction_cache()
 
     def get_prediction(
         sample: Tensor,
@@ -256,44 +278,34 @@ def denoise(
         if (
             cached_prediction[0] is not None
             and cached_prediction_state[0] is not None
-            and cached_prediction_state[0]["sample_hash"]
-            == current_state["sample_hash"]
+            and cached_prediction_state[0]["sample_hash"] == current_state["sample_hash"]
             and cached_prediction_state[0]["t_curr"] == current_state["t_curr"]
             and cached_prediction_state[0]["guidance"] == current_state["guidance"]
-            and cached_prediction_state[0]["layer_dropout"]
-            == current_state["layer_dropout"]
+            and cached_prediction_state[0]["layer_dropout"] == current_state["layer_dropout"]
         ):
             return cached_prediction[0]
 
         # Generate new prediction
-        t_vec = torch.full(
-            (sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device
-        )
+        t_vec = torch.full((sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device)
         img_input = sample
         img_input_ids = img_ids
 
         if img_cond is not None:
             img_input = torch.cat((sample, img_cond), dim=-1)
         if img_cond_seq is not None:
-            assert img_cond_seq_ids is not None, (
-                "You need to provide either both or neither of the sequence conditioning"
-            )
+            assert img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
             img_input = torch.cat((img_input, img_cond_seq), dim=1)
             img_input_ids = torch.cat((img_input_ids, img_cond_seq_ids), dim=1)
 
-        guidance_vec = (
-            torch.full(
-                (img.shape[0],), state.guidance, device=img.device, dtype=img.dtype
-            )
-            * 0.0
-        ) * 0.0
+        guidance_vec = (torch.full((img.shape[0],), state.guidance, device=img.device, dtype=img.dtype) * 0.0) * 0.0
 
+        # Use current embeddings (which may have been updated if prompt changed)
         pred = model(
             img=img_input,
             img_ids=img_input_ids,
-            txt=txt,
-            txt_ids=txt_ids,
-            y=vec,
+            txt=current_txt[0],
+            txt_ids=current_txt_ids[0],
+            y=current_vec[0],
             timesteps=t_vec,
             guidance=guidance_vec,
             layer_dropouts=layer_dropouts_val,
@@ -308,9 +320,7 @@ def denoise(
 
         return pred
 
-    def denoise_step_fn(
-        sample: Tensor, t_curr: float, t_prev: float, guidance_val: float
-    ) -> Tensor:
+    def denoise_step_fn(sample: Tensor, t_curr: float, t_prev: float, guidance_val: float) -> Tensor:
         """Single denoising step function for the controller.\n
         :param sample: Current sample tensor
         :param t_curr: Current timestep
@@ -384,6 +394,15 @@ def denoise(
     while not controller.is_complete:
         file_path_named = name_save_file_as(ExtensionType.WEBP)
         state = controller.current_state
+
+        # Check if prompt changed and recompute embeddings if needed
+        if state.prompt is not None and state.prompt != current_prompt[0]:
+            if t5 is not None and clip is not None:
+                recompute_text_embeddings(state.prompt)
+            else:
+                # If embedders not available, update current_prompt to avoid repeated checks
+                current_prompt[0] = state.prompt
+
         state = process_choice(
             controller,
             state,
@@ -392,6 +411,9 @@ def denoise(
             rng,
             variation_rng,
             ae,
+            t5,
+            clip,
+            recompute_text_embeddings,
         )
 
         # Generate preview
@@ -422,9 +444,7 @@ def denoise(
                 # Apply VAE shift/scale offset by manually adjusting the decode operation
                 if state.vae_shift_offset != 0.0 or state.vae_scale_offset != 0.0:
                     # Decode with offset: z = z / (scale_factor + scale_offset) + (shift_factor + shift_offset)
-                    z_adjusted = intermediate / (
-                        ae.scale_factor + state.vae_scale_offset
-                    ) + (ae.shift_factor + state.vae_shift_offset)
+                    z_adjusted = intermediate / (ae.scale_factor + state.vae_scale_offset) + (ae.shift_factor + state.vae_shift_offset)
                     intermediate_image = ae.decoder(z_adjusted)
                 else:
                     intermediate_image = ae.decode(intermediate)
