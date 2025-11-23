@@ -42,5 +42,18 @@ packages = ["divisor"]
 package = true
 preview = true
 
+[tool.ruff]
+line-length    = 160
+include        = ["*.py"]
+extend-exclude = ["**/__pycache__", "./typings"]
+
+[tool.ruff.lint]
+ignore = ["E731"]
+
+[tool.pylint]
+max-line-length = 140
+ignore-paths    = ["^tests/.*$", "test_.*$"]
+disable         = ["C0415"]
+
 [tool.uv.sources]
 nnll = { git = "https://github.com/darkshapes/nnll" }

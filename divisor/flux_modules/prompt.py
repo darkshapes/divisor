@@ -101,7 +101,7 @@ def main(
     device: torch.device = device,
     num_steps: int | None = None,
     loop: bool = False,
-    guidance: float = 4.0,  # 2.5, 4.0
+    guidance: float = 4.0 if MODEL_TYPE == "dev" else 2.5,
     offload: bool = False,
 ):
     """Sample the flux model. Either interactively (set `--loop`) or run for a single image.
@@ -136,13 +136,13 @@ def main(
 
     torch_device = device
     if num_steps is None:
-        num_steps = 4 if name == "flux-schnell" else 28
+        num_steps = 4 if MODEL_TYPE == "schnell" else 28
 
     # allow for packing and conversion to latent space
     height = 16 * (height // 16)
     width = 16 * (width // 16)
 
-    t5 = load_t5(torch_device, max_length=256 if name == "flux-schnell" else 512)
+    t5 = load_t5(torch_device, max_length=256 if MODEL_TYPE == "schnell" else 512)
     clip = load_clip(torch_device)
     model = load_flow_model(name, device="cpu" if offload else torch_device)
     ae = load_ae(name, device="cpu" if offload else torch_device)
