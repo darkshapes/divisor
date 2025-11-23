@@ -3,22 +3,28 @@
 # adapted BFL Flux code from https://github.com/black-forest-labs/flux
 
 import math
+import time
 from dataclasses import dataclass
 from typing import Callable, Optional
-import time
-from einops import rearrange, repeat
-import torch
-from torch import Tensor
-from nnll.constants import ExtensionType
-from nnll.save_generation import name_save_file_as, save_with_hyperchain
-from nnll.console import nfo
-from nnll.init_gpu import device, sync_torch, clear_cache
 
-from divisor.controller import ManualTimestepController, DenoisingState, rng, variation_rng
+import torch
+from einops import rearrange, repeat
+from nnll.console import nfo
+from nnll.constants import ExtensionType
+from nnll.init_gpu import clear_cache, device, sync_torch
+from nnll.save_generation import name_save_file_as, save_with_hyperchain
+from torch import Tensor
+
+from divisor.commands import process_choice
+from divisor.controller import (
+    DenoisingState,
+    ManualTimestepController,
+    rng,
+    variation_rng,
+)
 from divisor.flux_modules.autoencoder import AutoEncoder
 from divisor.flux_modules.model import Flux
 from divisor.flux_modules.text_embedder import HFEmbedder
-from divisor.commands import process_choice
 from divisor.variant import apply_variation_noise
 
 
@@ -51,7 +57,11 @@ def get_noise(
     :param seed: Seed for the random number generator
     :returns: Noise tensor"""
     # Get the generator's device to ensure compatibility
-    generator_device = rng._torch_generator.device if rng._torch_generator is not None else torch.device("cpu")
+    generator_device = (
+        rng._torch_generator.device
+        if rng._torch_generator is not None
+        else torch.device("cpu")
+    )
 
     # Create tensor on generator's device first (required for MPS compatibility)
     noise = torch.randn(
@@ -72,7 +82,9 @@ def get_noise(
     return noise
 
 
-def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:
+def prepare(
+    t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]
+) -> dict[str, Tensor]:
     """Prepare the text embeddings for the model.\n
     :param t5: T5 embedder
     :param clip: CLIP embedder
@@ -123,7 +135,9 @@ def time_shift(mu: float, sigma: float, t: Tensor) -> Tensor:
     return math.exp(mu) / (math.exp(mu) + (1 / t - 1) ** sigma)
 
 
-def get_lin_function(x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: float = 1.15) -> Callable[[float], float]:
+def get_lin_function(
+    x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: float = 1.15
+) -> Callable[[float], float]:
     m = (y2 - y1) / (x2 - x1)
     b = y1 - m * x1
     return lambda x: m * x + b
@@ -191,17 +205,30 @@ def denoise(
 
     # this is ignored for schnell
     current_layer_dropout = [initial_layer_dropout]
-    previous_step_tensor: list[Optional[Tensor]] = [None]  # Store previous step's tensor for masking
-    cached_prediction: list[Optional[Tensor]] = [None]  # Cache prediction to avoid duplicate model calls
-    cached_prediction_state: list[Optional[dict]] = [None]  # Cache state when prediction was generated
-    controller_ref: list[Optional["ManualTimestepController"]] = [None]  # Reference to controller for closure access
+    previous_step_tensor: list[Optional[Tensor]] = [
+        None
+    ]  # Store previous step's tensor for masking
+    cached_prediction: list[Optional[Tensor]] = [
+        None
+    ]  # Cache prediction to avoid duplicate model calls
+    cached_prediction_state: list[Optional[dict]] = [
+        None
+    ]  # Cache state when prediction was generated
+    controller_ref: list[Optional["ManualTimestepController"]] = [
+        None
+    ]  # Reference to controller for closure access
 
     def clear_prediction_cache():
         """Empty the prediction cache.\n"""
         cached_prediction[0] = None
         cached_prediction_state[0] = None
 
-    def get_prediction(sample: Tensor, t_curr: float, guidance_val: float, layer_dropouts_val: Optional[list[int]]) -> Tensor:
+    def get_prediction(
+        sample: Tensor,
+        t_curr: float,
+        guidance_val: float,
+        layer_dropouts_val: Optional[list[int]],
+    ) -> Tensor:
         """Generate model prediction, reusing cached prediction if state hasn't changed.\n
         :param sample: Current sample tensor
         :param t_curr: Current timestep
@@ -229,26 +256,37 @@ def denoise(
         if (
             cached_prediction[0] is not None
             and cached_prediction_state[0] is not None
-            and cached_prediction_state[0]["sample_hash"] == current_state["sample_hash"]
+            and cached_prediction_state[0]["sample_hash"]
+            == current_state["sample_hash"]
             and cached_prediction_state[0]["t_curr"] == current_state["t_curr"]
             and cached_prediction_state[0]["guidance"] == current_state["guidance"]
-            and cached_prediction_state[0]["layer_dropout"] == current_state["layer_dropout"]
+            and cached_prediction_state[0]["layer_dropout"]
+            == current_state["layer_dropout"]
         ):
             return cached_prediction[0]
 
         # Generate new prediction
-        t_vec = torch.full((sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device)
+        t_vec = torch.full(
+            (sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device
+        )
         img_input = sample
         img_input_ids = img_ids
 
         if img_cond is not None:
             img_input = torch.cat((sample, img_cond), dim=-1)
         if img_cond_seq is not None:
-            assert img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
+            assert img_cond_seq_ids is not None, (
+                "You need to provide either both or neither of the sequence conditioning"
+            )
             img_input = torch.cat((img_input, img_cond_seq), dim=1)
             img_input_ids = torch.cat((img_input_ids, img_cond_seq_ids), dim=1)
 
-        guidance_vec = (torch.full((img.shape[0],), state.guidance, device=img.device, dtype=img.dtype) * 0.0) * 0.0
+        guidance_vec = (
+            torch.full(
+                (img.shape[0],), state.guidance, device=img.device, dtype=img.dtype
+            )
+            * 0.0
+        ) * 0.0
 
         pred = model(
             img=img_input,
@@ -270,7 +308,9 @@ def denoise(
 
         return pred
 
-    def denoise_step_fn(sample: Tensor, t_curr: float, t_prev: float, guidance_val: float) -> Tensor:
+    def denoise_step_fn(
+        sample: Tensor, t_curr: float, t_prev: float, guidance_val: float
+    ) -> Tensor:
         """Single denoising step function for the controller.\n
         :param sample: Current sample tensor
         :param t_curr: Current timestep
@@ -297,10 +337,9 @@ def denoise(
                 pred = pred * mask
 
         dt = t_prev - t_curr
-        x0 = sample - t_curr * pred
 
         # Standard noise addition
-        result = (1 - (t_curr + dt)) * x0 + (t_curr + dt) * torch.randn_like(x0)
+        result = sample + dt * pred
 
         # Apply variation noise if enabled
         if controller_ref[0] is not None:
@@ -364,7 +403,12 @@ def denoise(
         if ae is not None and state.width is not None and state.height is not None:
             # Reuse cached prediction if available, otherwise generate it
             # This will be cached and reused in denoise_step_fn when advancing
-            pred_preview = get_prediction(state.current_sample, state.current_timestep, state.guidance, current_layer_dropout[0])
+            pred_preview = get_prediction(
+                state.current_sample,
+                state.current_timestep,
+                state.guidance,
+                current_layer_dropout[0],
+            )
 
             intermediate = state.current_sample - state.current_timestep * pred_preview
             intermediate = unpack(intermediate.float(), state.height, state.width)
@@ -378,13 +422,20 @@ def denoise(
                 # Apply VAE shift/scale offset by manually adjusting the decode operation
                 if state.vae_shift_offset != 0.0 or state.vae_scale_offset != 0.0:
                     # Decode with offset: z = z / (scale_factor + scale_offset) + (shift_factor + shift_offset)
-                    z_adjusted = intermediate / (ae.scale_factor + state.vae_scale_offset) + (ae.shift_factor + state.vae_shift_offset)
+                    z_adjusted = intermediate / (
+                        ae.scale_factor + state.vae_scale_offset
+                    ) + (ae.shift_factor + state.vae_shift_offset)
                     intermediate_image = ae.decoder(z_adjusted)
                 else:
                     intermediate_image = ae.decode(intermediate)
                 if state.seed is not None:
                     controller.store_state_in_chain(current_seed=state.seed)
-                save_with_hyperchain(file_path_named, intermediate_image, controller.hyperchain, ExtensionType.WEBP)
+                save_with_hyperchain(
+                    file_path_named,
+                    intermediate_image,
+                    controller.hyperchain,
+                    ExtensionType.WEBP,
+                )
 
     return controller.current_sample
 
