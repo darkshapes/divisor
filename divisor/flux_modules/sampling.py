@@ -7,15 +7,13 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 import time
 from einops import rearrange, repeat
-
 import torch
 from torch import Tensor
 from nnll.constants import ExtensionType
 from nnll.save_generation import name_save_file_as, save_with_hyperchain
 from nnll.console import nfo
-from nnll.helpers import seed_planter
-from nnll.init_gpu import device, sync_torch
-from divisor.controller import ManualTimestepController, DenoisingState
+from nnll.init_gpu import device, sync_torch, clear_cache
+from divisor.controller import ManualTimestepController, DenoisingState, rng
 
 from divisor.flux_modules.autoencoder import AutoEncoder
 from divisor.flux_modules.model import Flux
@@ -25,6 +23,8 @@ from divisor.flux_modules.util import PREFERRED_KONTEXT_RESOLUTIONS
 
 @dataclass
 class SamplingOptions:
+    """Validate sampling parameters."""
+
     prompt: str
     width: int
     height: int
@@ -37,9 +37,9 @@ def get_noise(
     num_samples: int,
     height: int,
     width: int,
-    device: torch.device,
     dtype: torch.dtype,
     seed: int,
+    device: torch.device | None = None,
 ) -> Tensor:
     """Generate noise tensor.\n
     :param num_samples: Number of samples to generate
@@ -56,7 +56,7 @@ def get_noise(
         2 * math.ceil(height / 16),
         2 * math.ceil(width / 16),
         dtype=dtype,
-        generator=torch.Generator(device="cpu").manual_seed(seed),
+        generator=rng._torch_generator,
     ).to(device)
 
 
@@ -90,6 +90,9 @@ def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[st
     vec = clip(prompt)
     if vec.shape[0] == 1 and bs > 1:
         vec = repeat(vec, "1 ... -> bs ...", bs=bs)
+
+    del clip, t5
+    clear_cache()
     return {
         "img": img,
         "img_ids": img_ids.to(img.device),
@@ -140,6 +143,47 @@ def get_schedule(
     return timesteps.tolist()
 
 
+class ImageState:
+    def __init__(self, ae: AutoEncoder) -> None:
+        self.ae = ae
+        self.intermediate_image: Tensor | None = None
+        self.latent: Tensor | None = None
+
+    def store(self, intermediate_image: Tensor) -> None:
+        """Store the decoded intermediate image tensor.\n
+        :param intermediate_image: Decoded image tensor from autoencoder
+        """
+        self.intermediate_image = intermediate_image
+
+    def update(self, current_sample: Tensor, width: int | None = None, height: int | None = None) -> Tensor:
+        """Update the latent from stored intermediate image, or return current_sample if no image stored.\n
+        :param current_sample: Current sample tensor to return if no image is stored
+        :param width: Image width (unused, kept for compatibility)
+        :param height: Image height (unused, kept for compatibility)
+        :returns: Encoded latent tensor in 3D sequence format or current_sample if no image stored
+        """
+        if self.intermediate_image is not None:
+            # Encode the image to get 4D latent [batch, channels, latent_h, latent_w]
+            encoded_latent = self.ae.encode(self.intermediate_image)
+
+            # Rearrange from 4D to 3D sequence format to match model input format
+            # The latent from VAE is [batch, 16, latent_h, latent_w], we need [batch, (latent_h/2 * latent_w/2), 64]
+            # where 64 = 16 * 2 * 2 (channels * ph * pw)
+            # Check if dimensions are compatible (must be divisible by 2)
+            latent_h = encoded_latent.shape[2]
+            latent_w = encoded_latent.shape[3]
+            if latent_h % 2 == 0 and latent_w % 2 == 0:
+                # Rearrange to sequence format: [batch, (h w), (c ph pw)]
+                self.latent = rearrange(encoded_latent, "b c (h ph) (w pw) -> b (h w) (c ph pw)", ph=2, pw=2)
+                # Ensure dtype matches current_sample to avoid MPS dtype mismatch errors
+                self.latent = self.latent.to(dtype=current_sample.dtype, device=current_sample.device)
+                return self.latent
+            else:
+                # If dimensions don't match, return current_sample
+                return current_sample
+        return current_sample
+
+
 @torch.inference_mode()
 def denoise(
     model: Flux,
@@ -150,11 +194,11 @@ def denoise(
     txt_ids: Tensor,
     vec: Tensor,
     state: DenoisingState,
+    ae: AutoEncoder,
     timesteps: list[float],  # sampling parameters
     img_cond: Tensor | None = None,  # extra img tokens (channel-wise)
     img_cond_seq: Tensor | None = None,  # extra img tokens (sequence-wise)
     img_cond_seq_ids: Tensor | None = None,
-    ae: AutoEncoder | None = None,
     torch_device: torch.device = device,
     initial_layer_dropout: Optional[list[int]] = None,
 ):
@@ -181,6 +225,7 @@ def denoise(
     cached_prediction: list[Optional[Tensor]] = [None]  # Cache prediction to avoid duplicate model calls
     cached_prediction_state: list[Optional[dict]] = [None]  # Cache state when prediction was generated
     controller_ref: list[Optional["ManualTimestepController"]] = [None]  # Reference to controller for closure access
+    image_state = ImageState(ae)
 
     def clear_prediction_cache():
         """Empty the prediction cache.\n"""
@@ -196,7 +241,13 @@ def denoise(
         :returns: Model prediction"""
         # Create a simple hash of the sample tensor for cache key (using first few values)
         # This is faster than hashing the entire tensor but should be sufficient for cache invalidation
-        sample_hash = hash((sample.shape, float(sample[0, 0, 0].item()) if sample.numel() > 0 else 0))
+        # Handle different tensor shapes safely
+        if sample.numel() > 0:
+            # Flatten and get first element for hash
+            first_val = float(sample.flatten()[0].item())
+        else:
+            first_val = 0.0
+        sample_hash = hash((sample.shape, first_val))
 
         # Check if we can reuse cached prediction
         current_state = {
@@ -308,6 +359,7 @@ def denoise(
 
     # Interactive loop
     while not controller.is_complete:
+        file_path_named = name_save_file_as(ExtensionType.WEBP)
         state = controller.current_state
         step = state.timestep_index
         nfo(f"\nStep {step}/{state.total_timesteps} @ noise level {state.current_timestep:.4f}")
@@ -326,6 +378,7 @@ def denoise(
         choice = input(": [BGLSRV] advance with Enter: ").lower().strip()
 
         if choice == "":
+            state.current_sample = image_state.update(state.current_sample, state.width, state.height)
             controller.step()
         elif choice == "g":
             try:
@@ -388,12 +441,10 @@ def denoise(
                 current_seed = state.seed if state.seed is not None else 0
                 seed_input = input(f"Enter new seed number (current: {current_seed}, or press Enter for random): ").strip()
                 if seed_input == "":
-                    # Generate random seed
-                    new_seed = int(torch.randint(0, 2**31, (1,)).item())
+                    new_seed = rng.next_seed()
                 else:
-                    new_seed = int(seed_input)
+                    new_seed = rng.next_seed(int(seed_input))
                 controller.set_seed(new_seed)
-                seed_planter(new_seed)
                 clear_prediction_cache()
                 nfo(f"Seed set to: {new_seed}")
             except ValueError:
@@ -449,7 +500,9 @@ def denoise(
         # Generate preview
         t0 = time.perf_counter()
         if state.seed is not None:
-            seed_planter(state.seed)
+            rng.next_seed(state.seed)
+        else:
+            state.seed = rng.next_seed()
         if ae is not None and state.width is not None and state.height is not None:
             # Reuse cached prediction if available, otherwise generate it
             # This will be cached and reused in denoise_step_fn when advancing
@@ -471,10 +524,11 @@ def denoise(
                     intermediate_image = ae.decoder(z_adjusted)
                 else:
                     intermediate_image = ae.decode(intermediate)
-                file_path_named = name_save_file_as(ExtensionType.WEBP)
+                image_state.store(intermediate_image)
                 if state.seed is not None:
                     controller.store_state_in_chain(current_seed=state.seed)
                 save_with_hyperchain(file_path_named, intermediate_image, controller.hyperchain, ExtensionType.WEBP)
+
     return controller.current_sample
 
 
