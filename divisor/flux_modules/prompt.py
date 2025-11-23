@@ -218,6 +218,8 @@ def main(
             state=state,
             ae=ae,
             torch_device=torch_device,
+            t5=t5,
+            clip=clip,
         )
 
         if loop:
