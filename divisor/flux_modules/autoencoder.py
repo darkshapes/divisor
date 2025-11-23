@@ -335,6 +335,10 @@ class AutoEncoder(nn.Module):
         self.shift_factor = params.shift_factor
 
     def encode(self, x: Tensor) -> Tensor:
+        # Get encoder dtype for proper type matching
+        encoder_dtype = next(self.encoder.parameters()).dtype
+        # Convert input to match encoder dtype
+        x = x.to(encoder_dtype)
         z = self.reg(self.encoder(x))
         z = self.scale_factor * (z - self.shift_factor)
         return z

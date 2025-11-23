@@ -7,15 +7,13 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 import time
 from einops import rearrange, repeat
-
 import torch
 from torch import Tensor
 from nnll.constants import ExtensionType
 from nnll.save_generation import name_save_file_as, save_with_hyperchain
 from nnll.console import nfo
-from nnll.helpers import seed_planter
-from nnll.init_gpu import device, sync_torch
-from divisor.controller import ManualTimestepController, DenoisingState
+from nnll.init_gpu import device, sync_torch, clear_cache
+from divisor.controller import ManualTimestepController, DenoisingState, rng
 
 from divisor.flux_modules.autoencoder import AutoEncoder
 from divisor.flux_modules.model import Flux
@@ -25,6 +23,8 @@ from divisor.flux_modules.util import PREFERRED_KONTEXT_RESOLUTIONS
 
 @dataclass
 class SamplingOptions:
+    """Validate sampling parameters."""
+
     prompt: str
     width: int
     height: int
@@ -37,9 +37,9 @@ def get_noise(
     num_samples: int,
     height: int,
     width: int,
-    device: torch.device,
     dtype: torch.dtype,
     seed: int,
+    device: torch.device | None = None,
 ) -> Tensor:
     """Generate noise tensor.\n
     :param num_samples: Number of samples to generate
@@ -56,7 +56,7 @@ def get_noise(
         2 * math.ceil(height / 16),
         2 * math.ceil(width / 16),
         dtype=dtype,
-        generator=torch.Generator(device="cpu").manual_seed(seed),
+        generator=rng._torch_generator,
     ).to(device)
 
 
@@ -90,6 +90,9 @@ def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[st
     vec = clip(prompt)
     if vec.shape[0] == 1 and bs > 1:
         vec = repeat(vec, "1 ... -> bs ...", bs=bs)
+
+    del clip, t5
+    clear_cache()
     return {
         "img": img,
         "img_ids": img_ids.to(img.device),
@@ -150,11 +153,11 @@ def denoise(
     txt_ids: Tensor,
     vec: Tensor,
     state: DenoisingState,
+    ae: AutoEncoder,
     timesteps: list[float],  # sampling parameters
     img_cond: Tensor | None = None,  # extra img tokens (channel-wise)
     img_cond_seq: Tensor | None = None,  # extra img tokens (sequence-wise)
     img_cond_seq_ids: Tensor | None = None,
-    ae: AutoEncoder | None = None,
     torch_device: torch.device = device,
     initial_layer_dropout: Optional[list[int]] = None,
 ):
@@ -196,7 +199,13 @@ def denoise(
         :returns: Model prediction"""
         # Create a simple hash of the sample tensor for cache key (using first few values)
         # This is faster than hashing the entire tensor but should be sufficient for cache invalidation
-        sample_hash = hash((sample.shape, float(sample[0, 0, 0].item()) if sample.numel() > 0 else 0))
+        # Handle different tensor shapes safely
+        if sample.numel() > 0:
+            # Flatten and get first element for hash
+            first_val = float(sample.flatten()[0].item())
+        else:
+            first_val = 0.0
+        sample_hash = hash((sample.shape, first_val))
 
         # Check if we can reuse cached prediction
         current_state = {
@@ -308,6 +317,7 @@ def denoise(
 
     # Interactive loop
     while not controller.is_complete:
+        file_path_named = name_save_file_as(ExtensionType.WEBP)
         state = controller.current_state
         step = state.timestep_index
         nfo(f"\nStep {step}/{state.total_timesteps} @ noise level {state.current_timestep:.4f}")
@@ -388,12 +398,10 @@ def denoise(
                 current_seed = state.seed if state.seed is not None else 0
                 seed_input = input(f"Enter new seed number (current: {current_seed}, or press Enter for random): ").strip()
                 if seed_input == "":
-                    # Generate random seed
-                    new_seed = int(torch.randint(0, 2**31, (1,)).item())
+                    new_seed = rng.next_seed()
                 else:
-                    new_seed = int(seed_input)
+                    new_seed = rng.next_seed(int(seed_input))
                 controller.set_seed(new_seed)
-                seed_planter(new_seed)
                 clear_prediction_cache()
                 nfo(f"Seed set to: {new_seed}")
             except ValueError:
@@ -449,7 +457,9 @@ def denoise(
         # Generate preview
         t0 = time.perf_counter()
         if state.seed is not None:
-            seed_planter(state.seed)
+            rng.next_seed(state.seed)
+        else:
+            state.seed = rng.next_seed()
         if ae is not None and state.width is not None and state.height is not None:
             # Reuse cached prediction if available, otherwise generate it
             # This will be cached and reused in denoise_step_fn when advancing
@@ -471,10 +481,10 @@ def denoise(
                     intermediate_image = ae.decoder(z_adjusted)
                 else:
                     intermediate_image = ae.decode(intermediate)
-                file_path_named = name_save_file_as(ExtensionType.WEBP)
                 if state.seed is not None:
                     controller.store_state_in_chain(current_seed=state.seed)
                 save_with_hyperchain(file_path_named, intermediate_image, controller.hyperchain, ExtensionType.WEBP)
+
     return controller.current_sample
 
 
