@@ -446,21 +446,8 @@ class ManualTimestepController:
         """Set deterministic mode for PyTorch operations.\n
         :param deterministic: Whether to use deterministic algorithms (False = non-deterministic, True = deterministic)
         """
-        import torch
 
         self.deterministic = deterministic
-        # Set torch deterministic settings (False = non-deterministic, True = deterministic)
-        torch.use_deterministic_algorithms(deterministic)
-        torch.backends.cudnn.deterministic = deterministic
-        # MPS deterministic setting (if available)
-        if hasattr(torch.backends.mps, "is_available") and torch.backends.mps.is_available():
-            try:
-                # Access MPS deterministic setting via getattr to avoid linter issues
-                mps_torch = getattr(torch.backends.mps, "torch", None)
-                if mps_torch is not None and hasattr(mps_torch, "use_deterministic_algorithms"):
-                    mps_torch.use_deterministic_algorithms(deterministic)
-            except AttributeError:
-                pass
 
     def store_state_in_chain(self, current_seed: int | None = None, serialized_state_int: int | None = None) -> Optional[Any]:
         """Store the current DenoisingState in HyperChain, excluding current_sample and adding current_seed.

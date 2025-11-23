@@ -179,7 +179,7 @@ def main(
             previous_timestep=None,
             current_sample=x,
             timestep_index=0,
-            total_timesteps=len(timesteps),
+            total_timesteps=len(timesteps) - 1,
             layer_dropout=None,
             guidance=opts.guidance,
             seed=rng.seed,
@@ -187,6 +187,7 @@ def main(
             height=opts.height,
             prompt=opts.prompt,
             num_steps=opts.num_steps,
+            deterministic=bool(torch.get_deterministic_debug_mode()),
         )
         # offload TEs to CPU, load model to gpu
         if offload:
