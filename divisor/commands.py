@@ -39,7 +39,7 @@ def process_choice(
     """
     # Display status
     step = state.timestep_index
-    nfo(f"\nStep {step}/{state.total_timesteps} @ noise level {state.current_timestep:.4f}")
+    nfo(f"Step {step}/{state.total_timesteps} @ noise level {state.current_timestep:.4f}")
     nfo(f"[G]uidance: {state.guidance:.2f}")
     nfo(f"[S]eed: {state.seed}")
     if state.width is not None and state.height is not None:
@@ -129,17 +129,10 @@ def change_layer_dropout(
             layer_indices = None
         else:
             layer_indices = [int(x.strip()) for x in dropout_input.split(",")]
-        controller.set_layer_dropout(layer_indices)
-        state = controller.current_state
-        current_layer_dropout[0] = controller.layer_dropout
-        clear_prediction_cache()
-        if layer_indices is None:
-            nfo("Layer dropout cleared")
-        else:
-            nfo(f"Layer dropout set to: {layer_indices}")
+        return update_state_and_cache(controller, controller.set_layer_dropout, layer_indices, clear_prediction_cache, f"Layer dropout set to: {layer_indices}")
     except ValueError:
         nfo("Invalid layer indices, keeping current value")
-    return state
+    return controller.current_state
 
 
 def change_resolution(
@@ -170,20 +163,17 @@ def change_resolution(
                 height_input = input("Enter height: ").strip()
                 new_width = int(width_input)
                 new_height = int(height_input)
-                controller.set_resolution(new_width, new_height)
-                clear_prediction_cache()
-                state = controller.current_state
-                nfo(f"Resolution set to: {new_width}x{new_height}")
             else:
                 resolution_idx = int(resolution_input)
                 if 0 <= resolution_idx < len(valid_resolutions):
                     new_width, new_height = valid_resolutions[resolution_idx]
-                    controller.set_resolution(new_width, new_height)
-                    clear_prediction_cache()
-                    state = controller.current_state
-                    nfo(f"Resolution set to: {new_width}x{new_height}")
                 else:
                     nfo("Invalid resolution index, keeping current value")
+                    return state
+            if new_width is not None and new_height is not None:
+                return update_state_and_cache(
+                    controller, controller.set_resolution, (new_width, new_height), clear_prediction_cache, f"Resolution set to: {new_width}x{new_height}"
+                )
     except (ValueError, IndexError):
         nfo("Invalid resolution input, keeping current value")
     return state

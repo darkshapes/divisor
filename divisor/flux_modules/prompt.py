@@ -179,7 +179,7 @@ def main(
             previous_timestep=None,
             current_sample=x,
             timestep_index=0,
-            total_timesteps=len(timesteps),
+            total_timesteps=len(timesteps) - 1,
             layer_dropout=None,
             guidance=opts.guidance,
             seed=rng.seed,
