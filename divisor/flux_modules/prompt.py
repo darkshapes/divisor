@@ -84,7 +84,7 @@ def main(
     name: str = f"flux-{MODEL_TYPE}",
     width: int = 1360,
     height: int = 768,
-    seed: int | None = None,
+    seed: int | None = rng.next_seed(),
     prompt: str = (""),
     # ('a photo of a forest with mist swirling around the tree trunks. The word "FLUX" is painted over it in big, red brush strokes with visible texture'),
     device: torch.device = device,

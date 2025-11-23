@@ -12,8 +12,10 @@ import json
 import torch
 from nnll.hyperchain import HyperChain
 from nnll.random import RNGState
+from nnll.init_gpu import device
 
-rng = RNGState(device="cpu")
+rng = RNGState(device=device.type)
+variation_rng = RNGState(device=device.type)
 
 
 def time_shift(
@@ -83,6 +85,9 @@ def reconstruct_state_from_dict(state_dict: dict, current_sample: torch.Tensor) 
         vae_shift_offset=state_dict.get("vae_shift_offset", 0.0),
         vae_scale_offset=state_dict.get("vae_scale_offset", 0.0),
         use_previous_as_mask=state_dict.get("use_previous_as_mask", False),
+        variation_seed=state_dict.get("variation_seed"),
+        variation_strength=state_dict.get("variation_strength", 0.0),
+        deterministic=state_dict.get("deterministic", False),
     )
 
 
@@ -105,6 +110,9 @@ class DenoisingState:
     vae_shift_offset: float = 0.0
     vae_scale_offset: float = 0.0
     use_previous_as_mask: bool = False
+    variation_seed: Optional[int] = None
+    variation_strength: float = 0.0
+    deterministic: bool = False
 
 
 class ManualTimestepController:
@@ -157,6 +165,9 @@ class ManualTimestepController:
         self.vae_shift_offset: float = 0.0
         self.vae_scale_offset: float = 0.0
         self.use_previous_as_mask: bool = False
+        self.variation_seed: Optional[int] = None
+        self.variation_strength: float = 0.0
+        self.deterministic: bool = False
         if self.hyperchain is not None and len(self.hyperchain.chain) == 0:
             self.hyperchain.synthesize_genesis_block()
 
@@ -187,6 +198,9 @@ class ManualTimestepController:
             vae_shift_offset=self.vae_shift_offset,
             vae_scale_offset=self.vae_scale_offset,
             use_previous_as_mask=self.use_previous_as_mask,
+            variation_seed=self.variation_seed,
+            variation_strength=self.variation_strength,
+            deterministic=self.deterministic,
         )
 
     def step(self) -> DenoisingState:
@@ -415,6 +429,38 @@ class ManualTimestepController:
         :param use_mask: Whether to use previous step tensor as mask for next step
         """
         self.use_previous_as_mask = use_mask
+
+    def set_variation_seed(self, seed: int | None = None):
+        """Set the variation seed for adding variation noise.\n
+        :param seed: Variation seed value, or None to disable
+        """
+        self.variation_seed = seed
+
+    def set_variation_strength(self, strength: float):
+        """Set the variation strength (0.0 to 1.0).\n
+        :param strength: Variation strength, where 0.0 = no variation, 1.0 = full variation
+        """
+        self.variation_strength = max(0.0, min(1.0, strength))
+
+    def set_deterministic(self, deterministic: bool):
+        """Set deterministic mode for PyTorch operations.\n
+        :param deterministic: Whether to use deterministic algorithms (False = non-deterministic, True = deterministic)
+        """
+        import torch
+
+        self.deterministic = deterministic
+        # Set torch deterministic settings (False = non-deterministic, True = deterministic)
+        torch.use_deterministic_algorithms(deterministic)
+        torch.backends.cudnn.deterministic = deterministic
+        # MPS deterministic setting (if available)
+        if hasattr(torch.backends.mps, "is_available") and torch.backends.mps.is_available():
+            try:
+                # Access MPS deterministic setting via getattr to avoid linter issues
+                mps_torch = getattr(torch.backends.mps, "torch", None)
+                if mps_torch is not None and hasattr(mps_torch, "use_deterministic_algorithms"):
+                    mps_torch.use_deterministic_algorithms(deterministic)
+            except AttributeError:
+                pass
 
     def store_state_in_chain(self, current_seed: int | None = None, serialized_state_int: int | None = None) -> Optional[Any]:
         """Store the current DenoisingState in HyperChain, excluding current_sample and adding current_seed.
