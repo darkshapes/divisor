@@ -10,15 +10,15 @@ from einops import rearrange, repeat
 import torch
 from torch import Tensor
 from nnll.constants import ExtensionType
+from nnll.helpers import generate_valid_resolutions
 from nnll.save_generation import name_save_file_as, save_with_hyperchain
 from nnll.console import nfo
 from nnll.init_gpu import device, sync_torch, clear_cache
-from divisor.controller import ManualTimestepController, DenoisingState, rng
 
+from divisor.controller import ManualTimestepController, DenoisingState, rng
 from divisor.flux_modules.autoencoder import AutoEncoder
 from divisor.flux_modules.model import Flux
 from divisor.flux_modules.text_embedder import HFEmbedder
-from divisor.flux_modules.util import PREFERRED_KONTEXT_RESOLUTIONS
 
 
 @dataclass
@@ -366,31 +366,35 @@ def denoise(
                 nfo("Invalid layer indices, keeping current value")
         elif choice == "r":
             try:
-                nfo("\nPreferred resolutions:")
-                for i, (w, h) in enumerate(PREFERRED_KONTEXT_RESOLUTIONS):
-                    current_marker = ""
-                    if state.width == w and state.height == h:
-                        current_marker = " (current)"
-                    nfo(f"  {i}: {w}x{h}{current_marker}")
-                resolution_input = input(f"\nEnter resolution index (0-{len(PREFERRED_KONTEXT_RESOLUTIONS) - 1}) or 'custom' for custom: ").strip()
-                if resolution_input.lower() == "custom":
-                    width_input = input("Enter width: ").strip()
-                    height_input = input("Enter height: ").strip()
-                    new_width = int(width_input)
-                    new_height = int(height_input)
-                    controller.set_resolution(new_width, new_height)
-                    clear_prediction_cache()
-                    nfo(f"Resolution set to: {new_width}x{new_height}")
+                if state.width is None or state.height is None:
+                    nfo("Cannot generate resolutions: width or height not set")
                 else:
-                    resolution_idx = int(resolution_input)
-                    if 0 <= resolution_idx < len(PREFERRED_KONTEXT_RESOLUTIONS):
-                        new_width, new_height = PREFERRED_KONTEXT_RESOLUTIONS[resolution_idx]
+                    # Generate valid resolutions based on current resolution
+                    valid_resolutions = generate_valid_resolutions(state.width, state.height)
+                    nfo("\nValid resolutions (same patch count):")
+                    for i, (w, h) in enumerate(valid_resolutions):
+                        current_marker = ""
+                        if state.width == w and state.height == h:
+                            current_marker = " (current)"
+                        nfo(f"  {i}: {w}x{h}{current_marker}")
+                    resolution_input = input(f"\nEnter resolution index (0-{len(valid_resolutions) - 1}) or 'custom' for custom: ").strip()
+                    if resolution_input.lower() == "custom":
+                        width_input = input("Enter width: ").strip()
+                        height_input = input("Enter height: ").strip()
+                        new_width = int(width_input)
+                        new_height = int(height_input)
                         controller.set_resolution(new_width, new_height)
                         clear_prediction_cache()
                         nfo(f"Resolution set to: {new_width}x{new_height}")
-
                     else:
-                        nfo("Invalid resolution index, keeping current value")
+                        resolution_idx = int(resolution_input)
+                        if 0 <= resolution_idx < len(valid_resolutions):
+                            new_width, new_height = valid_resolutions[resolution_idx]
+                            controller.set_resolution(new_width, new_height)
+                            clear_prediction_cache()
+                            nfo(f"Resolution set to: {new_width}x{new_height}")
+                        else:
+                            nfo("Invalid resolution index, keeping current value")
             except (ValueError, IndexError):
                 nfo("Invalid resolution input, keeping current value")
         elif choice == "s":
