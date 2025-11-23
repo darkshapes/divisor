@@ -11,6 +11,9 @@ from dataclasses import dataclass, asdict
 import json
 import torch
 from nnll.hyperchain import HyperChain
+from nnll.random import RNGState
+
+rng = RNGState(device="cpu")
 
 
 def time_shift(

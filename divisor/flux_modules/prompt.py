@@ -3,22 +3,18 @@
 
 import torch
 from fire import Fire
+from nnll.init_gpu import clear_cache, device
 
-from divisor.hardware import clear_cache, device
-from divisor.controller import DenoisingState
-from divisor.flux_modules.sampling import (
-    SamplingOptions,
-    denoise,
-    get_noise,
-    get_schedule,
-    prepare,
-)
+
+from divisor.controller import DenoisingState, rng
+from divisor.flux_modules.sampling import SamplingOptions, denoise, get_noise, get_schedule, prepare
 from divisor.flux_modules.util import (
     configs,
     load_ae,
     load_clip,
     load_flow_model,
     load_t5,
+    MODEL_TYPE,
 )
 
 
@@ -85,18 +81,17 @@ def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
 
 @torch.inference_mode()
 def main(
-    name: str = "flux-schnell",
+    name: str = f"flux-{MODEL_TYPE}",
     width: int = 1360,
     height: int = 768,
     seed: int | None = None,
-    prompt: str = ('a photo of a forest with mist swirling around the tree trunks. The word "FLUX" is painted over it in big, red brush strokes with visible texture'),
+    prompt: str = (""),
+    # ('a photo of a forest with mist swirling around the tree trunks. The word "FLUX" is painted over it in big, red brush strokes with visible texture'),
     device: torch.device = device,
     num_steps: int | None = None,
     loop: bool = False,
-    guidance: float = 2.5,
+    guidance: float = 4.0,  # 2.5, 4.0
     offload: bool = False,
-    output_dir: str = "output",
-    add_sampling_metadata: bool = True,
 ):
     """Sample the flux model. Either interactively (set `--loop`) or run for a single image.
 
@@ -110,7 +105,6 @@ def main(
     :param num_steps: number of sampling steps (default 4 for schnell, 28 for guidance distilled)
     :param loop: start an interactive session and sample multiple times
     :param guidance: guidance value used for guidance distillation
-    :param add_sampling_metadata: Add the prompt to the image Exif metadata
     """
 
     prompt_parts = prompt.split("|")
@@ -140,8 +134,7 @@ def main(
     model = load_flow_model(name, device="cpu" if offload else torch_device)
     ae = load_ae(name, device="cpu" if offload else torch_device)
 
-    rng_type_a = torch.Generator(device="cpu")
-    rng_type_b = int(torch.randint(0, 2**31, (1,)).item())
+    # Validate user inputs
     opts = SamplingOptions(
         prompt=prompt,
         width=width,
@@ -156,8 +149,12 @@ def main(
 
     while opts is not None:
         if opts.seed is None:
-            opts.seed = rng_type_a.seed()
-        print(f"Generating with seed {opts.seed}:\n{opts.prompt}")
+            opts.seed = rng.next_seed()
+        else:
+            rng.next_seed(opts.seed)
+        # At this point, opts.seed is guaranteed to be an int
+        assert opts.seed is not None, "Seed must be set"
+        print(f"Generating with seed {rng.seed}:\n{opts.prompt}")
 
         x = get_noise(
             1,
@@ -165,11 +162,10 @@ def main(
             opts.width,
             device=torch_device,
             dtype=torch.bfloat16,
-            seed=opts.seed,
+            seed=rng.seed,  # type: ignore
         )
 
         # prepare input
-
         opts.seed = None
         if offload:
             ae = ae.cpu()
@@ -186,7 +182,7 @@ def main(
             total_timesteps=len(timesteps),
             layer_dropout=None,
             guidance=opts.guidance,
-            seed=opts.seed,
+            seed=rng.seed,
             width=opts.width,
             height=opts.height,
             prompt=opts.prompt,
