@@ -187,6 +187,7 @@ def main(
             height=opts.height,
             prompt=opts.prompt,
             num_steps=opts.num_steps,
+            deterministic=bool(torch.get_deterministic_debug_mode()),
         )
         # offload TEs to CPU, load model to gpu
         if offload:
