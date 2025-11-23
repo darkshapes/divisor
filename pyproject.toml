@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "divisor"
 version = "0.1.0"
@@ -27,6 +31,12 @@ exclude = [
   "**/__pycache__", # cache directories
   "./typings",      # generated type stubs
 ]
+[tool.setuptools]
+packages = ["divisor"]
+
+[tool.setuptools.package-data]
+"*" = ["*.txt", "*.md"]
+
 [tool.uv]
 package = true
 preview = true
