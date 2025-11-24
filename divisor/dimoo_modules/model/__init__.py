@@ -1,0 +1,1 @@
+from divisor.dimoo_modules.model.modeling_xllmx_dimoo import LLaDAForMultiModalGeneration

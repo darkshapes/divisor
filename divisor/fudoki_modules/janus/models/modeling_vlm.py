@@ -222,8 +222,25 @@ class MultiModalityCausalLM(MultiModalityPreTrainedModel):
         import torch.nn.functional as F
         from typing import Optional, Tuple
 
+        # Try to find rotary_emb - it might be at model level or layer level
+        model_rotary_emb = getattr(self.language_model.model, "rotary_emb", None)
+
         for layer_idx, layer in enumerate(self.language_model.model.layers):
             if hasattr(layer, "self_attn"):
+                # Get config values for this layer
+                # Access config through the model
+                config = self.language_model.config
+                num_heads = config.num_attention_heads
+                num_key_value_heads = getattr(config, "num_key_value_heads", num_heads)
+                head_dim = config.hidden_size // num_heads
+                num_key_value_groups = num_heads // num_key_value_heads
+
+                # Try to get rotary_emb from various locations
+                # It might be at model level, layer level, or attention level
+                layer_rotary_emb = getattr(layer, "rotary_emb", None)
+                attn_rotary_emb = getattr(layer.self_attn, "rotary_emb", None)
+                # Use the first available one
+                rotary_emb = model_rotary_emb or layer_rotary_emb or attn_rotary_emb
 
                 def full_attention_forward(
                     self,
@@ -235,29 +252,37 @@ class MultiModalityCausalLM(MultiModalityPreTrainedModel):
                     use_cache: bool = False,
                     cache_position: Optional[torch.LongTensor] = None,
                     **kwargs,
-                ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+                ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
                     bsz, q_len, _ = hidden_states.size()
 
                     query_states = self.q_proj(hidden_states)
                     key_states = self.k_proj(hidden_states)
                     value_states = self.v_proj(hidden_states)
 
-                    query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-                    key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-                    value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+                    query_states = query_states.view(bsz, q_len, num_heads, head_dim).transpose(1, 2)
+                    key_states = key_states.view(bsz, q_len, num_key_value_heads, head_dim).transpose(1, 2)
+                    value_states = value_states.view(bsz, q_len, num_key_value_heads, head_dim).transpose(1, 2)
 
-                    cos, sin = self.rotary_emb(value_states, position_ids)
+                    # Access rotary_emb - use the one we found earlier
+                    if rotary_emb is None:
+                        raise AttributeError(
+                            "Could not find rotary_emb in model. "
+                            "Checked model.rotary_emb, layer.rotary_emb, and self_attn.rotary_emb. "
+                            "This may indicate an incompatible model structure."
+                        )
+
+                    cos, sin = rotary_emb(value_states, position_ids)
                     query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-                    key_states = repeat_kv(key_states, self.num_key_value_groups)
-                    value_states = repeat_kv(value_states, self.num_key_value_groups)
+                    key_states = repeat_kv(key_states, num_key_value_groups)
+                    value_states = repeat_kv(value_states, num_key_value_groups)
 
                     # After repeat_kv, key_states and value_states should have num_heads dimension
                     # Reshape to (bsz, q_len, num_heads, head_dim) format
-                    query_states = query_states.contiguous().transpose(1, 2).contiguous().reshape(bsz, q_len, self.num_heads, self.head_dim).contiguous()
+                    query_states = query_states.contiguous().transpose(1, 2).contiguous().reshape(bsz, q_len, num_heads, head_dim).contiguous()
                     # Note: repeat_kv already expanded key/value to num_heads, so reshape accordingly
-                    key_states = key_states.contiguous().transpose(1, 2).contiguous().reshape(bsz, q_len, self.num_heads, self.head_dim).contiguous()
-                    value_states = value_states.contiguous().transpose(1, 2).contiguous().reshape(bsz, q_len, self.num_heads, self.head_dim).contiguous()
+                    key_states = key_states.contiguous().transpose(1, 2).contiguous().reshape(bsz, q_len, num_heads, head_dim).contiguous()
+                    value_states = value_states.contiguous().transpose(1, 2).contiguous().reshape(bsz, q_len, num_heads, head_dim).contiguous()
 
                     # Convert to (bsz, num_heads, q_len, head_dim) for scaled_dot_product_attention
                     query_states = query_states.transpose(1, 2)  # (bsz, num_heads, q_len, head_dim)
@@ -266,20 +291,62 @@ class MultiModalityCausalLM(MultiModalityPreTrainedModel):
 
                     # Create attention mask: convert attention_mask to proper format
                     # attention_mask is (bsz, q_len) with 1s for valid tokens
+                    # scaled_dot_product_attention expects mask of shape (..., q_len, q_len)
                     if attention_mask is not None:
-                        # Expand attention_mask to (bsz, 1, 1, q_len) for broadcasting
-                        attn_mask = attention_mask[:, None, None, :].to(dtype=query_states.dtype)
-                        attn_mask = (1.0 - attn_mask) * torch.finfo(query_states.dtype).min
+                        # Normalize attention_mask to (bsz, q_len) shape
+                        if attention_mask.dim() > 2:
+                            attention_mask = attention_mask.view(-1, attention_mask.shape[-1])
+                        elif attention_mask.dim() == 1:
+                            # (q_len,) -> (1, q_len)
+                            attention_mask = attention_mask.unsqueeze(0)
+
+                        # Ensure batch dimension is correct
+                        # If first dim is q_len, it might be transposed
+                        if attention_mask.shape[0] == q_len and attention_mask.shape[1] != q_len:
+                            attention_mask = attention_mask.transpose(0, 1)
+
+                        # Ensure we have (bsz, q_len)
+                        if attention_mask.shape[0] != bsz:
+                            if attention_mask.shape[0] == 1:
+                                # Broadcast single batch to all batches
+                                attention_mask = attention_mask.expand(bsz, -1)
+                            elif attention_mask.shape[0] > bsz:
+                                # Take first bsz items
+                                attention_mask = attention_mask[:bsz]
+                            else:
+                                # Repeat to match
+                                n_repeats = (bsz + attention_mask.shape[0] - 1) // attention_mask.shape[0]
+                                attention_mask = attention_mask.repeat(n_repeats, 1)[:bsz]
+
+                        # Ensure sequence length matches
+                        if attention_mask.shape[1] != q_len:
+                            if attention_mask.shape[1] > q_len:
+                                attention_mask = attention_mask[:, :q_len]
+                            else:
+                                # Pad with zeros (masked)
+                                pad_size = q_len - attention_mask.shape[1]
+                                attention_mask = torch.cat([attention_mask, torch.zeros(bsz, pad_size, device=attention_mask.device, dtype=attention_mask.dtype)], dim=1)
+
+                        # Create 2D attention matrix: (bsz, q_len, q_len)
+                        # Mask out positions where either query or key is invalid
+                        attn_mask_2d = attention_mask.unsqueeze(-1) * attention_mask.unsqueeze(-2)  # (bsz, q_len, q_len)
+                        attn_mask_2d = attn_mask_2d.to(dtype=query_states.dtype)
+                        # Convert to -inf for masked positions (0 -> -inf, 1 -> 0)
+                        attn_mask = (1.0 - attn_mask_2d) * torch.finfo(query_states.dtype).min
+                        # Expand to (bsz, 1, q_len, q_len) for broadcasting with heads
+                        attn_mask = attn_mask.unsqueeze(1)  # (bsz, 1, q_len, q_len)
                     else:
                         attn_mask = None
 
                     # Use PyTorch's scaled_dot_product_attention
+                    # Get dropout from config or use 0.0 as default
+                    attention_dropout = getattr(self, "attention_dropout", getattr(config, "attention_dropout", 0.0))
                     attn_output = F.scaled_dot_product_attention(
                         query_states,
                         key_states,
                         value_states,
                         attn_mask=attn_mask,
-                        dropout_p=self.attention_dropout if self.training else 0.0,
+                        dropout_p=attention_dropout if self.training else 0.0,
                         is_causal=False,  # Full attention, not causal
                     )
 
@@ -288,11 +355,10 @@ class MultiModalityCausalLM(MultiModalityPreTrainedModel):
                     attn_output = attn_output.reshape(bsz, q_len, -1)  # (bsz, q_len, num_heads * head_dim)
                     attn_output = self.o_proj(attn_output)
 
-                    # scaled_dot_product_attention doesn't return attention weights
-                    # Set to None (can be computed separately if needed)
-                    attn_weights = None
-
-                    return attn_output, attn_weights, past_key_value
+                    # Return format expected by transformers: (attn_output, cache_or_weights)
+                    # The calling code unpacks as: hidden_states, _ = self.self_attn(...)
+                    # So we need exactly 2 values. The second is ignored but must be present.
+                    return attn_output, None
 
                 # Bind the modified forward method
                 layer.self_attn.forward = types.MethodType(full_attention_forward, layer.self_attn)

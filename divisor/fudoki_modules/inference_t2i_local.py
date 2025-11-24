@@ -4,11 +4,9 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 import torch
-import torch.distributed as dist
-from torchvision import transforms
-import torch.backends.cudnn as cudnn
-from matplotlib import pyplot as plt
 from nnll.init_gpu import device
+from nnll.random import RNGState
+from huggingface_hub import snapshot_download
 
 from divisor.fudoki_modules.eval_loop import CFGScaledModel
 from divisor.fudoki_modules.flow_matching.path import MixtureDiscreteSoftmaxProbPath
@@ -22,37 +20,66 @@ VOCABULARY_SIZE_IMG = 16384
 IMG_LEN = 576
 CFG_SCALE = 5.0
 
+# https://huggingface.co/LucasJinWang/FUDOKI/
+
 
 def parse_arguments():
+    CHECKPOINT_PATH = snapshot_download(repo_id="LucasJinWang/FUDOKI")
+
     parser = argparse.ArgumentParser(description="Run the script with custom arguments.")
     parser.add_argument("--seed", type=int, default=999, help="Random seed for reproducibility.")
     parser.add_argument("--batch_size", type=int, default=1, help="Batch size for processing.")
-    parser.add_argument("--checkpoint_path", type=str, required=True, help="Path to the checkpoint directory.")
-    parser.add_argument("--text_embedding_path", type=str, required=True, help="Path to the text embedding.")
-    parser.add_argument("--image_embedding_path", type=str, required=True, help="Path to the image embedding.")
-    parser.add_argument("--discrete_fm_steps", type=int, default=128, help="Inference steps for discrete flow matching")
+    parser.add_argument("--checkpoint_path", type=str, required=False, default=CHECKPOINT_PATH, help="Path to the checkpoint directory.")
+    parser.add_argument("--text_embedding_path", type=str, default=None, help="Path to the text embedding. Defaults to {checkpoint_path}/text_embedding.pt")
+    parser.add_argument("--image_embedding_path", type=str, default=None, help="Path to the image embedding. Defaults to {checkpoint_path}/image_embedding.pt")
+    parser.add_argument("--discrete_fm_steps", type=int, default=50, help="Inference steps for discrete flow matching")
     parser.add_argument("--txt_max_length", type=int, default=500, help="Text length maximum")
-    parser.add_argument("--output_dir", type=str, required=True, help="Directory to save the output files.")
+    parser.add_argument("--output_dir", type=str, default="./fudoki_output", help="Directory to save the output files.")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_arguments()
-    seed = args.seed
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    cudnn.benchmark = True
-    local_rank = int(os.getenv("RANK", 0))
+    rng = RNGState()
+    rng.next_seed(args.seed)
+    torch.manual_seed(rng.seed)
+    np.random.seed(rng.seed)
+
+    # Optional: Enable CUDA optimizations if available
+    if torch.cuda.is_available():
+        import torch.backends.cudnn as cudnn
+
+        cudnn.benchmark = True
+
+    # Optional distributed training setup (only for multi-GPU)
     world_size = int(os.getenv("WORLD_SIZE", 1))
-    torch.cuda.set_device(local_rank)
-    print("world_size", world_size)
-    print("local_rank", local_rank)
-    dist.init_process_group(backend="nccl", init_method="env://", world_size=world_size, rank=local_rank)
-    device = device.type
+    if world_size > 1:
+        import torch.distributed as dist
+
+        local_rank = int(os.getenv("RANK", 0))
+        if device.type == "cuda":
+            torch.cuda.set_device(local_rank)
+        print("world_size", world_size)
+        print("local_rank", local_rank)
+        # Use appropriate backend based on device
+        backend = "nccl" if device.type == "cuda" else "gloo"
+        dist.init_process_group(backend=backend, init_method="env://", world_size=world_size, rank=local_rank)
+
+    # Use device directly (already handles cuda/mps/cpu)
+    torch_device = device
 
     checkpoint_path = Path(args.checkpoint_path)
     model_path = args.checkpoint_path
-    model = instantiate_model(model_path).to(device).to(torch.float32)
+
+    # Set default embedding paths based on checkpoint_path if not provided
+    text_embedding_path = args.text_embedding_path
+    if text_embedding_path is None:
+        text_embedding_path = str(checkpoint_path / "text_embedding.pt")
+
+    image_embedding_path = args.image_embedding_path
+    if image_embedding_path is None:
+        image_embedding_path = str(checkpoint_path / "image_embedding.pt")
+    model = instantiate_model(model_path).to(torch_device).to(torch.float32)
     model.train(False)
     vl_chat_processor: VLChatProcessor = VLChatProcessor.from_pretrained(model_path)
 
@@ -64,8 +91,8 @@ if __name__ == "__main__":
 
     cfg_weighted_model = CFGScaledModel(model=model, g_or_u="generation")
     with torch.no_grad():
-        path_txt = MixtureDiscreteSoftmaxProbPath(mode="text", embedding_path=args.text_embedding_path)
-        path_img = MixtureDiscreteSoftmaxProbPath(mode="image", embedding_path=args.image_embedding_path)
+        path_txt = MixtureDiscreteSoftmaxProbPath(mode="text", embedding_path=text_embedding_path)
+        path_img = MixtureDiscreteSoftmaxProbPath(mode="image", embedding_path=image_embedding_path)
         solver = MixtureDiscreteSoftmaxEulerSolver(
             model=cfg_weighted_model,
             path_txt=path_txt,
@@ -127,26 +154,26 @@ if __name__ == "__main__":
 
         generation_or_understanding_mask = generation_understanding_indicator
         data_info = dict()
-        data_info["text_token_mask"] = text_expanded_token_mask.unsqueeze(0).repeat(batch_size, 1).to(device)
-        data_info["image_token_mask"] = image_expanded_token_mask.unsqueeze(0).repeat(batch_size, 1).to(device)
-        data_info["generation_or_understanding_mask"] = torch.Tensor([generation_or_understanding_mask]).to(dtype=int).unsqueeze(0).repeat(batch_size, 1).to(device)
+        data_info["text_token_mask"] = text_expanded_token_mask.unsqueeze(0).repeat(batch_size, 1).to(torch_device)
+        data_info["image_token_mask"] = image_expanded_token_mask.unsqueeze(0).repeat(batch_size, 1).to(torch_device)
+        data_info["generation_or_understanding_mask"] = torch.Tensor([generation_or_understanding_mask]).to(dtype=int).unsqueeze(0).repeat(batch_size, 1).to(torch_device)
 
-        data_info["attention_mask"] = attention_mask.unsqueeze(0).repeat(batch_size, 1).to(device)
+        data_info["attention_mask"] = attention_mask.unsqueeze(0).repeat(batch_size, 1).to(torch_device)
         data_info["sft_format"] = sft_format
         if generation_or_understanding_mask == 1:
-            data_info["understanding_img"] = torch.zeros((3, 384, 384)).unsqueeze(0).repeat(batch_size, 1, 1, 1).to(device)
-            data_info["has_understanding_img"] = torch.Tensor([False]).to(dtype=int).repeat(batch_size).to(device)
+            data_info["understanding_img"] = torch.zeros((3, 384, 384)).unsqueeze(0).repeat(batch_size, 1, 1, 1).to(torch_device)
+            data_info["has_understanding_img"] = torch.Tensor([False]).to(dtype=int).repeat(batch_size).to(torch_device)
         else:
             if img is not None:
-                data_info["understanding_img"] = img.unsqueeze(0).repeat(batch_size, 1, 1, 1).to(device)
-                data_info["has_understanding_img"] = torch.Tensor([True]).to(dtype=int).repeat(batch_size).to(device)
+                data_info["understanding_img"] = img.unsqueeze(0).repeat(batch_size, 1, 1, 1).to(torch_device)
+                data_info["has_understanding_img"] = torch.Tensor([True]).to(dtype=int).repeat(batch_size).to(torch_device)
             else:
-                data_info["understanding_img"] = torch.zeros((3, 384, 384)).unsqueeze(0).repeat(batch_size, 1, 1, 1).to(device)
-                data_info["has_understanding_img"] = torch.Tensor([False]).to(dtype=int).repeat(batch_size).to(device)
+                data_info["understanding_img"] = torch.zeros((3, 384, 384)).unsqueeze(0).repeat(batch_size, 1, 1, 1).to(torch_device)
+                data_info["has_understanding_img"] = torch.Tensor([False]).to(dtype=int).repeat(batch_size).to(torch_device)
 
-        input_ids = torch.LongTensor(input_ids).unsqueeze(0).repeat(batch_size, 1).to(device)
+        input_ids = torch.LongTensor(input_ids).unsqueeze(0).repeat(batch_size, 1).to(torch_device)
 
-        x_0_img = torch.randint(16384, input_ids.shape, dtype=torch.long, device=device)
+        x_0_img = torch.randint(16384, input_ids.shape, dtype=torch.long, device=torch_device)
         x_init = x_0_img * data_info["image_token_mask"] + input_ids * (1 - data_info["image_token_mask"])
 
         synthetic_samples = solver.sample(

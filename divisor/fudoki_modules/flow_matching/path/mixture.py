@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from torch import Tensor
 
-from nnll.init_gpu import clear_cache
+from nnll.init_gpu import clear_cache, device
 
 from divisor.fudoki_modules.flow_matching.path.path import ProbPath
 from divisor.fudoki_modules.flow_matching.path.path_sample import DiscretePathSample
@@ -127,10 +127,10 @@ class MixtureDiscreteSoftmaxProbPath(ProbPath):
         clear_cache()
 
     def get_embedding(self, embedding_path):
-        embedding = torch.load(embedding_path, map_location="cpu")
+        embedding = torch.load(embedding_path, map_location="cpu", weights_only=False)
         embedding.requires_grad_(False)
         clear_cache()
-        return embedding.cuda()
+        return embedding.to(device)
 
     def metric(self, z):
         z_flattened = z.view(-1, z.shape[-1])
