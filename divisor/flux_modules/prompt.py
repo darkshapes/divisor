@@ -103,6 +103,7 @@ def main(
     loop: bool = False,
     guidance: float = 4.0,  # 2.5, 4.0
     offload: bool = False,
+    compile: bool = False,
 ):
     """Sample the flux model. Either interactively (set `--loop`) or run for a single image.
 
@@ -145,6 +146,11 @@ def main(
     t5 = load_t5(torch_device, max_length=256 if name == "flux-schnell" else 512)
     clip = load_clip(torch_device)
     model = load_flow_model(name, device="cpu" if offload else torch_device)
+
+    if compile:
+        print("Compilation enabled.")
+        model = torch.compile(model)
+
     ae = load_ae(name, device="cpu" if offload else torch_device)
 
     # Validate user inputs
