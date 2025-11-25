@@ -9,12 +9,8 @@ description = "fragment / denoise / process"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "einops>=0.8.1",
     "fire>=0.7.1",
     "opencv-python>=4.12.0.88",
-    "pillow>=12.0.0",
-    "protobuf>=4.25.0",
-    "sentencepiece>=0.2.1",
     "nnll",
 ]
 [project.scripts]
@@ -30,9 +26,7 @@ dev = [
 fudoki = [
     "attrdict>=2.0.1",
     "matplotlib>=3.10.7",
-    "omegaconf>=2.3.0",
     "timm>=1.0.22",
-    "tokenizers>=0.22.1",
     "torchdiffeq>=0.2.5",
 ]
 [tool.pyright]
