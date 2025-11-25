@@ -29,7 +29,7 @@ def main():
     parser = argparse.ArgumentParser(description="Text understanding inference")
     parser.add_argument("--checkpoint", type=str, required=False, default=CHECKPOINTS_PATH, help="Fine-tuned checkpoint path")
     parser.add_argument("--prompt", type=str, required=False, default="Describe what a cat is.", help="Text prompt")
-    parser.add_argument("--image_path", type=str, required=True, help="Input image path")
+    parser.add_argument("--image_path", type=str, required=False, default=None, help="Input image path")
     parser.add_argument("--steps", type=int, default=128, help="Generation steps")
     parser.add_argument("--gen_length", type=int, default=1024, help="Generation length")
     parser.add_argument("--block_length", type=int, default=256, help="Block length")
@@ -61,41 +61,34 @@ def main():
     )
 
     # Load VQ-VAE
-    from diffusers.models.autoencoders.vq_model import VQModel
-
-    vqvae = VQModel.from_pretrained(args.vae_ckpt, subfolder="vqvae").to(device)
-
-    # Calculate VQ parameters
-    vae_scale = 2 ** (len(vqvae.config.block_out_channels) - 1)
 
     # Get prompt and image
     question = args.prompt
-    image_path = args.image_path
-    print(f"Processing image: {image_path}")
-    print(f"Question: {question}")
-
     # Generate prompt using utility function
     input_prompt = generate_multimodal_understanding_prompt(question)
     input_ids = tokenizer(input_prompt)["input_ids"]
+    input_token = input_ids[:-1] + input_ids[-1:]
 
-    # Preprocess image
-    img = Image.open(image_path)
-    crop_size_list = generate_crop_size_list((1024 // 32) ** 2, 32)
-    image = var_center_crop(img, crop_size_list=crop_size_list)
-    image_width, image_height = image.size
+    if args.image_path is not None:
+        from diffusers.models.autoencoders.vq_model import VQModel
 
-    # Calculate VQ parameters
-    seq_len, newline_every, token_grid_height, token_grid_width = calculate_vq_params(image_height, image_width, vae_scale)
+        vqvae = VQModel.from_pretrained(args.vae_ckpt, subfolder="vqvae").to(device)
 
-    # Encode image
-    input_img_token = encode_img_with_breaks(image, vqvae=vqvae)
+        # Calculate VQ parameters
+        vae_scale = 2 ** (len(vqvae.config.block_out_channels) - 1)
 
-    # Build input image token
-    img_token = add_break_line(input_img_token, token_grid_height, token_grid_width, new_number=NEW_LINE)
-    input_img_token = img_token
-
-    # Build input sequence
-    input_token = input_ids[:-1] + input_img_token + input_ids[-1:]
+        image_path = args.image_path
+        print(f"Processing image: {image_path}")
+        img = Image.open(image_path)
+        crop_size_list = generate_crop_size_list((1024 // 32) ** 2, 32)
+        image = var_center_crop(img, crop_size_list=crop_size_list)
+        image_width, image_height = image.size
+        seq_len, newline_every, token_grid_height, token_grid_width = calculate_vq_params(image_height, image_width, vae_scale)
+        input_img_token = encode_img_with_breaks(image, vqvae=vqvae)
+        img_token = add_break_line(input_img_token, token_grid_height, token_grid_width, new_number=NEW_LINE)
+        input_img_token = img_token
+        input_token = input_ids[:-1] + input_img_token + input_ids[-1:]
+    print(f"Question: {question}")
 
     # Prediction text token start index
     code_start = len(input_token) + 1

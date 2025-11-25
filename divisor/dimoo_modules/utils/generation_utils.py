@@ -15,11 +15,12 @@ def add_gumbel_noise(logits, temperature):
     Gumbel noise addition function
     According to arXiv:2409.02908, for MDM, low-precision Gumbel Max improves perplexity score but reduces generation quality
     Therefore using float64
+    - Sadly macos does not support float64
     """
     if temperature == 0:
         return logits
-    logits = logits.to(torch.float64)
-    noise = torch.rand_like(logits, dtype=torch.float64)
+    logits = logits.to(torch.float32)
+    noise = torch.rand_like(logits, dtype=torch.float32)
     gumbel_noise = (-torch.log(noise)) ** temperature
     return logits.exp() / gumbel_noise
 

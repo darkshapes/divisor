@@ -13,7 +13,7 @@ from divisor.fudoki_modules.flow_matching.utils.manifolds import Manifold
 class Sphere(Manifold):
     """Represents a hyperpshere in :math:`R^D`. Isometric to the product of 1-D spheres."""
 
-    EPS = {torch.float32: 1e-4, torch.float64: 1e-7}
+    EPS = {torch.float32: 1e-4, torch.float32: 1e-7}
 
     def expmap(self, x: Tensor, u: Tensor) -> Tensor:
         norm_u = u.norm(dim=-1, keepdim=True)
