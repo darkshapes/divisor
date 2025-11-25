@@ -26,7 +26,7 @@ class LLaDAForMultiModalGeneration(LLaDAModelLM):
     base_model_prefix = "model"
 
     def __init__(self, config: LLaDAConfig, *args, **kwargs):
-        print(f"Initializing MMadaModelLM with config: {config}")
+        print(f"Initializing MMadaModelLM with config: {config.name_or_path}")
         super().__init__(config, *args, **kwargs)
 
     def forward(self, input_ids=None, labels=None, infer=False, use_cache=False, to_compute_mask=None, cat="", **kwargs):

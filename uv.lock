@@ -218,21 +218,13 @@ dev = [
     { name = "pyright" },
     { name = "ruff" },
 ]
-flux = [
-    { name = "torch" },
-    { name = "torchvision" },
-]
 fudoki = [
-    { name = "accelerate" },
     { name = "attrdict" },
     { name = "matplotlib" },
     { name = "omegaconf" },
     { name = "timm" },
     { name = "tokenizers" },
-    { name = "torch" },
     { name = "torchdiffeq" },
-    { name = "torchvision" },
-    { name = "transformers" },
 ]
 
 [package.metadata]
@@ -251,21 +243,13 @@ dev = [
     { name = "pyright", specifier = ">=1.1.407" },
     { name = "ruff", specifier = ">=0.14.5" },
 ]
-flux = [
-    { name = "torch", specifier = ">=2.9.1" },
-    { name = "torchvision", specifier = ">=0.24.1" },
-]
 fudoki = [
-    { name = "accelerate", specifier = ">=1.12.0" },
     { name = "attrdict", specifier = ">=2.0.1" },
     { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "timm", specifier = ">=1.0.22" },
     { name = "tokenizers", specifier = ">=0.22.1" },
-    { name = "torch", specifier = ">=2.9.1" },
     { name = "torchdiffeq", specifier = ">=0.2.5" },
-    { name = "torchvision", specifier = ">=0.24.1" },
-    { name = "transformers", specifier = ">=4.57.1" },
 ]
 
 [[package]]

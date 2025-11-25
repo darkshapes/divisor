@@ -18,7 +18,8 @@ dependencies = [
     "nnll",
 ]
 [project.scripts]
-dvzr = "divisor.flux_modules.prompt:main"
+dvzr = "divisor.app:main"
+divisor = "divisor.app:main"
 
 
 [dependency-groups]

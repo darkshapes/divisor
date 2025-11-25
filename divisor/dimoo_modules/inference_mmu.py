@@ -4,12 +4,10 @@ Text understanding inference script
 """
 
 import os
-import json
-import argparse
 from PIL import Image
 import torch
 import time
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoTokenizer
 import sys
 from nnll.init_gpu import device
 from huggingface_hub import snapshot_download
@@ -18,66 +16,71 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from divisor.dimoo_modules.config import SPECIAL_TOKENS
 from divisor.dimoo_modules.model import LLaDAForMultiModalGeneration
-from divisor.dimoo_modules.utils.image_utils import preprocess_image, encode_img_with_breaks, calculate_vq_params, generate_crop_size_list, var_center_crop, add_break_line
+from divisor.dimoo_modules.utils.image_utils import encode_img_with_breaks, calculate_vq_params, generate_crop_size_list, var_center_crop, add_break_line
 from divisor.dimoo_modules.generators.text_understanding_generator import generate_text_understanding
 from divisor.dimoo_modules.utils.prompt_utils import generate_multimodal_understanding_prompt
 
 CHECKPOINTS_PATH = snapshot_download(repo_id="Alpha-VLLM/Lumina-DiMOO")
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Text understanding inference")
-    parser.add_argument("--checkpoint", type=str, required=False, default=CHECKPOINTS_PATH, help="Fine-tuned checkpoint path")
-    parser.add_argument("--prompt", type=str, required=False, default="Describe what a cat is.", help="Text prompt")
-    parser.add_argument("--image_path", type=str, required=False, default=None, help="Input image path")
-    parser.add_argument("--steps", type=int, default=128, help="Generation steps")
-    parser.add_argument("--gen_length", type=int, default=1024, help="Generation length")
-    parser.add_argument("--block_length", type=int, default=256, help="Block length")
-    parser.add_argument("--temperature", type=float, default=0.0, help="Temperature")
-    parser.add_argument("--cfg_scale", type=float, default=0.0, help="CFG scale")
-    parser.add_argument("--vae_ckpt", type=str, default="./vae_ckpt", help="VAE checkpoint path")
-    parser.add_argument("--output_dir", type=str, default="outputs_text_understanding", help="Output directory")
+def main(
+    checkpoint: str = CHECKPOINTS_PATH,
+    prompt: str = "Describe what a cat is.",
+    image_path: str | None = None,
+    steps: int = 128,
+    gen_length: int = 1024,
+    block_length: int = 256,
+    temperature: float = 0.0,
+    cfg_scale: float = 0.0,
+    vae_ckpt: str = "./vae_ckpt",
+    output_dir: str = ".output",
+):
+    """Text understanding inference using DiMOO (multimodal understanding) model.
 
-    args = parser.parse_args()
+    :param checkpoint: Fine-tuned checkpoint path. Defaults to Alpha-VLLM/Lumina-DiMOO from HuggingFace.
+    :param prompt: Text prompt/question for understanding. Default: "Describe what a cat is."
+    :param image_path: Optional path to input image for multimodal understanding.
+    :param steps: Number of generation steps. Default: 128.
+    :param gen_length: Maximum generation length in tokens. Default: 1024.
+    :param block_length: Block length for generation. Default: 256.
+    :param temperature: Sampling temperature. Default: 0.0 (deterministic).
+    :param cfg_scale: Classifier-free guidance scale. Default: 0.0 (no guidance).
+    :param vae_ckpt: VAE checkpoint path for image encoding. Default: "./vae_ckpt".
+    :param output_dir: Directory to save outputs. Default: ".output".
+    """
 
     # Special tokens
     MASK = SPECIAL_TOKENS["mask_token"]
     NEW_LINE = SPECIAL_TOKENS["newline_token"]
     BOA = SPECIAL_TOKENS["answer_start"]  # Begin of Answer
     EOA = SPECIAL_TOKENS["answer_end"]  # End of Answer
-    BOI = SPECIAL_TOKENS["boi"]  # Begin of Image
-    EOI = SPECIAL_TOKENS["eoi"]  # End of Image
 
     # Create output directory
-    os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     # Load model and tokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained(args.checkpoint, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(checkpoint, trust_remote_code=True)
     model = LLaDAForMultiModalGeneration.from_pretrained(
-        args.checkpoint,
-        torch_dtype=torch.bfloat16,
+        checkpoint,
+        dtype=torch.bfloat16,
         device_map="auto",
     )
 
-    # Load VQ-VAE
-
     # Get prompt and image
-    question = args.prompt
+    question = prompt
     # Generate prompt using utility function
     input_prompt = generate_multimodal_understanding_prompt(question)
     input_ids = tokenizer(input_prompt)["input_ids"]
     input_token = input_ids[:-1] + input_ids[-1:]
 
-    if args.image_path is not None:
+    if image_path is not None:
         from diffusers.models.autoencoders.vq_model import VQModel
 
-        vqvae = VQModel.from_pretrained(args.vae_ckpt, subfolder="vqvae").to(device)
+        vqvae = VQModel.from_pretrained(vae_ckpt, subfolder="vqvae").to(device)
 
         # Calculate VQ parameters
         vae_scale = 2 ** (len(vqvae.config.block_out_channels) - 1)
 
-        image_path = args.image_path
         print(f"Processing image: {image_path}")
         img = Image.open(image_path)
         crop_size_list = generate_crop_size_list((1024 // 32) ** 2, 32)
@@ -93,8 +96,8 @@ def main():
     # Prediction text token start index
     code_start = len(input_token) + 1
 
-    # Build text mask predition sequence
-    input_token = input_token + [BOA] + args.gen_length * [MASK] + [EOA]
+    # Build text mask prediction sequence
+    input_token = input_token + [BOA] + gen_length * [MASK] + [EOA]
     input_ids = torch.tensor(input_token, device=device).unsqueeze(0)
 
     # Generate text
@@ -102,11 +105,11 @@ def main():
     out_new = generate_text_understanding(
         model,
         input_ids,
-        steps=args.steps,
-        gen_length=args.gen_length,
-        block_length=args.block_length,
-        temperature=args.temperature,
-        cfg_scale=args.cfg_scale,
+        steps=steps,
+        gen_length=gen_length,
+        block_length=block_length,
+        temperature=temperature,
+        cfg_scale=cfg_scale,
         remasking="low_confidence",
         code_start=code_start,
     )
@@ -121,4 +124,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    from fire import Fire
+
+    Fire(main)

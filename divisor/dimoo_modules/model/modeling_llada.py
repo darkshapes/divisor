@@ -1447,15 +1447,91 @@ class LLaDAModelLM(PreTrainedModel):
         model_inputs["use_cache"] = kwargs.pop("use_cache", self.config.use_cache)
         return model_inputs
 
-    # TODO: these are required to make the implementation complete.
-    # def resize_position_embeddings(self, new_num_position_embeddings: int):
-    #     pass
-    #
-    # def get_position_embeddings(self) -> Union[nn.Embedding, Tuple[nn.Embedding]]:
-    #     pass
-    #
-    # def _reorder_cache(self, past_key_values, beam_idx):
-    #     pass
+    def resize_position_embeddings(self, new_num_position_embeddings: int):
+        """Resize position embeddings to a new maximum sequence length.
+
+        This is only applicable when using learned position embeddings (not RoPE or ALiBi).
+        For RoPE, position embeddings are computed dynamically and don't need resizing.
+
+        :param new_num_position_embeddings: New maximum sequence length.
+        """
+        if hasattr(self.model.transformer, "wpe") and isinstance(self.model.transformer.wpe, nn.Embedding):
+            # Only resize if using learned position embeddings
+            old_embeddings: nn.Embedding = self.model.transformer.wpe  # type: ignore
+            old_num_positions = old_embeddings.num_embeddings
+
+            if new_num_position_embeddings == old_num_positions:
+                # No resize needed
+                return
+
+            # Create new embedding layer
+            new_embeddings = nn.Embedding(
+                new_num_position_embeddings,
+                old_embeddings.embedding_dim,
+                device=old_embeddings.weight.device,
+                dtype=old_embeddings.weight.dtype,
+            )
+
+            # Copy over existing embeddings, padding or truncating as needed
+            num_positions_to_copy = min(old_num_positions, new_num_position_embeddings)
+            new_embeddings.weight.data[:num_positions_to_copy] = old_embeddings.weight.data[:num_positions_to_copy]
+
+            # If expanding, initialize new positions (could use interpolation or random init)
+            if new_num_position_embeddings > old_num_positions:
+                # Initialize new positions with the last position's embedding
+                # This is a simple strategy; more sophisticated approaches could use interpolation
+                new_embeddings.weight.data[num_positions_to_copy:] = old_embeddings.weight.data[-1:].repeat(new_num_position_embeddings - num_positions_to_copy, 1)
+
+            # Replace the embedding layer
+            self.model.transformer.wpe = new_embeddings
+
+            # Update config if it exists
+            if hasattr(self.config, "max_sequence_length"):
+                self.config.max_sequence_length = new_num_position_embeddings
+        else:
+            # Using RoPE or ALiBi - no position embeddings to resize
+            # RoPE embeddings are computed dynamically based on sequence length
+            # ALiBi doesn't use position embeddings
+            pass
+
+    def get_position_embeddings(self) -> Union[nn.Embedding, Tuple[nn.Embedding]]:
+        """Get the position embedding layer(s).
+
+        Returns the position embedding module if using learned position embeddings.
+        Returns an empty tuple if using RoPE or ALiBi (which don't have learnable position embeddings).
+
+        :returns: Position embedding module(s), or empty tuple if not applicable.
+        """
+        if hasattr(self.model.transformer, "wpe") and isinstance(self.model.transformer.wpe, nn.Embedding):
+            return self.model.transformer.wpe
+        else:
+            # Using RoPE or ALiBi - no learnable position embeddings
+            # Return empty tuple to match expected return type
+            return tuple()
+
+    def _reorder_cache(self, past_key_values: Optional[Tuple[Tuple[torch.Tensor, ...], ...]], beam_idx: torch.LongTensor) -> Optional[Tuple[Tuple[torch.Tensor, ...], ...]]:
+        """Reorder past_key_values cache for beam search.
+
+        This method is called during beam search generation to reorder the cached
+        key-value pairs according to the beam indices. This allows the model to
+        maintain the correct cache state when beams are reordered.
+
+        :param past_key_values: Tuple of tuples containing cached key-value pairs
+            from each layer. Each layer_past is a tuple of (key, value) tensors.
+            Shape: (num_layers, 2, batch_size * num_beams, num_heads, seq_len, head_dim)
+        :param beam_idx: Tensor of beam indices to reorder by. Shape: (batch_size * num_beams,)
+        :returns: Reordered past_key_values with the same structure, or None if input was None.
+        """
+        if past_key_values is None:
+            return None
+
+        reordered_past = []
+        for layer_past in past_key_values:
+            # layer_past is a tuple of (key, value) tensors
+            # Each tensor has shape (batch_size * num_beams, num_heads, seq_len, head_dim)
+            reordered_layer_past = tuple(past_state.index_select(0, beam_idx.to(past_state.device)) for past_state in layer_past)
+            reordered_past.append(reordered_layer_past)
+        return tuple(reordered_past)
 
     def get_input_embeddings(self) -> torch.nn.Module:
         return self.model.transformer.wte
