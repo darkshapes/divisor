@@ -52,9 +52,7 @@ def process_choice(
     """
     # Display status
     step = state.timestep_index
-    nfo(
-        f"Step {step}/{state.total_timesteps} @ noise level {state.current_timestep:.4f}"
-    )
+    nfo(f"Step {step}/{state.total_timesteps} @ noise level {state.current_timestep:.4f}")
     nfo(f"[G]uidance: {state.guidance:.2f}")
     nfo(f"[S]eed: {state.seed}")
     if state.width is not None and state.height is not None:
@@ -68,16 +66,12 @@ def process_choice(
         nfo(f"[A]utoencoder shift offset: {state.vae_shift_offset:.4f}")
         nfo(f"[A]utoencoder scale offset: {state.vae_scale_offset:.4f}")
     if state.variation_seed is not None:
-        nfo(
-            f"[V]Variation seed: {state.variation_seed}, strength: {state.variation_strength:.3f}"
-        )
+        nfo(f"[V]Variation seed: {state.variation_seed}, strength: {state.variation_strength:.3f}")
     else:
         nfo("[V]Variation: OFF")
     nfo(f"[D]eterministic: {'ON' if state.deterministic else 'OFF'}")
     if state.prompt is not None:
-        prompt_display = (
-            state.prompt[:60] + "..." if len(state.prompt) > 60 else state.prompt
-        )
+        prompt_display = state.prompt[:60] + "..." if len(state.prompt) > 60 else state.prompt
         nfo(f"[P]rompt: {prompt_display}")
 
     choice = input(": [BDGLSRVXP] advance with Enter: ").lower().strip()
@@ -90,21 +84,15 @@ def process_choice(
             controller.current_state,
         ),
         "g": lambda: change_guidance(controller, state, clear_prediction_cache),
-        "l": lambda: change_layer_dropout(
-            controller, state, current_layer_dropout, clear_prediction_cache
-        ),
+        "l": lambda: change_layer_dropout(controller, state, current_layer_dropout, clear_prediction_cache),
         "r": lambda: change_resolution(controller, state, clear_prediction_cache),
         "s": lambda: change_seed(controller, state, rng, clear_prediction_cache),
         "b": lambda: toggle_buffer_mask(controller, state),
         "a": lambda: change_vae_offset(controller, state, ae, clear_prediction_cache),
-        "v": lambda: change_variation(
-            controller, state, variation_rng, clear_prediction_cache
-        ),
+        "v": lambda: change_variation(controller, state, variation_rng, clear_prediction_cache),
         "d": lambda: toggle_deterministic(controller, state, clear_prediction_cache),
         "e": lambda: edit_mode(clear_prediction_cache),
-        "p": lambda: change_prompt(
-            controller, state, clear_prediction_cache, recompute_text_embeddings
-        ),
+        "p": lambda: change_prompt(controller, state, clear_prediction_cache, recompute_text_embeddings),
     }
 
     if choice in choice_handlers:
@@ -158,20 +146,20 @@ def change_layer_dropout(
     :returns: Updated DenoisingState
     """
     try:
-        dropout_input = input(
-            "Enter layer indices to drop (comma-separated, or 'none' to clear): "
-        ).strip()
+        dropout_input = input("Enter layer indices to drop (comma-separated, or 'none' to clear): ").strip()
         if dropout_input.lower() == "none" or dropout_input == "":
             layer_indices = None
         else:
             layer_indices = [int(x.strip()) for x in dropout_input.split(",")]
-        return update_state_and_cache(
-            controller,
-            controller.set_layer_dropout,
-            layer_indices,
-            clear_prediction_cache,
-            f"Layer dropout set to: {layer_indices}",
-        )
+
+        # Update controller first
+        controller.set_layer_dropout(layer_indices)
+        # Keep current_layer_dropout in sync (for backward compatibility)
+        current_layer_dropout[0] = layer_indices
+        clear_prediction_cache()
+        state = controller.current_state
+        nfo(f"Layer dropout set to: {layer_indices}")
+        return state
     except ValueError:
         nfo("Invalid layer indices, keeping current value")
     return controller.current_state
@@ -199,9 +187,7 @@ def change_resolution(
                 if state.width == w and state.height == h:
                     current_marker = " (current)"
                 nfo(f"  {i}: {w}x{h}{current_marker}")
-            resolution_input = input(
-                f"\nEnter resolution index (0-{len(valid_resolutions) - 1}) or 'custom' for custom: "
-            ).strip()
+            resolution_input = input(f"\nEnter resolution index (0-{len(valid_resolutions) - 1}) or 'custom' for custom: ").strip()
             if resolution_input.lower() == "custom":
                 width_input = input("Enter width: ").strip()
                 height_input = input("Enter height: ").strip()
@@ -361,9 +347,7 @@ def change_prompt(
     :returns: Updated DenoisingState
     """
     current_prompt = state.prompt if state.prompt is not None else ""
-    new_prompt = input(
-        f"Enter new prompt (current: {current_prompt[:60]}...): "
-    ).strip()
+    new_prompt = input(f"Enter new prompt (current: {current_prompt[:60]}...): ").strip()
 
     if new_prompt:
         controller.set_prompt(new_prompt)

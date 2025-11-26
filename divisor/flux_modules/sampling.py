@@ -176,7 +176,7 @@ def denoise(
     img_cond: Tensor | None = None,  # extra img tokens (channel-wise)
     img_cond_seq: Tensor | None = None,  # extra img tokens (sequence-wise)
     img_cond_seq_ids: Tensor | None = None,
-    torch_device: torch.device = device,
+    device: torch.device = device,
     initial_layer_dropout: Optional[list[int]] = None,
     t5: Optional[HFEmbedder] = None,  # T5 embedder for prompt changes
     clip: Optional[HFEmbedder] = None,  # CLIP embedder for prompt changes
@@ -194,7 +194,7 @@ def denoise(
     :param img_cond_seq: Optional sequence-wise image conditioning
     :param img_cond_seq_ids: Optional sequence-wise image conditioning IDs
     :param ae: AutoEncoder for decoding previews
-    :param torch_device: PyTorch device
+    :param device: PyTorch device
     :param initial_layer_dropout: Initial layer dropout configuration
     :param t5: Optional T5 embedder for recomputing text embeddings when prompt changes
     :param clip: Optional CLIP embedder for recomputing text embeddings when prompt changes"""
@@ -328,11 +328,13 @@ def denoise(
         :param guidance_val: Guidance value
         :returns: Model prediction"""
 
-        layer_dropouts = current_layer_dropout[0]
-        pred = get_prediction(sample, t_curr, guidance_val, layer_dropouts)
-        use_mask = False
         if controller_ref[0] is not None:
             use_mask = controller_ref[0].use_previous_as_mask
+            layer_dropouts = controller_ref[0].current_state.layer_dropout
+        else:
+            layer_dropouts = current_layer_dropout[0]
+            use_mask = False
+        pred = get_prediction(sample, t_curr, guidance_val, layer_dropouts)
         if use_mask and previous_step_tensor[0] is not None:
             prev_tensor = previous_step_tensor[0]
             if prev_tensor.shape == pred.shape:
@@ -376,7 +378,9 @@ def denoise(
     )
     controller_ref[0] = controller  # Store reference for closure access
 
-    controller.set_layer_dropout(initial_layer_dropout)
+    # Use state.layer_dropout if available, otherwise fall back to initial_layer_dropout
+    layer_dropout_to_set = state.layer_dropout if state.layer_dropout is not None else initial_layer_dropout
+    controller.set_layer_dropout(layer_dropout_to_set)
 
     if state.width is not None and state.height is not None:
         controller.set_resolution(state.width, state.height)
@@ -425,11 +429,12 @@ def denoise(
         if ae is not None and state.width is not None and state.height is not None:
             # Reuse cached prediction if available, otherwise generate it
             # This will be cached and reused in denoise_step_fn when advancing
+            # Always use state.layer_dropout from controller to ensure consistency
             pred_preview = get_prediction(
                 state.current_sample,
                 state.current_timestep,
                 state.guidance,
-                current_layer_dropout[0],
+                state.layer_dropout,
             )
 
             intermediate = state.current_sample - state.current_timestep * pred_preview
@@ -440,7 +445,7 @@ def denoise(
 
             nfo(f"Step time: {t1 - t0:.1f}s")
 
-            with torch.autocast(device_type=torch_device.type, dtype=torch.bfloat16):
+            with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
                 # Apply VAE shift/scale offset by manually adjusting the decode operation
                 if state.vae_shift_offset != 0.0 or state.vae_scale_offset != 0.0:
                     # Decode with offset: z = z / (scale_factor + scale_offset) + (shift_factor + shift_offset)
