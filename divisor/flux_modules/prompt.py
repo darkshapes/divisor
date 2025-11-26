@@ -15,10 +15,12 @@ from divisor.flux_modules.sampling import (
     get_schedule,
     prepare,
 )
-from divisor.flux_modules.util import (
+from divisor.flux_modules.spec import (
     configs,
     get_model_spec,
     get_compatibility_spec,
+)
+from divisor.flux_modules.loading import (
     load_ae,
     load_clip,
     load_flow_model,
@@ -89,14 +91,15 @@ def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
 
 @torch.inference_mode()
 def main(
-    model_id: str = "model.dit.flux1-dev",
-    ae_id: str = "model.vae.flux-dev",
+    model_id: str = "flux1-dev",
+    ae_id: str = "flux1-dev",
     width: int = 1360,
     height: int = 768,
     guidance: float = 2.5,
     seed: int | None = rng.next_seed(),
-    prompt: str = (""),
+    prompt: str = "",
     quantization: bool = False,
+    tiny: bool = False,
     # ('a photo of a forest with mist swirling around the tree trunks. The word "FLUX" is painted over it in big, red brush strokes with visible texture'),
     device: torch.device = device,
     num_steps: int | None = None,
@@ -106,8 +109,7 @@ def main(
     compile: bool = False,
     verbose: bool = False,
 ):
-    """Sample the flux model. Either interactively (set `--loop`) or run for a single image.
-
+    """Sample the flux model. Either interactively (set `--loop`) or run for a single image.\n
     :param name: Name of the model to load
     :param height: height of the sample in pixels (should be a multiple of 16)
     :param width: width of the sample in pixels (should be a multiple of 16)
@@ -120,6 +122,8 @@ def main(
     :param guidance: guidance value used for guidance distillation
     """
 
+    model_id = f"model.dit.{model_id}"
+    ae_id = f"model.vae.{ae_id}" if not tiny else f"model.taesd.{ae_id}"
     if model_id not in configs or ae_id not in configs:
         available = ", ".join(configs.keys())
         raise ValueError(f"Got unknown model id: {model_id} or {ae_id}, chose from {available}")
@@ -194,7 +198,7 @@ def main(
             rng.next_seed(opts.seed)
         # At this point, opts.seed is guaranteed to be an int
         assert opts.seed is not None, "Seed must be set"
-        nfo(f"Generating with seed {rng.seed}:\n{opts.prompt}")
+        nfo(f"Generating with seed {rng.seed}: {opts.prompt}")
 
         x = get_noise(
             1,
@@ -256,7 +260,7 @@ def main(
             timesteps=timesteps,
             state=state,
             ae=ae,
-            torch_device=device,
+            device=device,
             t5=t5,
             clip=clip,
         )

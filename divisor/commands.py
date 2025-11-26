@@ -73,8 +73,7 @@ def process_choice(
     if state.prompt is not None:
         prompt_display = state.prompt[:60] + "..." if len(state.prompt) > 60 else state.prompt
         nfo(f"[P]rompt: {prompt_display}")
-
-    choice = input(": [BDGLSRVXP] advance with Enter: ").lower().strip()
+        nfo(f"[E]dit Mode (REPL): {prompt_display}")
 
     choice_handlers = {
         "": lambda: (
@@ -84,16 +83,18 @@ def process_choice(
             controller.current_state,
         ),
         "g": lambda: change_guidance(controller, state, clear_prediction_cache),
-        "l": lambda: change_layer_dropout(controller, state, current_layer_dropout, clear_prediction_cache),
-        "r": lambda: change_resolution(controller, state, clear_prediction_cache),
         "s": lambda: change_seed(controller, state, rng, clear_prediction_cache),
+        "r": lambda: change_resolution(controller, state, clear_prediction_cache),
+        "l": lambda: change_layer_dropout(controller, state, current_layer_dropout, clear_prediction_cache),
         "b": lambda: toggle_buffer_mask(controller, state),
         "a": lambda: change_vae_offset(controller, state, ae, clear_prediction_cache),
         "v": lambda: change_variation(controller, state, variation_rng, clear_prediction_cache),
         "d": lambda: toggle_deterministic(controller, state, clear_prediction_cache),
-        "e": lambda: edit_mode(clear_prediction_cache),
         "p": lambda: change_prompt(controller, state, clear_prediction_cache, recompute_text_embeddings),
+        "e": lambda: edit_mode(clear_prediction_cache),
     }
+    prompt = "".join(key.upper() for key in choice_handlers if key)
+    choice = input(f": [{prompt}] or advance with Enter: ").lower().strip()
 
     if choice in choice_handlers:
         result = choice_handlers[choice]()
