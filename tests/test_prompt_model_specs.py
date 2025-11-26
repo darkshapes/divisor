@@ -57,7 +57,7 @@ class TestPromptModelSpecs:
                 patch("divisor.flux_modules.prompt.load_t5"),
                 patch("divisor.flux_modules.prompt.load_clip"),
             ):
-                main(model_id="model.dit.flux1-dev", ae_id="invalid-ae-id", loop=False)
+                main(model_id="flux1-dev", ae_id="invalid-ae-id", loop=False)
 
     def test_main_loads_model_spec_with_init_params(self):
         """Test that main() correctly loads model spec with init params."""
@@ -119,7 +119,8 @@ class TestPromptModelSpecs:
 
     def test_main_passes_override_dict_to_load_flow_model(self):
         """Test that main() correctly builds override dict for load_flow_model."""
-        model_id = "model.dit.flux1-dev"
+        model = "flux1-dev"
+        model_id = f"model.dit.{model}"
 
         # Mock load_flow_model to capture its arguments
         with (
@@ -136,8 +137,8 @@ class TestPromptModelSpecs:
             compat_spec = get_compatibility_spec(model_id, "fp8-sai")
             if compat_spec is not None:
                 main(
-                    model_id=model_id,
-                    ae_id="model.vae.flux1-dev",
+                    model_id=model,
+                    ae_id=model,
                     quantization=True,
                     verbose=True,
                     loop=False,
@@ -156,7 +157,7 @@ class TestPromptModelSpecs:
 
     def test_main_uses_base_spec_when_quantization_false(self):
         """Test that main() uses base spec when quantization=False."""
-        model_id = "model.dit.flux1-dev"
+        model = "flux1-dev"
 
         with (
             patch("divisor.flux_modules.prompt.load_flow_model") as mock_load,
@@ -169,8 +170,8 @@ class TestPromptModelSpecs:
             patch("divisor.flux_modules.prompt.denoise"),
         ):
             main(
-                model_id=model_id,
-                ae_id="model.vae.flux1-dev",
+                model_id=model,
+                ae_id=model,
                 quantization=False,
                 loop=False,
                 prompt="test",
