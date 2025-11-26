@@ -5,7 +5,7 @@ import torch
 from unittest.mock import patch, MagicMock
 
 from divisor.flux_modules.prompt import main
-from divisor.flux_modules.util import (
+from divisor.flux_modules.spec import (
     configs,
     get_model_spec,
     get_compatibility_spec,
@@ -39,20 +39,24 @@ class TestPromptModelSpecs:
         """Test that main() raises ValueError for invalid model IDs."""
         with pytest.raises(ValueError, match="Got unknown model id"):
             # Mock the function to avoid actually loading models
-            with patch("divisor.flux_modules.prompt.load_flow_model"), \
-                 patch("divisor.flux_modules.prompt.load_ae"), \
-                 patch("divisor.flux_modules.prompt.load_t5"), \
-                 patch("divisor.flux_modules.prompt.load_clip"):
+            with (
+                patch("divisor.flux_modules.prompt.load_flow_model"),
+                patch("divisor.flux_modules.prompt.load_ae"),
+                patch("divisor.flux_modules.prompt.load_t5"),
+                patch("divisor.flux_modules.prompt.load_clip"),
+            ):
                 # Use a valid ae_id that exists in configs
                 main(model_id="invalid-model-id", ae_id="model.vae.flux1-dev", loop=False)
 
     def test_main_raises_error_for_invalid_ae_id(self):
         """Test that main() raises ValueError for invalid AE IDs."""
         with pytest.raises(ValueError, match="Got unknown model id"):
-            with patch("divisor.flux_modules.prompt.load_flow_model"), \
-                 patch("divisor.flux_modules.prompt.load_ae"), \
-                 patch("divisor.flux_modules.prompt.load_t5"), \
-                 patch("divisor.flux_modules.prompt.load_clip"):
+            with (
+                patch("divisor.flux_modules.prompt.load_flow_model"),
+                patch("divisor.flux_modules.prompt.load_ae"),
+                patch("divisor.flux_modules.prompt.load_t5"),
+                patch("divisor.flux_modules.prompt.load_clip"),
+            ):
                 main(model_id="model.dit.flux1-dev", ae_id="invalid-ae-id", loop=False)
 
     def test_main_loads_model_spec_with_init_params(self):
@@ -96,14 +100,16 @@ class TestPromptModelSpecs:
         # For now, we test that the error handling exists
         model_id = "model.dit.flux1-dev"
         compat_spec = get_compatibility_spec(model_id, "fp8-sai")
-        
+
         # If compat_spec is None, main() should raise an error
         if compat_spec is None:
             with pytest.raises(ValueError, match="does not have a compatibility spec configured"):
-                with patch("divisor.flux_modules.prompt.load_flow_model"), \
-                     patch("divisor.flux_modules.prompt.load_ae"), \
-                     patch("divisor.flux_modules.prompt.load_t5"), \
-                     patch("divisor.flux_modules.prompt.load_clip"):
+                with (
+                    patch("divisor.flux_modules.prompt.load_flow_model"),
+                    patch("divisor.flux_modules.prompt.load_ae"),
+                    patch("divisor.flux_modules.prompt.load_t5"),
+                    patch("divisor.flux_modules.prompt.load_clip"),
+                ):
                     main(
                         model_id=model_id,
                         ae_id="model.vae.flux1-dev",
@@ -114,17 +120,18 @@ class TestPromptModelSpecs:
     def test_main_passes_override_dict_to_load_flow_model(self):
         """Test that main() correctly builds override dict for load_flow_model."""
         model_id = "model.dit.flux1-dev"
-        
+
         # Mock load_flow_model to capture its arguments
-        with patch("divisor.flux_modules.prompt.load_flow_model") as mock_load, \
-             patch("divisor.flux_modules.prompt.load_ae"), \
-             patch("divisor.flux_modules.prompt.load_t5"), \
-             patch("divisor.flux_modules.prompt.load_clip"), \
-             patch("divisor.flux_modules.prompt.get_noise"), \
-             patch("divisor.flux_modules.prompt.prepare"), \
-             patch("divisor.flux_modules.prompt.get_schedule"), \
-             patch("divisor.flux_modules.prompt.denoise"):
-            
+        with (
+            patch("divisor.flux_modules.prompt.load_flow_model") as mock_load,
+            patch("divisor.flux_modules.prompt.load_ae"),
+            patch("divisor.flux_modules.prompt.load_t5"),
+            patch("divisor.flux_modules.prompt.load_clip"),
+            patch("divisor.flux_modules.prompt.get_noise"),
+            patch("divisor.flux_modules.prompt.prepare"),
+            patch("divisor.flux_modules.prompt.get_schedule"),
+            patch("divisor.flux_modules.prompt.denoise"),
+        ):
             # Test with quantization=True
             compat_spec = get_compatibility_spec(model_id, "fp8-sai")
             if compat_spec is not None:
@@ -136,7 +143,7 @@ class TestPromptModelSpecs:
                     loop=False,
                     prompt="test",
                 )
-                
+
                 # Verify load_flow_model was called with override dict
                 assert mock_load.called
                 call_kwargs = mock_load.call_args[1]
@@ -150,16 +157,17 @@ class TestPromptModelSpecs:
     def test_main_uses_base_spec_when_quantization_false(self):
         """Test that main() uses base spec when quantization=False."""
         model_id = "model.dit.flux1-dev"
-        
-        with patch("divisor.flux_modules.prompt.load_flow_model") as mock_load, \
-             patch("divisor.flux_modules.prompt.load_ae"), \
-             patch("divisor.flux_modules.prompt.load_t5"), \
-             patch("divisor.flux_modules.prompt.load_clip"), \
-             patch("divisor.flux_modules.prompt.get_noise"), \
-             patch("divisor.flux_modules.prompt.prepare"), \
-             patch("divisor.flux_modules.prompt.get_schedule"), \
-             patch("divisor.flux_modules.prompt.denoise"):
-            
+
+        with (
+            patch("divisor.flux_modules.prompt.load_flow_model") as mock_load,
+            patch("divisor.flux_modules.prompt.load_ae"),
+            patch("divisor.flux_modules.prompt.load_t5"),
+            patch("divisor.flux_modules.prompt.load_clip"),
+            patch("divisor.flux_modules.prompt.get_noise"),
+            patch("divisor.flux_modules.prompt.prepare"),
+            patch("divisor.flux_modules.prompt.get_schedule"),
+            patch("divisor.flux_modules.prompt.denoise"),
+        ):
             main(
                 model_id=model_id,
                 ae_id="model.vae.flux1-dev",
@@ -167,7 +175,7 @@ class TestPromptModelSpecs:
                 loop=False,
                 prompt="test",
             )
-            
+
             # Verify load_flow_model was called without override dict
             assert mock_load.called
             call_kwargs = mock_load.call_args[1]
@@ -194,4 +202,3 @@ class TestPromptModelSpecs:
             assert spec.repo_id is not None
             assert spec.file_name is not None
             assert spec.params is not None
-
