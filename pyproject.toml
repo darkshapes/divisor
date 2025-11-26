@@ -9,6 +9,7 @@ description = "fragment / denoise / process"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "einops>=0.8.1",
     "fire>=0.7.1",
     "nnll",
 ]
