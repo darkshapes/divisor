@@ -117,9 +117,19 @@ class Flux(nn.Module):
         vec = vec + self.vector_in(y)
         txt = self.txt_in(txt)
 
-        alpha = 0.98
-        txt = (1 - alpha) * txt + alpha * torch.randn_like(txt)
-        print("Added 50% NSR to txt")
+        # alpha = 0.98
+        txt[..., :3000] = (
+            -txt[..., :3000] * 2
+        )  # (1 - alpha) * txt + alpha * torch.randn_like(txt)
+        # print("Added 98% NSR to txt")
+
+        print(
+            "inverted txt",
+            txt.shape,
+            txt.min().item(),
+            txt.max().item(),
+            txt.mean().item(),
+        )
 
         ids = torch.cat((txt_ids, img_ids), dim=1)
         pe = self.pe_embedder(ids)
