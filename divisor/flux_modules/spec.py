@@ -67,6 +67,14 @@ configs = {
             repo_id="Comfy-Org/flux1-dev",
             file_name="flux1-dev-fp8.safetensors",
         ),
+        "fp8-e5m2-sai": CompatibilitySpec(
+            repo_id="Kijai/flux-fp8",
+            file_name="flux1-dev-fp8-e5m2.safetensors",
+        ),
+        "fp8-e4m3fn-sai": CompatibilitySpec(
+            repo_id="Kijai/flux-fp8",
+            file_name="flux1-dev-fp8-e4m3fn.safetensors",
+        ),
     },
     "model.vae.flux1-dev": {
         "*": ModelSpec(
@@ -115,8 +123,12 @@ configs = {
             ),
         ),
         "fp8-sai": CompatibilitySpec(
-            repo_id="Comfy-Org/flux1-dev",
-            file_name="flux1-dev-fp8.safetensors",
+            repo_id="Comfy-Org/flux1-schnell",
+            file_name="flux1-schnell-fp8.safetensors",
+        ),
+        "fp8-e4m3fn-sai": CompatibilitySpec(
+            repo_id="Kijai/flux-fp8",
+            file_name="flux1-schnell-fp8-e4m3fn.safetensors",
         ),
     },
 }
