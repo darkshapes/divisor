@@ -182,7 +182,7 @@ def change_resolution(
             nfo("Cannot generate resolutions: width or height not set")
         else:
             valid_resolutions = generate_valid_resolutions(state.width, state.height)
-            nfo("\nValid resolutions (same patch count):")
+            nfo("Valid resolutions (same patch count):")
             for i, (w, h) in enumerate(valid_resolutions):
                 current_marker = ""
                 if state.width == w and state.height == h:
@@ -202,13 +202,11 @@ def change_resolution(
                     nfo("Invalid resolution index, keeping current value")
                     return state
             if new_width is not None and new_height is not None:
-                return update_state_and_cache(
-                    controller,
-                    controller.set_resolution,
-                    (new_width, new_height),
-                    clear_prediction_cache,
-                    f"Resolution set to: {new_width}x{new_height}",
-                )
+                controller.set_resolution(new_width, new_height)
+                clear_prediction_cache()
+                state = controller.current_state
+                nfo(f"Resolution set to: {new_width}x{new_height}")
+                return state
     except (ValueError, IndexError):
         nfo("Invalid resolution input, keeping current value")
     return state

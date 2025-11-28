@@ -12,22 +12,14 @@ from fire import Fire
 
 
 def main():
-    """Main entry point that routes to appropriate inference function.
-
-    Usage:
-        dvzr                                    # Default: Flux image generation mode
-        dvzr -o / --omni                        # DiMOO multimodal understanding mode
-        dvzr --model-type dev                   # Use flux1-dev model (default)
-        dvzr --model-type schnell               # Use flux1-schnell model
-        dvzr -m dev                             # Short form for model type
-    """
+    """Main entry point that routes to appropriate inference function."""
     parser = argparse.ArgumentParser(description="Divisor CLI - Flux image generation and multimodal understanding")
     parser.add_argument(
-        "-o",
-        "--omni",
+        "--quantization",
         action="store_true",
-        help="Enable DiMOO multimodal understanding mode",
+        help="Enable quantization (fp8, e5m2, e4m3fn) for the model",
     )
+
     parser.add_argument(
         "-m",
         "--model-type",

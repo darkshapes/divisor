@@ -111,7 +111,7 @@ class TestCommandsSamplingIntegration:
             result = change_resolution(mock_controller, initial_state, mock_clear_cache)
 
             # Verify set_resolution was called with correct values
-            mock_controller.set_resolution.assert_called_once_with((512, 512))
+            mock_controller.set_resolution.assert_called_once_with(512, 512)
             # Verify cache was cleared
             mock_clear_cache.assert_called_once()
             # Verify state was updated
@@ -256,6 +256,10 @@ class TestCommandsSamplingIntegration:
     def test_denoise_initializes_controller_with_state_values(self):
         """Test that denoise function initializes controller with state values."""
         mock_model = Mock()
+        # Mock parameters() to return an iterable with a parameter that has a device
+        mock_param = Mock()
+        mock_param.device = torch.device("cpu")
+        mock_model.parameters.return_value = iter([mock_param])
         mock_ae = Mock(spec=AutoEncoder)
         mock_ae.scale_factor = 0.3611
         mock_ae.shift_factor = 0.1159
@@ -439,7 +443,6 @@ class TestCommandsSamplingIntegration:
         """Test that process_choice integrates correctly with denoise loop."""
         # This test verifies that process_choice can be called from within
         # the denoise loop and correctly updates the controller state
-        mock_model = Mock()
         mock_ae = Mock(spec=AutoEncoder)
         mock_ae.scale_factor = 0.3611
         mock_ae.shift_factor = 0.1159
@@ -458,6 +461,21 @@ class TestCommandsSamplingIntegration:
         txt = torch.randn(1, 77, 4096)
         txt_ids = torch.zeros(1, 77, 3)
         vec = torch.randn(1, 77, 768)
+
+        # Create mock_model after img is defined
+        mock_model = Mock()
+        # Mock parameters() to return an iterable with a parameter that has a device and dtype
+        mock_param = Mock()
+        mock_param.device = torch.device("cpu")
+        mock_param.dtype = torch.bfloat16
+        mock_model.parameters.return_value = iter([mock_param])
+        # Mock the model call to return a prediction
+        mock_model.return_value = torch.randn(1, img.shape[1], img.shape[2])
+        # Mock encoder for VAE dtype detection
+        mock_encoder_param = Mock()
+        mock_encoder_param.dtype = torch.bfloat16
+        mock_ae.encoder = Mock()
+        mock_ae.encoder.parameters.return_value = iter([mock_encoder_param])
 
         state = DenoisingState(
             current_timestep=0.5,
@@ -493,9 +511,6 @@ class TestCommandsSamplingIntegration:
             mock_controller_instance.guidance = 4.0
             mock_controller_instance.hyperchain = Mock()
             MockController.return_value = mock_controller_instance
-            mock_model = Mock()
-            # Model should return prediction with same shape as input: [1, 256, 64] (3D format)
-            mock_model.return_value = torch.randn(1, img.shape[1], img.shape[2])
             # Mock process_choice at the usage site (where it's imported)
             with patch("divisor.flux_modules.sampling.process_choice") as mock_process:
                 mock_process.return_value = state

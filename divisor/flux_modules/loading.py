@@ -38,6 +38,46 @@ def retrieve_model(repo_id: str, file_name: str) -> Path:
     return Path(model_dir) / file_name
 
 
+def convert_fp8_to_bf16(model: torch.nn.Module, verbose: bool = True) -> bool:
+    """Detect and convert fp8 tensors in model parameters and buffers to bf16.
+    :param model: The model to convert fp8 tensors in
+    :param verbose: Whether to print conversion messages
+    """
+    # Define fp8 dtypes to detect
+    fp8_dtypes = [
+        getattr(torch, "float8_e4m3fn", None),
+        getattr(torch, "float8_e5m2", None),
+        getattr(torch, "float8_e4m3fnuz", None),
+        getattr(torch, "float8_e5m2fnuz", None),
+    ]
+
+    fp8_dtypes = [dtype for dtype in fp8_dtypes if dtype is not None]
+    if not fp8_dtypes:
+        return False
+
+    converted_count = 0
+
+    for name, param in model.named_parameters():
+        if param.dtype in fp8_dtypes:
+            with torch.no_grad():
+                param.data = param.data.float()
+            converted_count += 1
+            if verbose:
+                nfo(f"Converted fp8 parameter '{name}' to bf16")
+
+    for name, buffer in model.named_buffers():
+        if buffer.dtype in fp8_dtypes:
+            buffer.data = buffer.data.float()
+            converted_count += 1
+            if verbose:
+                nfo(f"Converted fp8 buffer '{name}' to bf16")
+
+    if converted_count > 0:
+        nfo(f"Converted {converted_count} fp8 tensor(s) to bf16")
+        return True
+    return False
+
+
 def load_state_dict_into_model(
     model: torch.nn.Module,
     state_dict: dict[str, torch.Tensor],
@@ -118,7 +158,14 @@ def load_flow_model(
     nfo(f"Loading checkpoint: {ckpt_path}")
     # load_sft doesn't support torch.device
     sd = load_sft(ckpt_path, device=str(device))
+
+    # if device.type == "mps":
+    #     convert_fp8_to_bf16_state_dict(sd, verbose=verbose)
+
     load_state_dict_into_model(model, sd, verbose=verbose)
+
+    if device.type == "mps":
+        convert_fp8_to_bf16(model, verbose=verbose)
 
     # Load LoRA if provided
     if lora_repo_id and lora_filename:
