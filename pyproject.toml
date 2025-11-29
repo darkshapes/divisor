@@ -12,6 +12,8 @@ dependencies = [
     "einops>=0.8.1",
     "fire>=0.7.1",
     "nnll",
+    "protobuf>=6.33.1",
+    "sentencepiece>=0.2.1",
 ]
 [project.scripts]
 dvzr = "divisor.app:main"

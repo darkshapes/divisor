@@ -17,8 +17,8 @@ from divisor.commands import (
     change_prompt,
 )
 from divisor.controller import ManualTimestepController, DenoisingState
-from divisor.flux_modules.sampling import denoise
-from divisor.flux_modules.autoencoder import AutoEncoder
+from divisor.flux1.sampling import denoise
+from divisor.flux1.autoencoder import AutoEncoder
 
 
 class TestCommandsSamplingIntegration:
@@ -303,7 +303,7 @@ class TestCommandsSamplingIntegration:
         timesteps = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0]
 
         # Mock the controller creation and methods
-        with patch("divisor.flux_modules.sampling.ManualTimestepController") as MockController:
+        with patch("divisor.flux1.sampling.ManualTimestepController") as MockController:
             mock_controller_instance = Mock()
             mock_controller_instance.is_complete = True  # Make it complete immediately to exit loop
             mock_controller_instance.current_state = state
@@ -312,10 +312,10 @@ class TestCommandsSamplingIntegration:
 
             # Mock other dependencies
             with (
-                patch("divisor.flux_modules.sampling.name_save_file_as"),
-                patch("divisor.flux_modules.sampling.save_with_hyperchain"),
-                patch("divisor.flux_modules.sampling.sync_torch"),
-                patch("divisor.flux_modules.sampling.nfo"),
+                patch("divisor.flux1.sampling.name_save_file_as"),
+                patch("divisor.flux1.sampling.save_with_hyperchain"),
+                patch("divisor.flux1.sampling.sync_torch"),
+                patch("divisor.flux1.sampling.nfo"),
             ):
                 result = denoise(
                     model=mock_model,
@@ -392,7 +392,7 @@ class TestCommandsSamplingIntegration:
 
         mock_model.side_effect = track_model_call
 
-        with patch("divisor.flux_modules.sampling.ManualTimestepController") as MockController:
+        with patch("divisor.flux1.sampling.ManualTimestepController") as MockController:
             mock_controller_instance = Mock()
             mock_controller_instance.is_complete = True
             mock_controller_instance.current_state = state
@@ -408,11 +408,11 @@ class TestCommandsSamplingIntegration:
             MockController.return_value = mock_controller_instance
 
             with (
-                patch("divisor.flux_modules.sampling.name_save_file_as"),
-                patch("divisor.flux_modules.sampling.save_with_hyperchain"),
-                patch("divisor.flux_modules.sampling.sync_torch"),
-                patch("divisor.flux_modules.sampling.nfo"),
-                patch("divisor.flux_modules.sampling.process_choice", return_value=state),
+                patch("divisor.flux1.sampling.name_save_file_as"),
+                patch("divisor.flux1.sampling.save_with_hyperchain"),
+                patch("divisor.flux1.sampling.sync_torch"),
+                patch("divisor.flux1.sampling.nfo"),
+                patch("divisor.flux1.sampling.process_choice", return_value=state),
             ):
                 # This test verifies that the denoise_step_fn closure captures
                 # the controller's current guidance value
@@ -500,7 +500,7 @@ class TestCommandsSamplingIntegration:
 
         timesteps = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0]
 
-        with patch("divisor.flux_modules.sampling.ManualTimestepController") as MockController:
+        with patch("divisor.flux1.sampling.ManualTimestepController") as MockController:
             mock_controller_instance = Mock()
             # Simulate one iteration of the loop
             # Use PropertyMock to properly mock the is_complete property
@@ -512,14 +512,14 @@ class TestCommandsSamplingIntegration:
             mock_controller_instance.hyperchain = Mock()
             MockController.return_value = mock_controller_instance
             # Mock process_choice at the usage site (where it's imported)
-            with patch("divisor.flux_modules.sampling.process_choice") as mock_process:
+            with patch("divisor.flux1.sampling.process_choice") as mock_process:
                 mock_process.return_value = state
 
                 with (
-                    patch("divisor.flux_modules.sampling.name_save_file_as"),
-                    patch("divisor.flux_modules.sampling.save_with_hyperchain"),
-                    patch("divisor.flux_modules.sampling.sync_torch"),
-                    patch("divisor.flux_modules.sampling.nfo"),
+                    patch("divisor.flux1.sampling.name_save_file_as"),
+                    patch("divisor.flux1.sampling.save_with_hyperchain"),
+                    patch("divisor.flux1.sampling.sync_torch"),
+                    patch("divisor.flux1.sampling.nfo"),
                 ):
                     denoise(
                         model=mock_model,

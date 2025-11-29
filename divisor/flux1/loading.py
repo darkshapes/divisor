@@ -2,6 +2,7 @@
 # <!-- // /*  d a r k s h a p e s */ -->
 # adapted BFL Flux code from https://github.com/black-forest-labs/flux
 
+import os
 import torch
 from pathlib import Path
 from huggingface_hub import snapshot_download
@@ -10,10 +11,10 @@ from diffusers.models.autoencoders.autoencoder_tiny import AutoencoderTiny
 from nnll.console import nfo
 from nnll.init_gpu import device
 
-from divisor.flux_modules.spec import optionally_expand_state_dict, get_model_spec
-from divisor.flux_modules.model import FluxLoraWrapper, Flux, FluxParams
-from divisor.flux_modules.autoencoder import AutoEncoder, AutoEncoderParams
-from divisor.flux_modules.text_embedder import HFEmbedder
+from divisor.flux1.spec import optionally_expand_state_dict, get_model_spec
+from divisor.flux1.model import FluxLoraWrapper, Flux, FluxParams
+from divisor.flux1.autoencoder import AutoEncoder, AutoEncoderParams
+from divisor.flux1.text_embedder import HFEmbedder
 
 
 def print_load_warning(missing: list[str], unexpected: list[str]) -> None:
@@ -119,7 +120,7 @@ def load_lora_weights(
 
 def load_flow_model(
     mir_id: str,
-    device: str | torch.device = device,
+    device: torch.device = device,
     repo_id: str | None = None,
     file_name: str | None = None,
     verbose: bool = True,
@@ -136,7 +137,6 @@ def load_flow_model(
     :param lora_filename: Optional LoRA filename (if not in config)
     :returns: Loaded Flux model"""
 
-    nfo("Init model")
     config = get_model_spec(mir_id)
 
     if not isinstance(config.params, FluxParams):
@@ -155,12 +155,9 @@ def load_flow_model(
 
     # Load base checkpoint
     ckpt_path = str(retrieve_model(checkpoint_repo_id, checkpoint_file_name))
-    nfo(f"Loading checkpoint: {ckpt_path}")
+    nfo(f": {os.path.basename(ckpt_path)}")
     # load_sft doesn't support torch.device
     sd = load_sft(ckpt_path, device=str(device))
-
-    # if device.type == "mps":
-    #     convert_fp8_to_bf16_state_dict(sd, verbose=verbose)
 
     load_state_dict_into_model(model, sd, verbose=verbose)
 
@@ -201,11 +198,10 @@ def load_ae(mir_id: str, device: str | torch.device = device) -> AutoEncoder:
 
     ckpt_path = str(retrieve_model(config.repo_id, config.file_name))
 
-    nfo("Init AE")
     with torch.device("meta"):
         ae = AutoEncoder(config.params)
 
-    nfo(f"Loading AE checkpoint: {ckpt_path}")
+    nfo(f": {os.path.basename(ckpt_path)}")
     sd = load_sft(ckpt_path, device=str(device))
     load_state_dict_into_model(ae, sd, verbose=True)
     return ae

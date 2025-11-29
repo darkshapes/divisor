@@ -22,9 +22,9 @@ from divisor.controller import (
     rng,
     variation_rng,
 )
-from divisor.flux_modules.autoencoder import AutoEncoder
-from divisor.flux_modules.model import Flux
-from divisor.flux_modules.text_embedder import HFEmbedder
+from divisor.flux1.autoencoder import AutoEncoder
+from divisor.flux1.model import Flux
+from divisor.flux1.text_embedder import HFEmbedder
 from divisor.variant import apply_variation_noise
 
 

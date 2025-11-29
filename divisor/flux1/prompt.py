@@ -8,19 +8,19 @@ from nnll.init_gpu import clear_cache, device
 from nnll.console import nfo
 
 from divisor.controller import DenoisingState, rng
-from divisor.flux_modules.sampling import (
+from divisor.flux1.sampling import (
     SamplingOptions,
     denoise,
     get_noise,
     get_schedule,
     prepare,
 )
-from divisor.flux_modules.spec import (
+from divisor.flux1.spec import (
     configs,
     get_model_spec,
     get_compatibility_spec,
 )
-from divisor.flux_modules.loading import (
+from divisor.flux1.loading import (
     load_ae,
     load_clip,
     load_flow_model,
@@ -165,7 +165,7 @@ def main(
     # Load model to final device if not offloading (compile requires model to be on target device)
     model = load_flow_model(
         model_id,
-        device="cpu" if offload else device,
+        device=torch.device("cpu") if offload else device,
         **override,
     )
 

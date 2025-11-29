@@ -15,7 +15,7 @@ from transformers import (
     SiglipVisionModel,
 )
 
-from divisor.flux_modules.loading import print_load_warning
+from divisor.flux1.loading import print_load_warning
 
 
 class DepthImageEncoder:
