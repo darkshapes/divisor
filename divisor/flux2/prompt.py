@@ -188,7 +188,7 @@ def main(
                 dtype=torch.bfloat16,
                 seed=opts.seed,
                 device=device,
-                version_2=False,
+                version_2=True,
             )
 
             x, x_ids = batched_prc_img(randn)
