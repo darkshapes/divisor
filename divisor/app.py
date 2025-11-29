@@ -14,6 +14,12 @@ from fire import Fire
 def main():
     """Main entry point that routes to appropriate inference function."""
     parser = argparse.ArgumentParser(description="Divisor CLI - Flux image generation and multimodal understanding")
+    parser.usage = "divisor --model-type dev --quantization <args>"
+    parser.epilog = """Valid arguments : 
+    --ae_id, --width, --height, --guidance, --seed, --prompt,
+    --tiny, --device, --num_steps, --loop,
+    --offload, --compile, --verbose
+    """
     parser.add_argument(
         "--quantization",
         action="store_true",
@@ -32,7 +38,7 @@ def main():
     args, remaining_argv = parser.parse_known_args()
 
     # Route to Flux mode
-    from divisor.flux_modules.prompt import main as flux_main
+    from divisor.flux1.prompt import main as flux_main
 
     # Add model_id argument to remaining argv for Fire to parse
     # Fire converts underscores to hyphens, so model_id becomes --model-id

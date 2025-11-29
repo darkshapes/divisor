@@ -8,8 +8,8 @@ import torch
 from diffusers.models.autoencoders.autoencoder_tiny import AutoencoderTiny
 from nnll.console import nfo
 
-from divisor.flux_modules.autoencoder import AutoEncoderParams
-from divisor.flux_modules.model import FluxLoraWrapper, FluxParams
+from divisor.flux1.autoencoder import AutoEncoderParams
+from divisor.flux1.model import FluxLoraWrapper, FluxParams
 
 
 @dataclass

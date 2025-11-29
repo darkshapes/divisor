@@ -8,7 +8,7 @@ import torch
 from einops import rearrange
 from torch import Tensor, nn
 
-from divisor.flux_modules.math import attention, rope
+from divisor.flux1.math import attention, rope
 
 
 class EmbedND(nn.Module):

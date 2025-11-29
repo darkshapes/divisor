@@ -21,7 +21,6 @@ from divisor.controller import (
     rng,
     variation_rng,
 )
-from divisor.flux_modules.autoencoder import AutoEncoder
 from divisor.variant import change_variation
 
 
@@ -32,7 +31,7 @@ def process_choice(
     current_layer_dropout: list[Optional[list[int]]],
     rng,
     variation_rng,
-    ae: Optional[AutoEncoder] = None,
+    ae: Optional[Any] = None,
     t5: Optional[Any] = None,
     clip: Optional[Any] = None,
     recompute_text_embeddings: Optional[Callable[[str], None]] = None,
@@ -52,7 +51,7 @@ def process_choice(
     """
     # Display status
     step = state.timestep_index
-    nfo(f"Step {step}/{state.total_timesteps} @ noise level {state.current_timestep:.4f}")
+    nfo(f"Step {step}/{state.total_timesteps - 1} @ noise level {state.current_timestep:.4f}")
     nfo(f"[G]uidance: {state.guidance:.2f}")
     nfo(f"[S]eed: {state.seed}")
     if state.width is not None and state.height is not None:
@@ -70,10 +69,10 @@ def process_choice(
     else:
         nfo("[V]Variation: OFF")
     nfo(f"[D]eterministic: {'ON' if state.deterministic else 'OFF'}")
+    nfo("[E]dit Mode (REPL) ")
     if state.prompt is not None:
-        prompt_display = state.prompt[:60] + "..." if len(state.prompt) > 60 else state.prompt
+        prompt_display = state.prompt
         nfo(f"[P]rompt: {prompt_display}")
-        nfo(f"[E]dit Mode (REPL): {prompt_display}")
 
     choice_handlers = {
         "": lambda: (
@@ -90,8 +89,8 @@ def process_choice(
         "a": lambda: change_vae_offset(controller, state, ae, clear_prediction_cache),
         "v": lambda: change_variation(controller, state, variation_rng, clear_prediction_cache),
         "d": lambda: toggle_deterministic(controller, state, clear_prediction_cache),
-        "p": lambda: change_prompt(controller, state, clear_prediction_cache, recompute_text_embeddings),
         "e": lambda: edit_mode(clear_prediction_cache),
+        "p": lambda: change_prompt(controller, state, clear_prediction_cache, recompute_text_embeddings),
     }
     prompt = "".join(key.upper() for key in choice_handlers if key)
     choice = input(f": [{prompt}] or advance with Enter: ").lower().strip()
@@ -265,7 +264,7 @@ def toggle_buffer_mask(
 def change_vae_offset(
     controller: ManualTimestepController,
     state: DenoisingState,
-    ae: Optional[AutoEncoder],
+    ae: Optional[Any],
     clear_prediction_cache: Callable[[], None],
 ) -> DenoisingState:
     """Handle VAE shift/scale offset change.\n
