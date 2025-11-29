@@ -81,3 +81,4 @@ textual.log
 output/
 .output/
 preview*
+.output

@@ -21,7 +21,6 @@ from divisor.controller import (
     rng,
     variation_rng,
 )
-from divisor.flux_modules.autoencoder import AutoEncoder
 from divisor.variant import change_variation
 
 
@@ -32,7 +31,7 @@ def process_choice(
     current_layer_dropout: list[Optional[list[int]]],
     rng,
     variation_rng,
-    ae: Optional[AutoEncoder] = None,
+    ae: Optional[Any] = None,
     t5: Optional[Any] = None,
     clip: Optional[Any] = None,
     recompute_text_embeddings: Optional[Callable[[str], None]] = None,
@@ -70,11 +69,10 @@ def process_choice(
     else:
         nfo("[V]Variation: OFF")
     nfo(f"[D]eterministic: {'ON' if state.deterministic else 'OFF'}")
+    nfo("[E]dit Mode (REPL) ")
     if state.prompt is not None:
-        prompt_display = state.prompt[:60] + "..." if len(state.prompt) > 60 else state.prompt
+        prompt_display = state.prompt
         nfo(f"[P]rompt: {prompt_display}")
-
-    choice = input(": [BDGLSRVXP] advance with Enter: ").lower().strip()
 
     choice_handlers = {
         "": lambda: (
@@ -84,9 +82,9 @@ def process_choice(
             controller.current_state,
         ),
         "g": lambda: change_guidance(controller, state, clear_prediction_cache),
-        "l": lambda: change_layer_dropout(controller, state, current_layer_dropout, clear_prediction_cache),
-        "r": lambda: change_resolution(controller, state, clear_prediction_cache),
         "s": lambda: change_seed(controller, state, rng, clear_prediction_cache),
+        "r": lambda: change_resolution(controller, state, clear_prediction_cache),
+        "l": lambda: change_layer_dropout(controller, state, current_layer_dropout, clear_prediction_cache),
         "b": lambda: toggle_buffer_mask(controller, state),
         "a": lambda: change_vae_offset(controller, state, ae, clear_prediction_cache),
         "v": lambda: change_variation(controller, state, variation_rng, clear_prediction_cache),
@@ -94,6 +92,8 @@ def process_choice(
         "e": lambda: edit_mode(clear_prediction_cache),
         "p": lambda: change_prompt(controller, state, clear_prediction_cache, recompute_text_embeddings),
     }
+    prompt = "".join(key.upper() for key in choice_handlers if key)
+    choice = input(f": [{prompt}] or advance with Enter: ").lower().strip()
 
     if choice in choice_handlers:
         result = choice_handlers[choice]()
@@ -151,13 +151,15 @@ def change_layer_dropout(
             layer_indices = None
         else:
             layer_indices = [int(x.strip()) for x in dropout_input.split(",")]
-        return update_state_and_cache(
-            controller,
-            controller.set_layer_dropout,
-            layer_indices,
-            clear_prediction_cache,
-            f"Layer dropout set to: {layer_indices}",
-        )
+
+        # Update controller first
+        controller.set_layer_dropout(layer_indices)
+        # Keep current_layer_dropout in sync (for backward compatibility)
+        current_layer_dropout[0] = layer_indices
+        clear_prediction_cache()
+        state = controller.current_state
+        nfo(f"Layer dropout set to: {layer_indices}")
+        return state
     except ValueError:
         nfo("Invalid layer indices, keeping current value")
     return controller.current_state
@@ -179,7 +181,7 @@ def change_resolution(
             nfo("Cannot generate resolutions: width or height not set")
         else:
             valid_resolutions = generate_valid_resolutions(state.width, state.height)
-            nfo("\nValid resolutions (same patch count):")
+            nfo("Valid resolutions (same patch count):")
             for i, (w, h) in enumerate(valid_resolutions):
                 current_marker = ""
                 if state.width == w and state.height == h:
@@ -199,13 +201,11 @@ def change_resolution(
                     nfo("Invalid resolution index, keeping current value")
                     return state
             if new_width is not None and new_height is not None:
-                return update_state_and_cache(
-                    controller,
-                    controller.set_resolution,
-                    (new_width, new_height),
-                    clear_prediction_cache,
-                    f"Resolution set to: {new_width}x{new_height}",
-                )
+                controller.set_resolution(new_width, new_height)
+                clear_prediction_cache()
+                state = controller.current_state
+                nfo(f"Resolution set to: {new_width}x{new_height}")
+                return state
     except (ValueError, IndexError):
         nfo("Invalid resolution input, keeping current value")
     return state
@@ -264,7 +264,7 @@ def toggle_buffer_mask(
 def change_vae_offset(
     controller: ManualTimestepController,
     state: DenoisingState,
-    ae: Optional[AutoEncoder],
+    ae: Optional[Any],
     clear_prediction_cache: Callable[[], None],
 ) -> DenoisingState:
     """Handle VAE shift/scale offset change.\n

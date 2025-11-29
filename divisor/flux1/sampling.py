@@ -22,9 +22,9 @@ from divisor.controller import (
     rng,
     variation_rng,
 )
-from divisor.flux_modules.autoencoder import AutoEncoder
-from divisor.flux_modules.model import Flux
-from divisor.flux_modules.text_embedder import HFEmbedder
+from divisor.flux1.autoencoder import AutoEncoder
+from divisor.flux1.model import Flux
+from divisor.flux1.text_embedder import HFEmbedder
 from divisor.variant import apply_variation_noise
 
 
@@ -176,7 +176,7 @@ def denoise(
     img_cond: Tensor | None = None,  # extra img tokens (channel-wise)
     img_cond_seq: Tensor | None = None,  # extra img tokens (sequence-wise)
     img_cond_seq_ids: Tensor | None = None,
-    torch_device: torch.device = device,
+    device: torch.device = device,
     initial_layer_dropout: Optional[list[int]] = None,
     t5: Optional[HFEmbedder] = None,  # T5 embedder for prompt changes
     clip: Optional[HFEmbedder] = None,  # CLIP embedder for prompt changes
@@ -194,7 +194,7 @@ def denoise(
     :param img_cond_seq: Optional sequence-wise image conditioning
     :param img_cond_seq_ids: Optional sequence-wise image conditioning IDs
     :param ae: AutoEncoder for decoding previews
-    :param torch_device: PyTorch device
+    :param device: PyTorch device
     :param initial_layer_dropout: Initial layer dropout configuration
     :param t5: Optional T5 embedder for recomputing text embeddings when prompt changes
     :param clip: Optional CLIP embedder for recomputing text embeddings when prompt changes"""
@@ -205,6 +205,19 @@ def denoise(
     cached_prediction: list[Optional[Tensor]] = [None]  # Cache prediction to avoid duplicate model calls
     cached_prediction_state: list[Optional[dict]] = [None]  # Cache state when prediction was generated
     controller_ref: list[Optional["ManualTimestepController"]] = [None]  # Reference to controller for closure access
+
+    model_ref: list[Flux] = [model]
+    # Ensure model is on the correct device (fixes meta device issue)
+    target_device = img.device
+    # Safely get model device, handling Mock objects in tests
+    try:
+        model_device = next(model.parameters()).device
+    except (TypeError, StopIteration, AttributeError):
+        # Fallback for Mock objects or models without parameters
+        # Assume model is already on correct device if we can't determine it
+        model_device = target_device
+    if model_device != target_device:
+        model_ref[0] = model.to_empty(device=target_device)
 
     # Store embeddings in mutable containers so they can be updated when prompt changes
     current_txt: list[Tensor] = [txt]
@@ -286,26 +299,56 @@ def denoise(
             return cached_prediction[0]
 
         # Generate new prediction
+        # When autocast is disabled (MPS), ensure all inputs are in correct dtype (bfloat16)
+        # Get model dtype to ensure inputs match
+        # Safely get model dtype, handling Mock objects in tests
+        try:
+            model_dtype = next(model_ref[0].parameters()).dtype
+        except (TypeError, StopIteration, AttributeError):
+            # Fallback: use sample dtype if we can't get model dtype (for Mock objects in tests)
+            model_dtype = sample.dtype
+        use_autocast = device.type == "cuda"
+
+        # Ensure sample is in correct dtype before any operations
+        if not use_autocast:
+            sample = sample.to(dtype=model_dtype)
+
         t_vec = torch.full((sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device)
         img_input = sample
         img_input_ids = img_ids
 
         if img_cond is not None:
-            img_input = torch.cat((sample, img_cond), dim=-1)
+            # Ensure img_cond matches sample dtype before concatenation
+            img_cond_converted = img_cond.to(dtype=model_dtype) if not use_autocast else img_cond
+            img_input = torch.cat((sample, img_cond_converted), dim=-1)
         if img_cond_seq is not None:
             assert img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
-            img_input = torch.cat((img_input, img_cond_seq), dim=1)
+            # Ensure img_cond_seq matches dtype before concatenation
+            img_cond_seq_converted = img_cond_seq.to(dtype=model_dtype) if not use_autocast else img_cond_seq
+            img_input = torch.cat((img_input, img_cond_seq_converted), dim=1)
             img_input_ids = torch.cat((img_input_ids, img_cond_seq_ids), dim=1)
 
         guidance_vec = (torch.full((img.shape[0],), state.guidance, device=img.device, dtype=img.dtype) * 0.0) * 0.0
 
+        if not use_autocast:
+            # MPS: Convert all inputs to model dtype (bfloat16) before processing
+            img_input = img_input.to(dtype=model_dtype)
+            txt_input = current_txt[0].to(dtype=model_dtype)
+            vec_input = current_vec[0].to(dtype=model_dtype)
+            t_vec = t_vec.to(dtype=model_dtype)
+            guidance_vec = guidance_vec.to(dtype=model_dtype)
+        else:
+            # CUDA: Use inputs as-is (autocast will handle dtype)
+            txt_input = current_txt[0]
+            vec_input = current_vec[0]
+
         # Use current embeddings (which may have been updated if prompt changed)
-        pred = model(
+        pred = model_ref[0](
             img=img_input,
             img_ids=img_input_ids,
-            txt=current_txt[0],
+            txt=txt_input,
             txt_ids=current_txt_ids[0],
-            y=current_vec[0],
+            y=vec_input,
             timesteps=t_vec,
             guidance=guidance_vec,
             layer_dropouts=layer_dropouts_val,
@@ -328,11 +371,13 @@ def denoise(
         :param guidance_val: Guidance value
         :returns: Model prediction"""
 
-        layer_dropouts = current_layer_dropout[0]
-        pred = get_prediction(sample, t_curr, guidance_val, layer_dropouts)
-        use_mask = False
         if controller_ref[0] is not None:
             use_mask = controller_ref[0].use_previous_as_mask
+            layer_dropouts = controller_ref[0].current_state.layer_dropout
+        else:
+            layer_dropouts = current_layer_dropout[0]
+            use_mask = False
+        pred = get_prediction(sample, t_curr, guidance_val, layer_dropouts)
         if use_mask and previous_step_tensor[0] is not None:
             prev_tensor = previous_step_tensor[0]
             if prev_tensor.shape == pred.shape:
@@ -376,7 +421,9 @@ def denoise(
     )
     controller_ref[0] = controller  # Store reference for closure access
 
-    controller.set_layer_dropout(initial_layer_dropout)
+    # Use state.layer_dropout if available, otherwise fall back to initial_layer_dropout
+    layer_dropout_to_set = state.layer_dropout if state.layer_dropout is not None else initial_layer_dropout
+    controller.set_layer_dropout(layer_dropout_to_set)
 
     if state.width is not None and state.height is not None:
         controller.set_resolution(state.width, state.height)
@@ -425,14 +472,16 @@ def denoise(
         if ae is not None and state.width is not None and state.height is not None:
             # Reuse cached prediction if available, otherwise generate it
             # This will be cached and reused in denoise_step_fn when advancing
+            # Always use state.layer_dropout from controller to ensure consistency
             pred_preview = get_prediction(
                 state.current_sample,
                 state.current_timestep,
                 state.guidance,
-                current_layer_dropout[0],
+                state.layer_dropout,
             )
 
             intermediate = state.current_sample - state.current_timestep * pred_preview
+            # Unpack requires float32, but we'll convert back to correct dtype after
             intermediate = unpack(intermediate.float(), state.height, state.width)
 
             sync_torch(device)
@@ -440,7 +489,24 @@ def denoise(
 
             nfo(f"Step time: {t1 - t0:.1f}s")
 
-            with torch.autocast(device_type=torch_device.type, dtype=torch.bfloat16):
+            if device.type == "cuda":
+                context = torch.autocast(device_type=device.type, dtype=torch.bfloat16)
+            else:
+                from contextlib import nullcontext
+
+                context = nullcontext()
+            with context:
+                # When autocast is disabled (MPS), ensure intermediate is in correct dtype for VAE
+                if device.type != "cuda":
+                    # Get VAE encoder dtype to ensure intermediate matches (bfloat16)
+                    # Safely get encoder dtype, handling Mock objects in tests
+                    try:
+                        ae_dtype = next(ae.encoder.parameters()).dtype
+                    except (TypeError, StopIteration, AttributeError):
+                        # Fallback: use intermediate dtype if we can't get encoder dtype (for Mock objects in tests)
+                        ae_dtype = intermediate.dtype
+                    intermediate = intermediate.to(dtype=ae_dtype)
+
                 # Apply VAE shift/scale offset by manually adjusting the decode operation
                 if state.vae_shift_offset != 0.0 or state.vae_scale_offset != 0.0:
                     # Decode with offset: z = z / (scale_factor + scale_offset) + (shift_factor + shift_offset)

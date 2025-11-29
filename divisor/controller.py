@@ -283,14 +283,9 @@ class ManualTimestepController:
         if steps is None:
             steps = len(remaining_timesteps)
 
-        # Convert to tensor and normalize to [0, 1] if needed
-        # Assuming timesteps are already in [0, 1] range
+        # Convert to tensor and normalize to [0, 1] if needed, assuming timesteps are in [0, 1] range
         tensor_steps = torch.tensor(remaining_timesteps, dtype=torch.float32)
-
-        # Apply time_shift
         adjusted_timesteps = time_shift(self.mu, self.sigma, tensor_steps, steps, compress)
-
-        # Convert back to list
         new_timesteps = adjusted_timesteps.tolist()
 
         # Update the schedule (keep processed timesteps, replace remaining)
