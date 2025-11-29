@@ -5,6 +5,8 @@ import torch
 from einops import rearrange
 from torch import Tensor, nn
 
+from divisor.layer_dropout import process_blocks_with_dropout
+
 
 @dataclass
 class Flux2Params:
@@ -85,6 +87,7 @@ class Flux2(nn.Module):
         ctx: Tensor,
         ctx_ids: Tensor,
         guidance: Tensor,
+        layer_dropouts: list[int] | None = None,
     ):
         num_txt_tokens = ctx.shape[1]
 
@@ -103,26 +106,26 @@ class Flux2(nn.Module):
         pe_x = self.pe_embedder(x_ids)
         pe_ctx = self.pe_embedder(ctx_ids)
 
-        for block in self.double_blocks:
-            img, txt = block(
-                img,
-                txt,
-                pe_x,
-                pe_ctx,
-                double_block_mod_img,
-                double_block_mod_txt,
-            )
+        img, txt = process_blocks_with_dropout(
+            self.double_blocks,
+            layer_dropouts,  # Would need to be added to flux2 forward signature
+            0,
+            "double",
+            lambda block, state: block(state[0], state[1], pe_x, pe_ctx, double_block_mod_img, double_block_mod_txt),
+            (img, txt),
+        )
 
         img = torch.cat((txt, img), dim=1)
         pe = torch.cat((pe_ctx, pe_x), dim=2)
 
-        for i, block in enumerate(self.single_blocks):
-            img = block(
-                img,
-                pe,
-                single_block_mod,
-            )
-
+        img = process_blocks_with_dropout(
+            self.single_blocks,
+            layer_dropouts,  # Would need to be added to flux2 forward signature
+            len(self.double_blocks),
+            "single",
+            lambda block, state: block(state, pe, single_block_mod),
+            img,
+        )
         img = img[:, num_txt_tokens:, ...]
 
         img = self.final_layer(img, vec)

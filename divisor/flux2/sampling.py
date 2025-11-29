@@ -1,14 +1,35 @@
 import math
+import time
+from typing import Optional
 
 import torch
 import torchvision
 from einops import rearrange
 from PIL import Image
 from torch import Tensor
+from nnll.console import nfo
+from nnll.constants import ExtensionType
+from nnll.init_gpu import device, sync_torch
+from nnll.save_generation import name_save_file_as, save_with_hyperchain
 
 from .model import Flux2
+from .text_encoder import Mistral3SmallEmbedder
+from .autoencoder import AutoEncoder
 
 from divisor.flux2 import precision
+from divisor.controller import (
+    DenoisingState,
+    ManualTimestepController,
+    rng,
+    variation_rng,
+)
+from divisor.commands import process_choice
+from divisor.denoise_step import (
+    create_clear_prediction_cache,
+    create_recompute_text_embeddings,
+    create_get_prediction,
+    create_denoise_step_fn,
+)
 
 
 def compress_time(t_ids: Tensor) -> Tensor:
@@ -277,6 +298,7 @@ def denoise(
     img_cond_seq: Tensor | None = None,
     img_cond_seq_ids: Tensor | None = None,
 ):
+    """Simple non-interactive denoising function for Flux2."""
     guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
     for t_curr, t_prev in zip(timesteps[:-1], timesteps[1:]):
         t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
@@ -300,6 +322,224 @@ def denoise(
         img = img + (t_prev - t_curr) * pred
 
     return img
+
+
+@torch.inference_mode()
+def denoise_interactive(
+    model: Flux2,
+    # model input
+    img: Tensor,
+    img_ids: Tensor,
+    txt: Tensor,
+    txt_ids: Tensor,
+    state: DenoisingState,
+    ae: AutoEncoder,
+    timesteps: list[float],  # sampling parameters
+    # extra img tokens (sequence-wise)
+    img_cond_seq: Tensor | None = None,
+    img_cond_seq_ids: Tensor | None = None,
+    device: torch.device = device,
+    initial_layer_dropout: Optional[list[int]] = None,
+    text_embedder: Optional[Mistral3SmallEmbedder] = None,  # Mistral embedder for prompt changes
+):
+    """Interactive denoising using Flux2 model with optional ManualTimestepController.\n
+    :param model: Flux2 model instance
+    :param img: Initial noisy image tensor
+    :param img_ids: Image position IDs tensor
+    :param txt: Text embeddings tensor
+    :param txt_ids: Text position IDs tensor
+    :param state: DenoisingState containing current state parameters
+    :param timesteps: List of timestep values
+    :param img_cond_seq: Optional sequence-wise image conditioning
+    :param img_cond_seq_ids: Optional sequence-wise image conditioning IDs
+    :param ae: AutoEncoder for decoding previews
+    :param device: PyTorch device
+    :param initial_layer_dropout: Initial layer dropout configuration
+    :param text_embedder: Optional Mistral embedder for recomputing text embeddings when prompt changes"""
+
+    # this is ignored for schnell
+    current_layer_dropout = [initial_layer_dropout]
+    previous_step_tensor: list[Optional[Tensor]] = [None]  # Store previous step's tensor for masking
+    cached_prediction: list[Optional[Tensor]] = [None]  # Cache prediction to avoid duplicate model calls
+    cached_prediction_state: list[Optional[dict]] = [None]  # Cache state when prediction was generated
+    controller_ref: list[Optional["ManualTimestepController"]] = [None]  # Reference to controller for closure access
+
+    model_ref: list[Flux2] = [model]
+    # Ensure model is on the correct device (fixes meta device issue)
+    target_device = img.device
+    # Safely get model device, handling Mock objects in tests
+    try:
+        model_device = next(model.parameters()).device
+    except (TypeError, StopIteration, AttributeError):
+        # Fallback for Mock objects or models without parameters
+        # Assume model is already on correct device if we can't determine it
+        model_device = target_device
+    if model_device != target_device:
+        model_ref[0] = model.to_empty(device=target_device)
+
+    # Store embeddings in mutable containers so they can be updated when prompt changes
+    # Flux2 uses ctx instead of txt, and doesn't have separate CLIP embeddings
+    current_txt: list[Tensor] = [txt]
+    current_txt_ids: list[Tensor] = [txt_ids]
+    current_vec: list[Optional[Tensor]] = [None]  # Flux2 doesn't use CLIP embeddings
+    current_prompt: list[Optional[str]] = [state.prompt]  # Track current prompt to detect changes
+
+    clear_prediction_cache = create_clear_prediction_cache(cached_prediction, cached_prediction_state)
+
+    recompute_text_embeddings = create_recompute_text_embeddings(
+        img,
+        None,  # t5 not used for Flux2
+        None,  # clip not used for Flux2
+        current_txt,
+        current_txt_ids,
+        current_vec,
+        current_prompt,
+        clear_prediction_cache,
+        is_flux2=True,
+        text_embedder=text_embedder,
+    )
+
+    get_prediction = create_get_prediction(
+        model_ref,
+        img_ids,
+        img,
+        state,
+        None,  # img_cond not used in Flux2 (only img_cond_seq)
+        img_cond_seq,
+        img_cond_seq_ids,
+        current_txt,
+        current_txt_ids,
+        current_vec,
+        cached_prediction,
+        cached_prediction_state,
+    )
+
+    denoise_step_fn = create_denoise_step_fn(
+        controller_ref,
+        current_layer_dropout,
+        previous_step_tensor,
+        get_prediction,
+    )
+
+    controller = ManualTimestepController(
+        timesteps=timesteps,
+        initial_sample=img,
+        denoise_step_fn=denoise_step_fn,
+        initial_guidance=state.guidance,
+    )
+    controller_ref[0] = controller  # Store reference for closure access
+
+    # Use state.layer_dropout if available, otherwise fall back to initial_layer_dropout
+    layer_dropout_to_set = state.layer_dropout if state.layer_dropout is not None else initial_layer_dropout
+    controller.set_layer_dropout(layer_dropout_to_set)
+
+    if state.width is not None and state.height is not None:
+        controller.set_resolution(state.width, state.height)
+    if state.seed is not None:
+        controller.set_seed(state.seed)
+    if state.prompt is not None:
+        controller.set_prompt(state.prompt)
+    if state.num_steps is not None:
+        controller.set_num_steps(state.num_steps)
+    controller.set_vae_shift_offset(state.vae_shift_offset)
+    controller.set_vae_scale_offset(state.vae_scale_offset)
+    controller.set_use_previous_as_mask(state.use_previous_as_mask)
+
+    # Interactive loop
+    while not controller.is_complete:
+        file_path_named = name_save_file_as(ExtensionType.WEBP)
+        state = controller.current_state
+
+        # Check if prompt changed and recompute embeddings if needed
+        if state.prompt is not None and state.prompt != current_prompt[0]:
+            if text_embedder is not None:
+                recompute_text_embeddings(state.prompt)
+            else:
+                # If embedder not available, update current_prompt to avoid repeated checks
+                current_prompt[0] = state.prompt
+
+        state = process_choice(
+            controller,
+            state,
+            clear_prediction_cache,
+            current_layer_dropout,
+            rng,
+            variation_rng,
+            ae,
+            None,  # t5 not used for Flux2
+            None,  # clip not used for Flux2
+            recompute_text_embeddings,
+        )
+
+        # Generate preview
+        t0 = time.perf_counter()
+        if state.seed is not None:
+            rng.next_seed(state.seed)
+        else:
+            state.seed = rng.next_seed()
+        if ae is not None and state.width is not None and state.height is not None:
+            # Reuse cached prediction if available, otherwise generate it
+            # This will be cached and reused in denoise_step_fn when advancing
+            # Always use state.layer_dropout from controller to ensure consistency
+            pred_preview = get_prediction(
+                state.current_sample,
+                state.current_timestep,
+                state.guidance,
+                state.layer_dropout,
+            )
+
+            intermediate = state.current_sample - state.current_timestep * pred_preview
+            # Flux2 uses scatter_ids to convert back to spatial format
+            # The intermediate is already in the correct format (sequence of tokens)
+            # We need to scatter it back to spatial dimensions for VAE decoding
+            intermediate_list = scatter_ids(intermediate, img_ids)
+            if intermediate_list:
+                # scatter_ids returns list of tensors with shape (1, C, T, H, W)
+                # We need (1, C, H, W) for VAE, so we take the first time slice or squeeze
+                intermediate = intermediate_list[0].squeeze(2)  # Remove time dimension if present
+                if intermediate.dim() == 5:
+                    intermediate = intermediate[:, :, 0, :, :]  # Take first time slice
+
+            sync_torch(device)
+            t1 = time.perf_counter()
+
+            nfo(f"Step time: {t1 - t0:.1f}s")
+
+            if device.type == "cuda":
+                context = torch.autocast(device_type=device.type, dtype=torch.bfloat16)
+            else:
+                from contextlib import nullcontext
+
+                context = nullcontext()
+            with context:
+                # When autocast is disabled (MPS), ensure intermediate is in correct dtype for VAE
+                if device.type != "cuda":
+                    # Get VAE encoder dtype to ensure intermediate matches (bfloat16)
+                    # Safely get encoder dtype, handling Mock objects in tests
+                    try:
+                        ae_dtype = next(ae.encoder.parameters()).dtype
+                    except (TypeError, StopIteration, AttributeError):
+                        # Fallback: use intermediate dtype if we can't get encoder dtype (for Mock objects in tests)
+                        ae_dtype = intermediate.dtype
+                    intermediate = intermediate.to(dtype=ae_dtype)
+
+                # Apply VAE shift/scale offset by manually adjusting the decode operation
+                if state.vae_shift_offset != 0.0 or state.vae_scale_offset != 0.0:
+                    # Decode with offset: z = z / (scale_factor + scale_offset) + (shift_factor + shift_offset)
+                    z_adjusted = intermediate / (ae.scale_factor + state.vae_scale_offset) + (ae.shift_factor + state.vae_shift_offset)
+                    intermediate_image = ae.decoder(z_adjusted)
+                else:
+                    intermediate_image = ae.decode(intermediate)
+                if state.seed is not None:
+                    controller.store_state_in_chain(current_seed=state.seed)
+                save_with_hyperchain(
+                    file_path_named,
+                    intermediate_image,
+                    controller.hyperchain,
+                    ExtensionType.WEBP,
+                )
+
+    return controller.current_sample
 
 
 def concatenate_images(
