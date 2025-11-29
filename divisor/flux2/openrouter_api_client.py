@@ -9,7 +9,7 @@ from PIL import Image
 from divisor.flux2.system_messages import SYSTEM_MESSAGE_UPSAMPLING_I2I, SYSTEM_MESSAGE_UPSAMPLING_T2I
 from divisor.flux2.util import image_to_base64
 
-DEFAULT_SAMPLING_PARAMS = {"mistralai/pixtral-large-2411": dict(temperature=0.15)}
+DEFAULT_SAMPLING_PARAMS = {"mistralai/pixtral-large-2411": dict()}  # temperature=0.15
 
 
 class OpenRouterAPIClient:

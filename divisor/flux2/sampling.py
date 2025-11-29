@@ -7,14 +7,14 @@ import torchvision
 from einops import rearrange
 from PIL import Image
 from torch import Tensor
+from torch import nn
 from nnll.console import nfo
 from nnll.constants import ExtensionType
 from nnll.init_gpu import device, sync_torch
 from nnll.save_generation import name_save_file_as, save_with_hyperchain
 
-from .model import Flux2
-from .text_encoder import Mistral3SmallEmbedder
-from .autoencoder import AutoEncoder
+from divisor.flux2.model import Flux2
+from divisor.flux2.autoencoder import AutoEncoder
 
 from divisor.flux2 import precision
 from divisor.controller import (
@@ -340,7 +340,7 @@ def denoise_interactive(
     img_cond_seq_ids: Tensor | None = None,
     device: torch.device = device,
     initial_layer_dropout: Optional[list[int]] = None,
-    text_embedder: Optional[Mistral3SmallEmbedder] = None,  # Mistral embedder for prompt changes
+    text_embedder: Optional[nn.Module] = None,  # Mistral embedder for prompt changes
 ):
     """Interactive denoising using Flux2 model with optional ManualTimestepController.\n
     :param model: Flux2 model instance
@@ -392,7 +392,7 @@ def denoise_interactive(
         None,  # clip not used for Flux2
         current_txt,
         current_txt_ids,
-        current_vec,
+        current_vec,  # type: ignore
         current_prompt,
         clear_prediction_cache,
         is_flux2=True,
@@ -409,7 +409,7 @@ def denoise_interactive(
         img_cond_seq_ids,
         current_txt,
         current_txt_ids,
-        current_vec,
+        current_vec,  # type: ignore
         cached_prediction,
         cached_prediction_state,
     )
@@ -492,7 +492,7 @@ def denoise_interactive(
             # Flux2 uses scatter_ids to convert back to spatial format
             # The intermediate is already in the correct format (sequence of tokens)
             # We need to scatter it back to spatial dimensions for VAE decoding
-            intermediate_list = scatter_ids(intermediate, img_ids)
+            intermediate_list = torch.cat(scatter_ids(intermediate, img_ids)).squeeze(2)
             if intermediate_list:
                 # scatter_ids returns list of tensors with shape (1, C, T, H, W)
                 # We need (1, C, H, W) for VAE, so we take the first time slice or squeeze
@@ -526,8 +526,8 @@ def denoise_interactive(
                 # Apply VAE shift/scale offset by manually adjusting the decode operation
                 if state.vae_shift_offset != 0.0 or state.vae_scale_offset != 0.0:
                     # Decode with offset: z = z / (scale_factor + scale_offset) + (shift_factor + shift_offset)
-                    z_adjusted = intermediate / (ae.scale_factor + state.vae_scale_offset) + (ae.shift_factor + state.vae_shift_offset)
-                    intermediate_image = ae.decoder(z_adjusted)
+                    z_adjusted = intermediate / (ae.scale_factor + state.vae_scale_offset) + (ae.shift_factor + state.vae_shift_offset)  # type: ignore
+                    intermediate_image = ae.decode(z_adjusted).float()
                 else:
                     intermediate_image = ae.decode(intermediate)
                 if state.seed is not None:

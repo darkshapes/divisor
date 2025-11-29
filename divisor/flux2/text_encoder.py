@@ -34,7 +34,7 @@ class Mistral3SmallEmbedder(nn.Module):
 
         self.model: Mistral3ForConditionalGeneration = Mistral3ForConditionalGeneration.from_pretrained(
             model_spec,
-            torch_dtype=getattr(torch, torch_dtype),
+            dtype=getattr(torch, torch_dtype),
         )
         self.processor = AutoProcessor.from_pretrained(model_spec_processor, use_fast=False)
         self.yes_token, self.no_token = self.processor.tokenizer.encode(["yes", "no"], add_special_tokens=False)

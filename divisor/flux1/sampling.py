@@ -28,6 +28,7 @@ from divisor.denoise_step import (
     create_get_prediction,
     create_denoise_step_fn,
 )
+from divisor.noise import get_noise
 from divisor.flux1.autoencoder import AutoEncoder
 from divisor.flux1.model import Flux
 from divisor.flux1.text_embedder import HFEmbedder
@@ -43,44 +44,6 @@ class SamplingOptions:
     num_steps: int
     guidance: float
     seed: int | None
-
-
-def get_noise(
-    num_samples: int,
-    height: int,
-    width: int,
-    dtype: torch.dtype,
-    seed: int,
-    device: torch.device | None = None,
-) -> Tensor:
-    """Generate noise tensor.\n
-    :param num_samples: Number of samples to generate
-    :param height: Height of the image
-    :param width: Width of the image
-    :param device: Device to generate the noise on
-    :param dtype: Data type of the noise
-    :param seed: Seed for the random number generator
-    :returns: Noise tensor"""
-    # Get the generator's device to ensure compatibility
-    generator_device = rng._torch_generator.device if rng._torch_generator is not None else torch.device("cpu")
-
-    # Create tensor on generator's device first (required for MPS compatibility)
-    noise = torch.randn(
-        num_samples,
-        16,
-        # allow for packing
-        2 * math.ceil(height / 16),
-        2 * math.ceil(width / 16),
-        dtype=dtype,
-        generator=rng._torch_generator,
-        device=generator_device,
-    )
-
-    # Move to target device if different
-    if device is not None and generator_device != device:
-        noise = noise.to(device)
-
-    return noise
 
 
 def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:

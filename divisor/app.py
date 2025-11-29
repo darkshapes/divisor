@@ -40,7 +40,7 @@ def main():
     # Route to appropriate Flux mode based on model type
     if args.model_type == "dev2":
         # Route to Flux2
-        from divisor.flux2.cli import main as flux2_main
+        from divisor.flux2.prompt import main as flux2_main
 
         # Flux2 uses model_name parameter, default is "flux.2-dev"
         # Fire will handle the remaining arguments
