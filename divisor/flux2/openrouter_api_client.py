@@ -6,8 +6,8 @@ from typing import Any
 from openai import OpenAI
 from PIL import Image
 
-from .system_messages import SYSTEM_MESSAGE_UPSAMPLING_I2I, SYSTEM_MESSAGE_UPSAMPLING_T2I
-from .util import image_to_base64
+from divisor.flux2.system_messages import SYSTEM_MESSAGE_UPSAMPLING_I2I, SYSTEM_MESSAGE_UPSAMPLING_T2I
+from divisor.flux2.util import image_to_base64
 
 DEFAULT_SAMPLING_PARAMS = {"mistralai/pixtral-large-2411": dict(temperature=0.15)}
 
@@ -60,7 +60,7 @@ class OpenRouterAPIClient:
                     }
                 )
             content.append({"type": "text", "text": prompt})
-            messages.append({"role": "user", "content": content})
+            messages.append({"role": "user", "content": content})  # type: ignore
         else:
             messages.append({"role": "user", "content": prompt})
 
@@ -84,8 +84,8 @@ class OpenRouterAPIClient:
         """
         # Determine system message based on whether images are provided
         has_images = img is not None and len(img) > 0
-        if has_images and isinstance(img[0], list):
-            has_images = len(img[0]) > 0
+        if has_images and isinstance(img[0], list):  # type: ignore
+            has_images = len(img[0]) > 0  # type: ignore
 
         if has_images:
             system_message = SYSTEM_MESSAGE_UPSAMPLING_I2I
@@ -100,9 +100,9 @@ class OpenRouterAPIClient:
             prompt_images: list[Image.Image] | None = None
             if img is not None and len(img) > i:
                 if isinstance(img[i], list):
-                    prompt_images = img[i] if len(img[i]) > 0 else None
+                    prompt_images = img[i] if len(img[i]) > 0 else None  # type: ignore
                 elif isinstance(img[i], Image.Image):
-                    prompt_images = [img[i]]
+                    prompt_images = [img[i]]  # type: ignore
 
             # Format messages
             messages = self._format_messages(
@@ -113,9 +113,9 @@ class OpenRouterAPIClient:
 
             # Call API
             try:
-                response = self.client.chat.completions.create(
+                response = self.client.chat.completions.create(  # type: ignore
                     model=self.model,
-                    messages=messages,
+                    messages=messages,  # type: ignore
                     max_tokens=self.max_tokens,
                     **self.sampling_params,
                 )

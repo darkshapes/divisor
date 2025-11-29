@@ -6,8 +6,9 @@ from einops import rearrange
 from PIL import Image
 from transformers import AutoProcessor, Mistral3ForConditionalGeneration, pipeline
 
-from .sampling import cap_pixels, concatenate_images
-from .system_messages import (
+from divisor.flux2 import precision_name
+from divisor.flux2.sampling import cap_pixels, concatenate_images
+from divisor.flux2.system_messages import (
     PROMPT_IMAGE_INTEGRITY,
     PROMPT_IMAGE_INTEGRITY_FOLLOW_UP,
     PROMPT_TEXT_INTEGRITY,
@@ -16,19 +17,18 @@ from .system_messages import (
     SYSTEM_MESSAGE_UPSAMPLING_T2I,
     SYSTEM_PROMPT_CONTENT_FILTER,
 )
-precision = torch.float16
 
 OUTPUT_LAYERS = [10, 20, 30]
 MAX_LENGTH = 512
-NSFW_THRESHOLD = 0.85
 UPSAMPLING_MAX_IMAGE_SIZE = 768**2
+
 
 class Mistral3SmallEmbedder(nn.Module):
     def __init__(
         self,
         model_spec: str = "mistralai/Mistral-Small-3.2-24B-Instruct-2506",
         model_spec_processor: str = "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-        torch_dtype: str = "float16",
+        torch_dtype: str = precision_name,
     ):
         super().__init__()
 
@@ -37,18 +37,14 @@ class Mistral3SmallEmbedder(nn.Module):
             torch_dtype=getattr(torch, torch_dtype),
         )
         self.processor = AutoProcessor.from_pretrained(model_spec_processor, use_fast=False)
-        self.yes_token, self.no_token = self.processor.tokenizer.encode(
-            ["yes", "no"], add_special_tokens=False
-        )
+        self.yes_token, self.no_token = self.processor.tokenizer.encode(["yes", "no"], add_special_tokens=False)
 
         self.max_length = MAX_LENGTH
         self.upsampling_max_image_size = UPSAMPLING_MAX_IMAGE_SIZE
 
         self.nsfw_classifier = pipeline("image-classification", model="Falconsai/nsfw_image_detection")
 
-    def _validate_and_process_images(
-        self, img: list[list[Image.Image]] | list[Image.Image]
-    ) -> list[list[Image.Image]]:
+    def _validate_and_process_images(self, img: list[list[Image.Image]] | list[Image.Image]) -> list[list[Image.Image]]:
         # Simple validation: ensure it's a list of PIL images or list of lists of PIL images
         if not img:
             return []
@@ -56,14 +52,14 @@ class Mistral3SmallEmbedder(nn.Module):
         # Check if it's a list of lists or a list of images
         if isinstance(img[0], Image.Image):
             # It's a list of images, convert to list of lists
-            img = [[im] for im in img]
+            img = [[im] for im in img]  # type: ignore
 
         # potentially concatenate multiple images to reduce the size
-        img = [[concatenate_images(img_i)] if len(img_i) > 1 else img_i for img_i in img]
+        img = [[concatenate_images(img_i)] if len(img_i) > 1 else img_i for img_i in img]  # type: ignore
 
         # cap the pixels
-        img = [[cap_pixels(img_i, self.upsampling_max_image_size) for img_i in img_i] for img_i in img]
-        return img
+        img = [[cap_pixels(img_i, self.upsampling_max_image_size) for img_i in img_i] for img_i in img]  # type: ignore
+        return img  # type: ignore
 
     def format_input(
         self,
@@ -172,9 +168,7 @@ class Mistral3SmallEmbedder(nn.Module):
                 max_length=2048,
             )
         except ValueError as e:
-            print(
-                f"Error processing input: {e}, your max length is probably too short, when you have images in the input."
-            )
+            print(f"Error processing input: {e}, your max length is probably too short, when you have images in the input.")
             raise e
 
         # Move to device
@@ -199,9 +193,7 @@ class Mistral3SmallEmbedder(nn.Module):
             input_length = inputs["input_ids"].shape[1]
             generated_tokens = generated_ids[:, input_length:]
 
-            raw_txt = self.processor.tokenizer.batch_decode(
-                generated_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=True
-            )
+            raw_txt = self.processor.tokenizer.batch_decode(generated_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=True)
             return raw_txt
         except Exception as e:
             print(f"Error generating upsampled prompt: {e}, returning original prompt")
@@ -240,9 +232,7 @@ class Mistral3SmallEmbedder(nn.Module):
         out = torch.stack([output.hidden_states[k] for k in OUTPUT_LAYERS], dim=1)
         return rearrange(out, "b c l d -> b l (c d)")
 
-    def yes_no_logit_processor(
-        self, input_ids: torch.LongTensor, scores: torch.FloatTensor
-    ) -> torch.FloatTensor:
+    def yes_no_logit_processor(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
         """
         Sets all tokens but yes/no to the minimum.
         """
@@ -260,10 +250,6 @@ class Mistral3SmallEmbedder(nn.Module):
             image = Image.fromarray((127.5 * (image + 1.0)).cpu().byte().numpy())
         elif isinstance(image, (str, Path)):
             image = Image.open(image)
-
-        classification = next(c for c in self.nsfw_classifier(image) if c["label"] == "nsfw")
-        if classification["score"] > NSFW_THRESHOLD:
-            return True
 
         # 512^2 pixels are enough for checking
         w, h = image.size
@@ -311,7 +297,7 @@ class Mistral3SmallEmbedder(nn.Module):
         generate_ids = self.model.generate(
             **inputs,
             max_new_tokens=1,
-            logits_processor=[self.yes_no_logit_processor],
+            logits_processor=[self.yes_no_logit_processor],  # type: ignore
             do_sample=False,
         )
 
@@ -350,7 +336,7 @@ class Mistral3SmallEmbedder(nn.Module):
         generate_ids = self.model.generate(
             **inputs,
             max_new_tokens=1,
-            logits_processor=[self.yes_no_logit_processor],
+            logits_processor=[self.yes_no_logit_processor],  # type: ignore
             do_sample=False,
         )
         return generate_ids[0, -1].item() == self.yes_token

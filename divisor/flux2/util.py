@@ -8,9 +8,10 @@ import torch
 from PIL import Image
 from safetensors.torch import load_file as load_sft
 
-from .autoencoder import AutoEncoder, AutoEncoderParams
-from .model import Flux2, Flux2Params
-from .text_encoder import Mistral3SmallEmbedder
+from divisor.flux2.autoencoder import AutoEncoder, AutoEncoderParams
+from divisor.flux2.model import Flux2, Flux2Params
+from divisor.flux2.text_encoder import Mistral3SmallEmbedder
+from divisor.flux2 import precision
 
 
 FLUX2_MODEL_INFO = {
@@ -32,7 +33,7 @@ FLUX2_FP8_MODEL_INFO = {
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("mps")
 device_name = device.type
-precision = torch.float16
+
 
 def load_flow_model(model_name: str, debug_mode: bool = False, device=device_name) -> Flux2:
     config = FLUX2_MODEL_INFO[model_name.lower()]
@@ -53,11 +54,7 @@ def load_flow_model(model_name: str, debug_mode: bool = False, device=device_nam
                     repo_type="model",
                 )
             except huggingface_hub.errors.RepositoryNotFoundError:
-                print(
-                    f"Failed to access the model repository. Please check your internet "
-                    f"connection and make sure you've access to {config['repo_id']}."
-                    "Stopping."
-                )
+                print(f"Failed to access the model repository. Please check your internet connection and make sure you've access to {config['repo_id']}.Stopping.")
                 sys.exit(1)
 
     if not debug_mode:
@@ -91,11 +88,7 @@ def load_ae(model_name: str, device: str | torch.device = device_name) -> AutoEn
                 repo_type="model",
             )
         except huggingface_hub.errors.RepositoryNotFoundError:
-            print(
-                f"Failed to access the model repository. Please check your internet "
-                f"connection and make sure you've access to {config['repo_id']}."
-                "Stopping."
-            )
+            print(f"Failed to access the model repository. Please check your internet connection and make sure you've access to {config['repo_id']}.Stopping.")
             sys.exit(1)
 
     if isinstance(device, str):

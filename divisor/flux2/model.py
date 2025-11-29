@@ -26,9 +26,7 @@ class Flux2(nn.Module):
         self.in_channels = params.in_channels
         self.out_channels = params.in_channels
         if params.hidden_size % params.num_heads != 0:
-            raise ValueError(
-                f"Hidden size {params.hidden_size} must be divisible by num_heads {params.num_heads}"
-            )
+            raise ValueError(f"Hidden size {params.hidden_size} must be divisible by num_heads {params.num_heads}")
         pe_dim = params.hidden_size // params.num_heads
         if sum(params.axes_dim) != pe_dim:
             raise ValueError(f"Got {params.axes_dim} but expected positional dim {pe_dim}")
@@ -230,7 +228,7 @@ class SingleStreamBlock(nn.Module):
         pe: Tensor,
         mod: tuple[Tensor, Tensor],
     ) -> Tensor:
-        mod_shift, mod_scale, mod_gate = mod
+        mod_shift, mod_scale, mod_gate = mod  # type: ignore
         x_mod = (1 + mod_scale) * self.pre_norm(x) + mod_shift
 
         qkv, mlp = torch.split(
@@ -337,15 +335,11 @@ class DoubleStreamBlock(nn.Module):
 
         # calculate the img blocks
         img = img + img_mod1_gate * self.img_attn.proj(img_attn)
-        img = img + img_mod2_gate * self.img_mlp(
-            (1 + img_mod2_scale) * (self.img_norm2(img)) + img_mod2_shift
-        )
+        img = img + img_mod2_gate * self.img_mlp((1 + img_mod2_scale) * (self.img_norm2(img)) + img_mod2_shift)
 
         # calculate the txt blocks
         txt = txt + txt_mod1_gate * self.txt_attn.proj(txt_attn)
-        txt = txt + txt_mod2_gate * self.txt_mlp(
-            (1 + txt_mod2_scale) * (self.txt_norm2(txt)) + txt_mod2_shift
-        )
+        txt = txt + txt_mod2_gate * self.txt_mlp((1 + txt_mod2_scale) * (self.txt_norm2(txt)) + txt_mod2_shift)
         return img, txt
 
 
@@ -388,7 +382,7 @@ def timestep_embedding(t: Tensor, dim, max_period=10000, time_factor: float = 10
     t = time_factor * t
     half = dim // 2
     freqs = torch.exp(
-        -math.log(max_period) * torch.arange(start=0, end=half, device=t.device, dtype=torch.float16) / half #float32 originally
+        -math.log(max_period) * torch.arange(start=0, end=half, device=t.device, dtype=torch.float32) / half  # float32 originally
     )
 
     args = t[:, None].float() * freqs[None]

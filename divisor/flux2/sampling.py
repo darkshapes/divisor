@@ -8,16 +8,15 @@ from torch import Tensor
 
 from .model import Flux2
 
-precision = torch.float16
+from divisor.flux2 import precision
+
 
 def compress_time(t_ids: Tensor) -> Tensor:
     assert t_ids.ndim == 1
     t_ids_max = torch.max(t_ids)
-    t_remap = torch.zeros((t_ids_max + 1,), device=t_ids.device, dtype=t_ids.dtype)
+    t_remap = torch.zeros((t_ids_max + 1,), device=t_ids.device, dtype=t_ids.dtype)  # type: ignore
     t_unique_sorted_ids = torch.unique(t_ids, sorted=True)
-    t_remap[t_unique_sorted_ids] = torch.arange(
-        len(t_unique_sorted_ids), device=t_ids.device, dtype=t_ids.dtype
-    )
+    t_remap[t_unique_sorted_ids] = torch.arange(len(t_unique_sorted_ids), device=t_ids.device, dtype=t_ids.dtype)
     t_ids_compressed = t_remap[t_ids]
     return t_ids_compressed
 
@@ -42,7 +41,7 @@ def scatter_ids(x: Tensor, x_ids: Tensor) -> list[Tensor]:
 
         flat_ids = t_ids_cmpr * w * h + h_ids * w + w_ids
 
-        out = torch.zeros((t * h * w, ch), device=data.device, dtype=data.dtype)
+        out = torch.zeros((t * h * w, ch), device=data.device, dtype=data.dtype)  # type: ignore
         out.scatter_(0, flat_ids.unsqueeze(1).expand(-1, ch), data)
 
         x_list.append(rearrange(out, "(t h w) c -> 1 c t h w", t=t, h=h, w=w))
@@ -69,7 +68,7 @@ def encode_image_refs(ae, img_ctx: list[Image.Image]):
 
     # Encode each reference image
     encoded_refs = []
-    torch_device = torch.device('cuda') if torch.cuda.is_available() else torch.device('mps')
+    torch_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("mps")
     for img in img_ctx_prep:
         encoded = ae.encode(img[None].to(torch_device))[0]
         encoded_refs.append(encoded)
@@ -115,8 +114,8 @@ def batched_wrapper(fn):
                     t_coord[i] if t_coord is not None else None,
                 )
             )
-        x, x_ids = zip(*results)
-        return torch.stack(x), torch.stack(x_ids)
+        x, x_ids = zip(*results)  # type: ignore
+        return torch.stack(x), torch.stack(x_ids)  # type: ignore
 
     return batched_prc
 
@@ -134,7 +133,7 @@ def listed_wrapper(fn):
                     t_coord[i] if t_coord is not None else None,
                 )
             )
-        x, x_ids = zip(*results)
+        x, x_ids = zip(*results)  # type: ignore
         return list(x), list(x_ids)
 
     return listed_prc
@@ -158,9 +157,7 @@ batched_prc_img = batched_wrapper(prc_img)
 batched_prc_txt = batched_wrapper(prc_txt)
 
 
-def center_crop_to_multiple_of_x(
-    img: Image.Image | list[Image.Image], x: int
-) -> Image.Image | list[Image.Image]:
+def center_crop_to_multiple_of_x(img: Image.Image | list[Image.Image], x: int) -> Image.Image | list[Image.Image]:
     if isinstance(img, list):
         return [center_crop_to_multiple_of_x(_img, x) for _img in img]  # type: ignore
 
@@ -225,9 +222,7 @@ def default_images_prep(
     return 2 * x_tensor - 1
 
 
-def default_prep(
-    img: Image.Image | list[Image.Image], limit_pixels: int | None, ensure_multiple: int = 16
-) -> torch.Tensor | list[torch.Tensor]:
+def default_prep(img: Image.Image | list[Image.Image], limit_pixels: int | None, ensure_multiple: int = 16) -> torch.Tensor | list[torch.Tensor]:
     img_rgb = to_rgb(img)
     img_min = cap_min_pixels(img_rgb)  # type: ignore
     if limit_pixels is not None:
@@ -288,9 +283,7 @@ def denoise(
         img_input = img
         img_input_ids = img_ids
         if img_cond_seq is not None:
-            assert (
-                img_cond_seq_ids is not None
-            ), "You need to provide either both or neither of the sequence conditioning"
+            assert img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
             img_input = torch.cat((img_input, img_cond_seq), dim=1)
             img_input_ids = torch.cat((img_input_ids, img_cond_seq_ids), dim=1)
         pred = model(

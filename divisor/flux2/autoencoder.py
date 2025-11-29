@@ -161,18 +161,18 @@ class Encoder(nn.Module):
         hs = [self.conv_in(x)]
         for i_level in range(self.num_resolutions):
             for i_block in range(self.num_res_blocks):
-                h = self.down[i_level].block[i_block](hs[-1])
-                if len(self.down[i_level].attn) > 0:
-                    h = self.down[i_level].attn[i_block](h)
+                h = self.down[i_level].block[i_block](hs[-1])  # type: ignore
+                if len(self.down[i_level].attn) > 0:  # type: ignore
+                    h = self.down[i_level].attn[i_block](h)  # type: ignore
                 hs.append(h)
             if i_level != self.num_resolutions - 1:
-                hs.append(self.down[i_level].downsample(hs[-1]))
+                hs.append(self.down[i_level].downsample(hs[-1]))  # type: ignore
 
         # middle
         h = hs[-1]
-        h = self.mid.block_1(h)
-        h = self.mid.attn_1(h)
-        h = self.mid.block_2(h)
+        h = self.mid.block_1(h)  # type: ignore
+        h = self.mid.attn_1(h)  # type: ignore
+        h = self.mid.block_2(h)  # type: ignore
         # end
         h = self.norm_out(h)
         h = swish(h)
@@ -246,20 +246,20 @@ class Decoder(nn.Module):
         h = self.conv_in(z)
 
         # middle
-        h = self.mid.block_1(h)
-        h = self.mid.attn_1(h)
-        h = self.mid.block_2(h)
+        h = self.mid.block_1(h)  # type: ignore
+        h = self.mid.attn_1(h)  # type: ignore
+        h = self.mid.block_2(h)  # type: ignore
 
         # cast to proper dtype
         h = h.to(upscale_dtype)
         # upsampling
         for i_level in reversed(range(self.num_resolutions)):
             for i_block in range(self.num_res_blocks + 1):
-                h = self.up[i_level].block[i_block](h)
-                if len(self.up[i_level].attn) > 0:
-                    h = self.up[i_level].attn[i_block](h)
+                h = self.up[i_level].block[i_block](h)  # type: ignore
+                if len(self.up[i_level].attn) > 0:  # type: ignore
+                    h = self.up[i_level].attn[i_block](h)  # type: ignore
             if i_level != 0:
-                h = self.up[i_level].upsample(h)
+                h = self.up[i_level].upsample(h)  # type: ignore
 
         # end
         h = self.norm_out(h)
@@ -307,8 +307,8 @@ class AutoEncoder(nn.Module):
 
     def inv_normalize(self, z):
         self.bn.eval()
-        s = torch.sqrt(self.bn.running_var.view(1, -1, 1, 1) + self.bn_eps)
-        m = self.bn.running_mean.view(1, -1, 1, 1)
+        s = torch.sqrt(self.bn.running_var.view(1, -1, 1, 1) + self.bn_eps)  # type: ignore
+        m = self.bn.running_mean.view(1, -1, 1, 1)  # type: ignore
         return z * s + m
 
     def encode(self, x: Tensor) -> Tensor:
