@@ -492,8 +492,9 @@ def denoise_interactive(
             # Flux2 uses scatter_ids to convert back to spatial format
             # The intermediate is already in the correct format (sequence of tokens)
             # We need to scatter it back to spatial dimensions for VAE decoding
-            intermediate_list = torch.cat(scatter_ids(intermediate, img_ids)).squeeze(2)
-            if intermediate_list:
+            scattered = scatter_ids(intermediate, img_ids)
+            if len(scattered) > 0:
+                intermediate_list = torch.cat(scattered).squeeze(2)
                 # scatter_ids returns list of tensors with shape (1, C, T, H, W)
                 # We need (1, C, H, W) for VAE, so we take the first time slice or squeeze
                 intermediate = intermediate_list[0].squeeze(2)  # Remove time dimension if present
