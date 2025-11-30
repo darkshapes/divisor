@@ -49,7 +49,6 @@ configs = {
             ),
             params=FluxParams(
                 in_channels=64,
-                out_channels=64,
                 vec_in_dim=768,
                 context_in_dim=4096,
                 hidden_size=3072,
@@ -63,10 +62,6 @@ configs = {
                 guidance_embed=True,
             ),
         ),
-        "fp8-sai": CompatibilitySpec(
-            repo_id="Comfy-Org/flux1-dev",
-            file_name="flux1-dev-fp8.safetensors",
-        ),
         "fp8-e5m2-sai": CompatibilitySpec(
             repo_id="Kijai/flux-fp8",
             file_name="flux1-dev-fp8-e5m2.safetensors",
@@ -74,6 +69,28 @@ configs = {
         "fp8-e4m3fn-sai": CompatibilitySpec(
             repo_id="Kijai/flux-fp8",
             file_name="flux1-dev-fp8-e4m3fn.safetensors",
+        ),
+        "mini": ModelSpec(
+            repo_id="TencentARC/flux-mini",
+            file_name="flux-mini.safetensors",
+            params=FluxParams(
+                in_channels=64,
+                vec_in_dim=768,
+                context_in_dim=4096,
+                hidden_size=3072,
+                mlp_ratio=4.0,
+                num_heads=24,
+                depth=5,
+                depth_single_blocks=10,
+                axes_dim=[16, 56, 56],
+                theta=10_000,
+                qkv_bias=True,
+                guidance_embed=True,
+            ),
+        ),
+        "fp8-sai": CompatibilitySpec(
+            repo_id="XLabs-AI/flux-dev-fp8",
+            file_name="flux-dev-fp8.safetensors",
         ),
     },
     "model.vae.flux1-dev": {
@@ -108,7 +125,6 @@ configs = {
             ),
             params=FluxParams(
                 in_channels=64,
-                out_channels=64,
                 vec_in_dim=768,
                 context_in_dim=4096,
                 hidden_size=3072,
@@ -134,24 +150,36 @@ configs = {
 }
 
 
-def get_model_spec(mir_id: str) -> ModelSpec:
-    """Get the base ModelSpec for a given model ID.\n
+def get_model_spec(mir_id: str, compatibility_key: str | None = None) -> ModelSpec | CompatibilitySpec | None:
+    """Get a ModelSpec or CompatibilitySpec for a given model ID.\n
     :param mir_id: Model ID (e.g., "model.dit.flux1-dev")
-    :returns: The base ModelSpec from the "*" key
+    :param compatibility_key: Optional compatibility key (e.g., "fp8-sai"). If None, returns base ModelSpec.
+    :returns: ModelSpec if compatibility_key is None, CompatibilitySpec if provided and available, None if provided but not found
     """
     if mir_id not in configs:
-        available = ", ".join(configs.keys())
-        raise ValueError(f"Unknown model ID: {mir_id}. Available: {available}")
+        if compatibility_key is None:
+            available = ", ".join(configs.keys())
+            raise ValueError(f"Unknown model ID: {mir_id}. Available: {available}")
+        return None
 
     config_dict = configs[mir_id]
-    if "*" not in config_dict:
-        raise ValueError(f"Model {mir_id} does not have a base spec (missing '*' key)")
 
-    base_spec = config_dict["*"]
-    if not isinstance(base_spec, ModelSpec):
-        raise ValueError(f"Model {mir_id} base spec is not a ModelSpec")
+    # If compatibility_key is provided, try to get compatibility spec
+    if compatibility_key is not None:
+        compat_spec = config_dict.get(compatibility_key)
+        if compat_spec is None:
+            return None
+        return compat_spec
+    else:
+        # Otherwise, return base ModelSpec from "*" key
+        if "*" not in config_dict:
+            raise ValueError(f"Model {mir_id} does not have a base spec (missing '*' key)")
 
-    return base_spec
+        base_spec = config_dict["*"]
+        if not isinstance(base_spec, ModelSpec):
+            raise ValueError(f"Model {mir_id} base spec is not a ModelSpec")
+
+        return base_spec
 
 
 def get_compatibility_spec(mir_id: str, compatibility_key: str) -> CompatibilitySpec | None:
@@ -160,19 +188,8 @@ def get_compatibility_spec(mir_id: str, compatibility_key: str) -> Compatibility
     :param compatibility_key: Compatibility key (e.g., "fp8-sai")
     :returns: CompatibilitySpec if available, None otherwise
     """
-    if mir_id not in configs:
-        return None
-
-    config_dict = configs[mir_id]
-    compat_spec = config_dict.get(compatibility_key)
-
-    if compat_spec is None:
-        return None
-
-    if not isinstance(compat_spec, CompatibilitySpec):
-        raise ValueError(f"Compatibility spec {compatibility_key} for {mir_id} is not a CompatibilitySpec")
-
-    return compat_spec
+    result = get_model_spec(mir_id, compatibility_key)
+    return result if isinstance(result, CompatibilitySpec) else None
 
 
 def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> dict:

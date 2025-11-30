@@ -10,7 +10,8 @@ from nnll.init_gpu import device, clear_cache
 
 from divisor.controller import rng
 from divisor.noise import get_noise
-from divisor.flux1.sampling import SamplingOptions, DenoisingState
+from divisor.flux1.sampling import SamplingOptions
+from divisor.spec import DenoisingState
 from divisor.flux1.prompt import parse_prompt
 from divisor.flux2.sampling import (
     batched_prc_img,

@@ -7,12 +7,13 @@ Allows users to manually increment through timesteps one at a time.
 """
 
 from typing import Optional, Callable, Any
-from dataclasses import dataclass, asdict
+from dataclasses import asdict
 import json
 import torch
 from nnll.hyperchain import HyperChain
 from nnll.random import RNGState
 from nnll.init_gpu import device
+from divisor.spec import DenoisingState
 
 rng = RNGState(device=device.type)
 variation_rng = RNGState(device=device.type)
@@ -89,30 +90,6 @@ def reconstruct_state_from_dict(state_dict: dict, current_sample: torch.Tensor) 
         variation_strength=state_dict.get("variation_strength", 0.0),
         deterministic=state_dict.get("deterministic", False),
     )
-
-
-@dataclass
-class DenoisingState:
-    """State of the denoising process at a given timestep."""
-
-    current_timestep: float
-    previous_timestep: Optional[float]
-    current_sample: torch.Tensor
-    timestep_index: int
-    total_timesteps: int
-    guidance: float
-    layer_dropout: Optional[list[int]] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    seed: Optional[int] = None
-    prompt: Optional[str] = None
-    num_steps: Optional[int] = None
-    vae_shift_offset: float = 0.0
-    vae_scale_offset: float = 0.0
-    use_previous_as_mask: bool = False
-    variation_seed: Optional[int] = None
-    variation_strength: float = 0.0
-    deterministic: bool = False
 
 
 class ManualTimestepController:

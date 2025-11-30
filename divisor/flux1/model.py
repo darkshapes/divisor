@@ -7,6 +7,7 @@ import torch
 from nnll.console import nfo
 from torch import Tensor, nn
 
+
 from divisor.layer_dropout import process_blocks_with_dropout
 from divisor.flux1.layers import (
     DoubleStreamBlock,
@@ -22,7 +23,6 @@ from divisor.flux1.lora import LinearLora, replace_linear_with_lora
 @dataclass
 class FluxParams:
     in_channels: int
-    out_channels: int
     vec_in_dim: int
     context_in_dim: int
     hidden_size: int
@@ -44,7 +44,7 @@ class Flux(nn.Module):
 
         self.params = params
         self.in_channels = params.in_channels
-        self.out_channels = params.out_channels
+        self.out_channels = params.in_channels
         if params.hidden_size % params.num_heads != 0:
             raise ValueError(f"Hidden size {params.hidden_size} must be divisible by num_heads {params.num_heads}")
         pe_dim = params.hidden_size // params.num_heads
@@ -108,7 +108,7 @@ class Flux(nn.Module):
         img = process_blocks_with_dropout(self.single_blocks, layer_dropouts, len(self.double_blocks), "single", lambda block, state: block(state, vec=vec, pe=pe), img)
         img = img[:, txt.shape[1] :, ...]
 
-        img = self.final_layer(img, vec)  # (N, T, patch_size ** 2 * out_channels)
+        img = self.final_layer(img, vec)  # (N, T, patch_size ** 2 * self.out_channels)
         return img
 
 

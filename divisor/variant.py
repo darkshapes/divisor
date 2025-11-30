@@ -8,7 +8,8 @@ from typing import Callable
 import torch
 from torch import Tensor
 from nnll.console import nfo
-from divisor.controller import ManualTimestepController, DenoisingState, variation_rng
+from divisor.controller import ManualTimestepController, variation_rng
+from divisor.spec import DenoisingState
 
 
 def mix_noise(from_noise: Tensor, to_noise: Tensor, strength: float, variation_method: str = "linear") -> Tensor:

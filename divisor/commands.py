@@ -3,7 +3,7 @@
 
 """Command handlers for interactive denoising state changes."""
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, List
 
 from nnll.console import nfo
 from nnll.helpers import generate_valid_resolutions
@@ -16,11 +16,11 @@ from divisor.cli_helpers import (
     update_state_and_cache,
 )
 from divisor.controller import (
-    DenoisingState,
     ManualTimestepController,
     rng,
     variation_rng,
 )
+from divisor.spec import DenoisingState
 from divisor.variant import change_variation
 
 
@@ -35,6 +35,11 @@ def process_choice(
     t5: Optional[Any] = None,
     clip: Optional[Any] = None,
     recompute_text_embeddings: Optional[Callable[[str], None]] = None,
+    neg_pred_enabled: bool = False,
+    neg_txt: List | None = None,
+    neg_txt_ids: List | None = None,
+    neg_vec: List | None = None,
+    true_gs=1,
 ) -> DenoisingState:
     """Process user choice input and return updated state.\n
     :param controller: ManualTimestepController instance

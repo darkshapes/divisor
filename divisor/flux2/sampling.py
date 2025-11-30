@@ -22,10 +22,15 @@ from divisor.flux2.autoencoder import AutoEncoder
 
 from divisor.flux2 import precision
 from divisor.controller import (
-    DenoisingState,
     ManualTimestepController,
     rng,
     variation_rng,
+)
+from divisor.spec import (
+    DenoisingState,
+    DenoiseSettings,
+    GetPredictionSettings,
+    SimpleDenoiseSettingsFlux2,
 )
 from divisor.commands import process_choice
 from divisor.denoise_step import (
@@ -288,21 +293,20 @@ def compute_empirical_mu(image_seq_len: int, num_steps: int) -> float:
     return float(mu)
 
 
-def denoise(
-    model: Flux2,
-    # model input
-    img: Tensor,
-    img_ids: Tensor,
-    txt: Tensor,
-    txt_ids: Tensor,
-    # sampling parameters
-    timesteps: list[float],
-    guidance: float,
-    # extra img tokens (sequence-wise)
-    img_cond_seq: Tensor | None = None,
-    img_cond_seq_ids: Tensor | None = None,
-):
-    """Simple non-interactive denoising function for Flux2."""
+def denoise(settings: SimpleDenoiseSettingsFlux2) -> Tensor:
+    """Simple non-interactive denoising function for Flux2.\n
+    :param settings: SimpleDenoiseSettingsFlux2 containing all denoising configuration parameters
+    :returns: Denoised image tensor"""
+    model = settings.model
+    img = settings.img
+    img_ids = settings.img_ids
+    txt = settings.txt
+    txt_ids = settings.txt_ids
+    timesteps = settings.timesteps
+    guidance = settings.guidance
+    img_cond_seq = settings.img_cond_seq
+    img_cond_seq_ids = settings.img_cond_seq_ids
+
     guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
     for t_curr, t_prev in zip(timesteps[:-1], timesteps[1:]):
         t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
@@ -331,35 +335,27 @@ def denoise(
 @torch.inference_mode()
 def denoise_interactive(
     model: Flux2,
-    # model input
-    img: Tensor,
-    img_ids: Tensor,
-    txt: Tensor,
-    txt_ids: Tensor,
-    state: DenoisingState,
-    ae: AutoEncoder,
-    timesteps: list[float],  # sampling parameters
-    # extra img tokens (sequence-wise)
-    img_cond_seq: Tensor | None = None,
-    img_cond_seq_ids: Tensor | None = None,
-    device: torch.device = device,
-    initial_layer_dropout: Optional[list[int]] = None,
-    text_embedder: Optional[nn.Module] = None,  # Mistral embedder for prompt changes
+    settings: DenoiseSettings,
 ):
     """Interactive denoising using Flux2 model with optional ManualTimestepController.\n
     :param model: Flux2 model instance
-    :param img: Initial noisy image tensor
-    :param img_ids: Image position IDs tensor
-    :param txt: Text embeddings tensor
-    :param txt_ids: Text position IDs tensor
-    :param state: DenoisingState containing current state parameters
-    :param timesteps: List of timestep values
-    :param img_cond_seq: Optional sequence-wise image conditioning
-    :param img_cond_seq_ids: Optional sequence-wise image conditioning IDs
-    :param ae: AutoEncoder for decoding previews
-    :param device: PyTorch device
-    :param initial_layer_dropout: Initial layer dropout configuration
-    :param text_embedder: Optional Mistral embedder for recomputing text embeddings when prompt changes"""
+    :param settings: DenoiseSettings containing all denoising configuration parameters"""
+
+    # Extract settings for easier access
+    img = settings.img
+    img_ids = settings.img_ids
+    txt = settings.txt
+    txt_ids = settings.txt_ids
+    state = settings.state
+    ae = settings.ae
+    timesteps = settings.timesteps
+    img_cond_seq = settings.img_cond_seq
+    img_cond_seq_ids = settings.img_cond_seq_ids
+    from nnll.init_gpu import device as default_device
+
+    denoise_device = settings.device if settings.device is not None else default_device
+    initial_layer_dropout = settings.initial_layer_dropout
+    text_embedder = settings.text_embedder
 
     # this is ignored for schnell
     current_layer_dropout = [initial_layer_dropout]
@@ -403,20 +399,21 @@ def denoise_interactive(
         text_embedder=text_embedder,
     )
 
-    get_prediction = create_get_prediction(
-        model_ref,
-        img_ids,
-        img,
-        state,
-        None,  # img_cond not used in Flux2 (only img_cond_seq)
-        img_cond_seq,
-        img_cond_seq_ids,
-        current_txt,
-        current_txt_ids,
-        current_vec,  # type: ignore
-        cached_prediction,
-        cached_prediction_state,
+    pred_set = GetPredictionSettings(
+        model_ref=model_ref,
+        img_ids=img_ids,
+        img=img,
+        state=state,
+        img_cond=None,  # img_cond not used in Flux2 (only img_cond_seq)
+        img_cond_seq=img_cond_seq,
+        img_cond_seq_ids=img_cond_seq_ids,
+        current_txt=current_txt,
+        current_txt_ids=current_txt_ids,
+        current_vec=current_vec,  # type: ignore
+        cached_prediction=cached_prediction,
+        cached_prediction_state=cached_prediction_state,
     )
+    get_prediction = create_get_prediction(pred_set)
 
     denoise_step_fn = create_denoise_step_fn(
         controller_ref,
@@ -505,20 +502,20 @@ def denoise_interactive(
                 if intermediate.dim() == 5:
                     intermediate = intermediate[:, :, 0, :, :]  # Take first time slice
 
-            sync_torch(device)
+            sync_torch(denoise_device)
             t1 = time.perf_counter()
 
             nfo(f"Step time: {t1 - t0:.1f}s")
 
-            if device.type == "cuda":
-                context = torch.autocast(device_type=device.type, dtype=torch.bfloat16)
+            if denoise_device.type == "cuda":
+                context = torch.autocast(device_type=denoise_device.type, dtype=torch.bfloat16)
             else:
                 from contextlib import nullcontext
 
                 context = nullcontext()
             with context:
                 # When autocast is disabled (MPS), ensure intermediate is in correct dtype for VAE
-                if device.type != "cuda":
+                if denoise_device.type != "cuda":
                     # Get VAE encoder dtype to ensure intermediate matches (bfloat16)
                     # Safely get encoder dtype, handling Mock objects in tests
                     try:

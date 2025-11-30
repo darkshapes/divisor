@@ -2,6 +2,7 @@
 # <!-- // /*  d a r k s h a p e s */ -->
 # adapted BFL Flux code from https://github.com/black-forest-labs/flux
 
+
 import os
 import torch
 from pathlib import Path
@@ -156,8 +157,7 @@ def load_flow_model(
     # Load base checkpoint
     ckpt_path = str(retrieve_model(checkpoint_repo_id, checkpoint_file_name))
     nfo(f": {os.path.basename(ckpt_path)}")
-    # load_sft doesn't support torch.device
-    sd = load_sft(ckpt_path, device=str(device))
+    sd = load_sft(ckpt_path, device=device.type)
 
     load_state_dict_into_model(model, sd, verbose=verbose)
 
@@ -202,6 +202,6 @@ def load_ae(mir_id: str, device: str | torch.device = device) -> AutoEncoder:
         ae = AutoEncoder(config.params)
 
     nfo(f": {os.path.basename(ckpt_path)}")
-    sd = load_sft(ckpt_path, device=str(device))
+    sd = load_sft(ckpt_path, device=device.type)
     load_state_dict_into_model(ae, sd, verbose=True)
     return ae
