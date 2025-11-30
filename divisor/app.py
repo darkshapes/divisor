@@ -29,26 +29,36 @@ def main():
     parser.add_argument(
         "-m",
         "--model-type",
-        choices=["dev", "schnell"],
+        choices=["dev", "schnell", "dev2"],
         default="dev",
-        help="Model type to use: 'dev' (flux1-dev) or 'schnell' (flux1-schnell). Default: dev",
+        help="Model type to use: 'dev' (flux1-dev), 'schnell' (flux1-schnell), or 'dev2' (flux2-dev). Default: dev",
     )
 
     # Parse known args to separate our args from Fire's args
     args, remaining_argv = parser.parse_known_args()
 
-    # Route to Flux mode
-    from divisor.flux1.prompt import main as flux_main
+    # Route to appropriate Flux mode based on model type
+    if args.model_type == "dev2":
+        # Route to Flux2
+        from divisor.flux2.prompt import main as flux2_main
 
-    # Add model_id argument to remaining argv for Fire to parse
-    # Fire converts underscores to hyphens, so model_id becomes --model-id
-    model_id = f"flux1-{args.model_type}"
-    # Insert model_id argument before other arguments
-    remaining_argv = ["--model-id", model_id] + remaining_argv
-    sys.argv = [sys.argv[0]] + remaining_argv
+        # Flux2 uses model_name parameter, default is "flux.2-dev"
+        # Fire will handle the remaining arguments
+        sys.argv = [sys.argv[0]] + remaining_argv
+        Fire(flux2_main)
+    else:
+        # Route to Flux1
+        from divisor.flux1.prompt import main as flux_main
 
-    # Flux uses Fire, which automatically handles sys.argv
-    Fire(flux_main)
+        # Add model_id argument to remaining argv for Fire to parse
+        # Fire converts underscores to hyphens, so model_id becomes --model-id
+        model_id = f"flux1-{args.model_type}"
+        # Insert model_id argument before other arguments
+        remaining_argv = ["--model-id", model_id] + remaining_argv
+        sys.argv = [sys.argv[0]] + remaining_argv
+
+        # Flux uses Fire, which automatically handles sys.argv
+        Fire(flux_main)
 
 
 if __name__ == "__main__":

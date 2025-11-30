@@ -11,7 +11,7 @@ import torch
 from einops import rearrange, repeat
 from nnll.console import nfo
 from nnll.constants import ExtensionType
-from nnll.init_gpu import clear_cache, device, sync_torch
+from nnll.init_gpu import device, sync_torch
 from nnll.save_generation import name_save_file_as, save_with_hyperchain
 from torch import Tensor
 
@@ -22,10 +22,16 @@ from divisor.controller import (
     rng,
     variation_rng,
 )
+from divisor.denoise_step import (
+    create_clear_prediction_cache,
+    create_recompute_text_embeddings,
+    create_get_prediction,
+    create_denoise_step_fn,
+)
+from divisor.noise import get_noise
 from divisor.flux1.autoencoder import AutoEncoder
 from divisor.flux1.model import Flux
 from divisor.flux1.text_embedder import HFEmbedder
-from divisor.variant import apply_variation_noise
 
 
 @dataclass
@@ -38,44 +44,6 @@ class SamplingOptions:
     num_steps: int
     guidance: float
     seed: int | None
-
-
-def get_noise(
-    num_samples: int,
-    height: int,
-    width: int,
-    dtype: torch.dtype,
-    seed: int,
-    device: torch.device | None = None,
-) -> Tensor:
-    """Generate noise tensor.\n
-    :param num_samples: Number of samples to generate
-    :param height: Height of the image
-    :param width: Width of the image
-    :param device: Device to generate the noise on
-    :param dtype: Data type of the noise
-    :param seed: Seed for the random number generator
-    :returns: Noise tensor"""
-    # Get the generator's device to ensure compatibility
-    generator_device = rng._torch_generator.device if rng._torch_generator is not None else torch.device("cpu")
-
-    # Create tensor on generator's device first (required for MPS compatibility)
-    noise = torch.randn(
-        num_samples,
-        16,
-        # allow for packing
-        2 * math.ceil(height / 16),
-        2 * math.ceil(width / 16),
-        dtype=dtype,
-        generator=rng._torch_generator,
-        device=generator_device,
-    )
-
-    # Move to target device if different
-    if device is not None and generator_device != device:
-        noise = noise.to(device)
-
-    return noise
 
 
 def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:
@@ -109,8 +77,6 @@ def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[st
     if vec.shape[0] == 1 and bs > 1:
         vec = repeat(vec, "1 ... -> bs ...", bs=bs)
 
-    del clip, t5
-    clear_cache()
     return {
         "img": img,
         "img_ids": img_ids.to(img.device),
@@ -225,199 +191,33 @@ def denoise(
     current_vec: list[Tensor] = [vec]
     current_prompt: list[Optional[str]] = [state.prompt]  # Track current prompt to detect changes
 
-    def clear_prediction_cache():
-        """Empty the prediction cache.\n"""
-        cached_prediction[0] = None
-        cached_prediction_state[0] = None
+    clear_prediction_cache = create_clear_prediction_cache(cached_prediction, cached_prediction_state)
 
-    def recompute_text_embeddings(prompt: str) -> None:
-        """Recompute text embeddings when prompt changes.\n
-        :param prompt: New prompt text"""
-        if t5 is None or clip is None:
-            return
+    recompute_text_embeddings = create_recompute_text_embeddings(  # formatting
+        img, t5, clip, current_txt, current_txt_ids, current_vec, current_prompt, clear_prediction_cache, is_flux2=False
+    )
 
-        bs = img.shape[0]
-        prompt_list = [prompt] if isinstance(prompt, str) else prompt
+    get_prediction = create_get_prediction(
+        model_ref,
+        img_ids,
+        img,
+        state,
+        img_cond,
+        img_cond_seq,
+        img_cond_seq_ids,
+        current_txt,
+        current_txt_ids,
+        current_vec,
+        cached_prediction,
+        cached_prediction_state,
+    )
 
-        # Compute new embeddings
-        new_txt = t5(prompt_list)
-        if new_txt.shape[0] == 1 and bs > 1:
-            new_txt = repeat(new_txt, "1 ... -> bs ...", bs=bs)
-        new_txt_ids = torch.zeros(bs, new_txt.shape[1], 3)
+    denoise_step_fn = create_denoise_step_fn(  # formatting
+        controller_ref, current_layer_dropout, previous_step_tensor, get_prediction
+    )
 
-        new_vec = clip(prompt_list)
-        if new_vec.shape[0] == 1 and bs > 1:
-            new_vec = repeat(new_vec, "1 ... -> bs ...", bs=bs)
-
-        # Update embeddings and move to correct device
-        current_txt[0] = new_txt.to(img.device)
-        current_txt_ids[0] = new_txt_ids.to(img.device)
-        current_vec[0] = new_vec.to(img.device)
-        current_prompt[0] = prompt
-
-        # Clear prediction cache since embeddings changed
-        clear_prediction_cache()
-
-    def get_prediction(
-        sample: Tensor,
-        t_curr: float,
-        guidance_val: float,
-        layer_dropouts_val: Optional[list[int]],
-    ) -> Tensor:
-        """Generate model prediction, reusing cached prediction if state hasn't changed.\n
-        :param sample: Current sample tensor
-        :param t_curr: Current timestep
-        :param guidance_val: Guidance value
-        :param layer_dropouts_val: Layer dropout configuration
-        :returns: Model prediction"""
-        # Create a simple hash of the sample tensor for cache key (using first few values)
-        # This is faster than hashing the entire tensor but should be sufficient for cache invalidation
-        # Handle different tensor shapes safely
-        if sample.numel() > 0:
-            # Flatten and get first element for hash
-            first_val = float(sample.flatten()[0].item())
-        else:
-            first_val = 0.0
-        sample_hash = hash((sample.shape, first_val))
-
-        # Check if we can reuse cached prediction
-        current_state = {
-            "sample_hash": sample_hash,
-            "t_curr": t_curr,
-            "guidance": guidance_val,
-            "layer_dropout": layer_dropouts_val,
-        }
-
-        if (
-            cached_prediction[0] is not None
-            and cached_prediction_state[0] is not None
-            and cached_prediction_state[0]["sample_hash"] == current_state["sample_hash"]
-            and cached_prediction_state[0]["t_curr"] == current_state["t_curr"]
-            and cached_prediction_state[0]["guidance"] == current_state["guidance"]
-            and cached_prediction_state[0]["layer_dropout"] == current_state["layer_dropout"]
-        ):
-            return cached_prediction[0]
-
-        # Generate new prediction
-        # When autocast is disabled (MPS), ensure all inputs are in correct dtype (bfloat16)
-        # Get model dtype to ensure inputs match
-        # Safely get model dtype, handling Mock objects in tests
-        try:
-            model_dtype = next(model_ref[0].parameters()).dtype
-        except (TypeError, StopIteration, AttributeError):
-            # Fallback: use sample dtype if we can't get model dtype (for Mock objects in tests)
-            model_dtype = sample.dtype
-        use_autocast = device.type == "cuda"
-
-        # Ensure sample is in correct dtype before any operations
-        if not use_autocast:
-            sample = sample.to(dtype=model_dtype)
-
-        t_vec = torch.full((sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device)
-        img_input = sample
-        img_input_ids = img_ids
-
-        if img_cond is not None:
-            # Ensure img_cond matches sample dtype before concatenation
-            img_cond_converted = img_cond.to(dtype=model_dtype) if not use_autocast else img_cond
-            img_input = torch.cat((sample, img_cond_converted), dim=-1)
-        if img_cond_seq is not None:
-            assert img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
-            # Ensure img_cond_seq matches dtype before concatenation
-            img_cond_seq_converted = img_cond_seq.to(dtype=model_dtype) if not use_autocast else img_cond_seq
-            img_input = torch.cat((img_input, img_cond_seq_converted), dim=1)
-            img_input_ids = torch.cat((img_input_ids, img_cond_seq_ids), dim=1)
-
-        guidance_vec = (torch.full((img.shape[0],), state.guidance, device=img.device, dtype=img.dtype) * 0.0) * 0.0
-
-        if not use_autocast:
-            # MPS: Convert all inputs to model dtype (bfloat16) before processing
-            img_input = img_input.to(dtype=model_dtype)
-            txt_input = current_txt[0].to(dtype=model_dtype)
-            vec_input = current_vec[0].to(dtype=model_dtype)
-            t_vec = t_vec.to(dtype=model_dtype)
-            guidance_vec = guidance_vec.to(dtype=model_dtype)
-        else:
-            # CUDA: Use inputs as-is (autocast will handle dtype)
-            txt_input = current_txt[0]
-            vec_input = current_vec[0]
-
-        # Use current embeddings (which may have been updated if prompt changed)
-        pred = model_ref[0](
-            img=img_input,
-            img_ids=img_input_ids,
-            txt=txt_input,
-            txt_ids=current_txt_ids[0],
-            y=vec_input,
-            timesteps=t_vec,
-            guidance=guidance_vec,
-            layer_dropouts=layer_dropouts_val,
-        )
-
-        if img_input_ids is not None:
-            pred = pred[:, : sample.shape[1]]
-
-        # Cache the prediction
-        cached_prediction[0] = pred
-        cached_prediction_state[0] = current_state
-
-        return pred
-
-    def denoise_step_fn(sample: Tensor, t_curr: float, t_prev: float, guidance_val: float) -> Tensor:
-        """Single denoising step function for the controller.\n
-        :param sample: Current sample tensor
-        :param t_curr: Current timestep
-        :param t_prev: Previous timestep
-        :param guidance_val: Guidance value
-        :returns: Model prediction"""
-
-        if controller_ref[0] is not None:
-            use_mask = controller_ref[0].use_previous_as_mask
-            layer_dropouts = controller_ref[0].current_state.layer_dropout
-        else:
-            layer_dropouts = current_layer_dropout[0]
-            use_mask = False
-        pred = get_prediction(sample, t_curr, guidance_val, layer_dropouts)
-        if use_mask and previous_step_tensor[0] is not None:
-            prev_tensor = previous_step_tensor[0]
-            if prev_tensor.shape == pred.shape:
-                prev_min = prev_tensor.min()
-                prev_max = prev_tensor.max()
-                if prev_max > prev_min:
-                    mask = (prev_tensor - prev_min) / (prev_max - prev_min)
-                else:
-                    mask = torch.ones_like(prev_tensor)
-                # Apply mask to prediction: mask controls how much the prediction affects the result
-                # Higher mask values = more effect from prediction, lower = less effect
-                pred = pred * mask
-
-        dt = t_prev - t_curr
-
-        # Standard noise addition
-        result = sample + dt * pred
-
-        # Apply variation noise if enabled
-        if controller_ref[0] is not None:
-            state = controller_ref[0].current_state
-            if state.variation_seed is not None and state.variation_strength > 0.0:
-                result = apply_variation_noise(
-                    latent_sample=result,
-                    variation_seed=state.variation_seed,
-                    variation_strength=state.variation_strength,
-                    mask=None,
-                    variation_method="linear",
-                )
-
-        # Store current sample as previous for next step
-        previous_step_tensor[0] = sample.clone()
-
-        return result
-
-    controller = ManualTimestepController(
-        timesteps=timesteps,
-        initial_sample=img,
-        denoise_step_fn=denoise_step_fn,
-        initial_guidance=state.guidance,
+    controller = ManualTimestepController(  # formatting
+        timesteps=timesteps, initial_sample=img, denoise_step_fn=denoise_step_fn, initial_guidance=state.guidance
     )
     controller_ref[0] = controller  # Store reference for closure access
 

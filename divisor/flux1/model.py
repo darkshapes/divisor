@@ -7,6 +7,7 @@ import torch
 from nnll.console import nfo
 from torch import Tensor, nn
 
+from divisor.layer_dropout import process_blocks_with_dropout
 from divisor.flux1.layers import (
     DoubleStreamBlock,
     EmbedND,
@@ -101,22 +102,10 @@ class Flux(nn.Module):
         ids = torch.cat((txt_ids, img_ids), dim=1)
         pe = self.pe_embedder(ids)
 
-        for block_index, block in enumerate(self.double_blocks):
-            if layer_dropouts is not None and block_index in layer_dropouts:
-                nfo(f"Dropping layer {block_index} (double block)")
-                continue
-
-            img, txt = block(img=img, txt=txt, vec=vec, pe=pe)
-
+        img, txt = process_blocks_with_dropout(self.double_blocks, layer_dropouts, 0, "double", lambda block, state: block(img=state[0], txt=state[1], vec=vec, pe=pe), (img, txt))
         img = torch.cat((txt, img), 1)
 
-        for single_block_index, single_block in enumerate(self.single_blocks):
-            block_index = single_block_index + len(self.double_blocks)
-            if layer_dropouts is not None and block_index in layer_dropouts:
-                nfo(f"Dropping layer {block_index} (single block)")
-                continue
-
-            img = single_block(img, vec=vec, pe=pe)
+        img = process_blocks_with_dropout(self.single_blocks, layer_dropouts, len(self.double_blocks), "single", lambda block, state: block(state, vec=vec, pe=pe), img)
         img = img[:, txt.shape[1] :, ...]
 
         img = self.final_layer(img, vec)  # (N, T, patch_size ** 2 * out_channels)

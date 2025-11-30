@@ -11,10 +11,10 @@ from divisor.controller import DenoisingState, rng
 from divisor.flux1.sampling import (
     SamplingOptions,
     denoise,
-    get_noise,
     get_schedule,
     prepare,
 )
+from divisor.noise import get_noise
 from divisor.flux1.spec import (
     configs,
     get_model_spec,
@@ -210,7 +210,6 @@ def main(
         )
 
         # prepare input
-        opts.seed = None
         if offload:
             ae = ae.cpu()
             clear_cache()
