@@ -98,9 +98,9 @@ def main(
     guidance: float = 2.5,
     seed: int | None = rng.next_seed(),
     prompt: str = "",
+    # ('a photo of a forest with mist swirling around the tree trunks. The word "FLUX" is painted over it in big, red brush strokes with visible texture'),
     quantization: bool = False,
     tiny: bool = False,
-    # ('a photo of a forest with mist swirling around the tree trunks. The word "FLUX" is painted over it in big, red brush strokes with visible texture'),
     device: torch.device = device,
     num_steps: int | None = None,
     loop: bool = False,
@@ -122,8 +122,8 @@ def main(
     :param guidance: guidance value used for guidance distillation
     """
 
-    model_id = f"model.dit.{model_id}"
-    ae_id = f"model.vae.{ae_id}" if not tiny else f"model.taesd.{ae_id}"
+    model_id = f"model.dit.{model_id}".lower()
+    ae_id = f"model.vae.{ae_id}".lower() if not tiny else f"model.taesd.{ae_id}".lower()
     if model_id not in configs or ae_id not in configs:
         available = ", ".join(configs.keys())
         raise ValueError(f"Got unknown model id: {model_id} or {ae_id}, chose from {available}")

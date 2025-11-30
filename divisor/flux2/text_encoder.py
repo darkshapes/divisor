@@ -1,3 +1,6 @@
+# SPDX-License-Identifier:Apache-2.0
+# original BFL Flux code from https://github.com/black-forest-labs/flux2
+
 from pathlib import Path
 
 import torch

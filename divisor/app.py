@@ -44,6 +44,9 @@ def main():
 
         # Flux2 uses model_name parameter, default is "flux.2-dev"
         # Fire will handle the remaining arguments
+        model_id = f"flux2-{args.model_type.strip('2')}"
+
+        remaining_argv = ["--model-id", model_id] + remaining_argv
         sys.argv = [sys.argv[0]] + remaining_argv
         Fire(flux2_main)
     else:

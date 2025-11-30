@@ -1,3 +1,6 @@
+# SPDX-License-Identifier:Apache-2.0
+# original BFL Flux code from https://github.com/black-forest-labs/flux2
+
 SYSTEM_MESSAGE = """You are an AI that reasons about image descriptions. You give structured responses focusing on object relationships, object
 attribution and actions without speculation."""
 
