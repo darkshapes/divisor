@@ -91,7 +91,6 @@ def create_recompute_text_embeddings(
                     "w": torch.arange(1),  # dummy dimension
                     "l": torch.arange(_l),
                 }
-                import torch
 
                 new_txt_ids = torch.cartesian_prod(coords["t"], coords["h"], coords["w"], coords["l"])
                 if bs > 1:
@@ -158,6 +157,11 @@ def create_get_prediction(
     current_vec: list[Tensor],
     cached_prediction: list[Optional[Tensor]],
     cached_prediction_state: list[Optional[dict]],
+    neg_pred_enabled: bool = False,
+    current_neg_txt: Optional[Tensor] | None = None,
+    current_neg_txt_ids: Optional[Tensor] | None = None,
+    current_neg_vec: Optional[Tensor] | None = None,
+    true_gs: Optional[int] = None,
 ) -> Callable[[Tensor, float, float, Optional[list[int]]], Tensor]:
     """Create a function to generate model prediction with caching.\n
     :param model_ref: Mutable list containing model reference
@@ -258,7 +262,6 @@ def create_get_prediction(
                 t_vec = t_vec.to(dtype=model_dtype)
                 guidance_vec = guidance_vec.to(dtype=model_dtype)
             else:
-                # CUDA: Use inputs as-is (autocast will handle dtype)
                 ctx_input = current_txt[0]
 
             # Flux2 uses x, x_ids, ctx, ctx_ids instead of img, img_ids, txt, txt_ids, y
@@ -278,14 +281,22 @@ def create_get_prediction(
             if not use_autocast:
                 # MPS: Convert all inputs to model dtype (bfloat16) before processing
                 img_input = img_input.to(dtype=model_dtype)
-                txt_input = current_txt[0].to(dtype=model_dtype)
-                vec_input = current_vec[0].to(dtype=model_dtype)
+
+                if neg_pred_enabled and all([current_neg_txt, current_neg_txt_ids, current_neg_vec]):
+                    txt_input = current_neg_txt[0].to(dtype=model_dtype)  # type: ignore
+                    vec_input = current_neg_vec[0].to(dtype=model_dtype)  # type: ignore
+                else:
+                    txt_input = current_txt[0].to(dtype=model_dtype)
+                    vec_input = current_vec[0].to(dtype=model_dtype)
                 t_vec = t_vec.to(dtype=model_dtype)
                 guidance_vec = guidance_vec.to(dtype=model_dtype)
             else:
-                # CUDA: Use inputs as-is (autocast will handle dtype)
-                txt_input = current_txt[0]
-                vec_input = current_vec[0]
+                if neg_pred_enabled and all([current_neg_txt, current_neg_txt_ids, current_neg_vec]):
+                    txt_input = current_neg_txt[0]  # type: ignore
+                    vec_input = current_neg_vec[0]  # type: ignore
+                else:
+                    txt_input = current_txt[0]
+                    vec_input = current_vec[0]
 
             # Use current embeddings (which may have been updated if prompt changed)
             pred = model_ref[0](
@@ -298,6 +309,18 @@ def create_get_prediction(
                 guidance=guidance_vec,
                 layer_dropouts=layer_dropouts_val,
             )
+            if neg_pred_enabled and all([current_neg_txt, current_neg_txt_ids, current_neg_vec]):
+                neg_pred = model_ref[0](
+                    img=img_input,
+                    img_ids=img_input_ids,
+                    txt=current_neg_txt[0],  # type: ignore
+                    txt_ids=current_neg_txt_ids[0],  # type: ignore
+                    y=current_neg_vec[0],  # type: ignore
+                    timesteps=t_vec,
+                    guidance=guidance_vec,
+                    layer_dropouts=layer_dropouts_val,
+                )
+                pred = neg_pred + true_gs * (pred - neg_pred)
 
         if img_input_ids is not None:
             pred = pred[:, : sample.shape[1]]

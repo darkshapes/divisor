@@ -99,7 +99,7 @@ class TestPromptModelSpecs:
         # Find a model without compatibility spec (if any)
         # For now, we test that the error handling exists
         model_id = "model.dit.flux1-dev"
-        compat_spec = get_compatibility_spec(model_id, "fp8-sai")
+        compat_spec = get_model_spec(model_id, "fp8-sai")
 
         # If compat_spec is None, main() should raise an error
         if compat_spec is None:
@@ -134,7 +134,7 @@ class TestPromptModelSpecs:
             patch("divisor.flux1.prompt.denoise"),
         ):
             # Test with quantization=True
-            compat_spec = get_compatibility_spec(model_id, "fp8-sai")
+            compat_spec = get_model_spec(model_id, "fp8-sai")
             if compat_spec is not None:
                 main(
                     model_id=model,

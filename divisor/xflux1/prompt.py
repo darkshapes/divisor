@@ -1,78 +1,18 @@
 # SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
 # <!-- // /*  d a r k s h a p e s */ -->
-# adapted BFL Flux code from https://github.com/black-forest-labs/flux
+# adapted XFlux code from https://github.com/TencentARC/FluxKits
 
 import torch
 from fire import Fire
-from nnll.init_gpu import clear_cache, device
+from nnll.init_gpu import device, clear_cache
 from nnll.console import nfo
 
 from divisor.controller import DenoisingState, rng
-from divisor.flux1.sampling import SamplingOptions, denoise, get_schedule, prepare
-from divisor.noise import get_noise
+from divisor.flux1.sampling import get_noise, get_schedule, prepare, SamplingOptions
+from divisor.flux1.prompt import parse_prompt
 from divisor.flux1.spec import configs, get_model_spec, CompatibilitySpec, ModelSpec, InitialParams
 from divisor.flux1.loading import load_ae, load_clip, load_flow_model, load_t5
-
-
-def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
-    user_question = "Next prompt (write /h for help, /q to quit and leave empty to repeat):\n"
-    usage = (
-        "Usage: Either write your prompt directly, leave this field empty "
-        "to repeat the prompt or write a command starting with a slash:\n"
-        "- '/w <width>' will set the width of the generated image\n"
-        "- '/h <height>' will set the height of the generated image\n"
-        "- '/s <seed>' sets the next seed\n"
-        "- '/g <guidance>' sets the guidance (flux-dev only)\n"
-        "- '/n <steps>' sets the number of steps\n"
-        "- '/q' to quit"
-    )
-
-    while (prompt := input(user_question)).startswith("/"):
-        if prompt.startswith("/w"):
-            if prompt.count(" ") != 1:
-                nfo(f"Got invalid command '{prompt}'\n{usage}")
-                continue
-            _, width = prompt.split()
-            options.width = 16 * (int(width) // 16)
-            nfo(f"Setting resolution to {options.width} x {options.height} ({options.height * options.width / 1e6:.2f}MP)")
-        elif prompt.startswith("/h"):
-            if prompt.count(" ") != 1:
-                nfo(f"Got invalid command '{prompt}'\n{usage}")
-                continue
-            _, height = prompt.split()
-            options.height = 16 * (int(height) // 16)
-            nfo(f"Setting resolution to {options.width} x {options.height} ({options.height * options.width / 1e6:.2f}MP)")
-        elif prompt.startswith("/g"):
-            if prompt.count(" ") != 1:
-                nfo(f"Got invalid command '{prompt}'\n{usage}")
-                continue
-            _, guidance = prompt.split()
-            options.guidance = float(guidance)
-            nfo(f"Setting guidance to {options.guidance}")
-        elif prompt.startswith("/s"):
-            if prompt.count(" ") != 1:
-                nfo(f"Got invalid command '{prompt}'\n{usage}")
-                continue
-            _, seed = prompt.split()
-            options.seed = int(seed)
-            nfo(f"Setting seed to {options.seed}")
-        elif prompt.startswith("/n"):
-            if prompt.count(" ") != 1:
-                nfo(f"Got invalid command '{prompt}'\n{usage}")
-                continue
-            _, steps = prompt.split()
-            options.num_steps = int(steps)
-            nfo(f"Setting number of steps to {options.num_steps}")
-        elif prompt.startswith("/q"):
-            nfo("Quitting")
-            return None
-        else:
-            if not prompt.startswith("/h"):
-                nfo(f"Got invalid command '{prompt}'\n{usage}")
-            nfo(usage)
-    if prompt != "":
-        options.prompt = prompt
-    return options
+from divisor.xflux1.sampling import denoise
 
 
 @torch.inference_mode()
@@ -114,12 +54,6 @@ def main(
         available = ", ".join(configs.keys())
         raise ValueError(f"Got unknown model id: {model_id} or {ae_id}, chose from {available}")
 
-    spec = get_model_spec(model_id)
-    init = getattr(spec, "init", None)
-
-    if init is None:
-        raise ValueError(f"Model {model_id} does not have initialization parameters (init) configured")
-
     prompt_parts = prompt.split("|")
     if len(prompt_parts) == 1:
         prompt = prompt_parts[0]
@@ -141,16 +75,16 @@ def main(
                 "file_name": spec.file_name,
                 "verbose": verbose,
             }
-            spec = get_model_spec(model_id)
+        elif isinstance(spec, ModelSpec):
+            pass
     else:
         spec = get_model_spec(model_id)
-    print(spec)
+
     init = getattr(
         spec,
         "init",
         ValueError(f"Model {model_id} does not have initialization parameters (init) configured"),
     )
-
     assert isinstance(init, InitialParams), "init must be an InitialParams"
 
     height = 16 * (height // 16)
@@ -269,6 +203,9 @@ def main(
         else:
             opts = None
 
+
+if __name__ == "__main__":
+    Fire(main)
 
 if __name__ == "__main__":
     Fire(main)

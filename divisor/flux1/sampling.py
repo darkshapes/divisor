@@ -44,6 +44,45 @@ class SamplingOptions:
     num_steps: int
     guidance: float
     seed: int | None
+    neg_prompt: str | None = None
+
+
+def get_noise(
+    num_samples: int,
+    height: int,
+    width: int,
+    dtype: torch.dtype,
+    seed: int,
+    device: torch.device | None = None,
+) -> Tensor:
+    """Generate noise tensor.\n
+    :param num_samples: Number of samples to generate
+    :param height: Height of the image
+    :param width: Width of the image
+    :param device: Device to generate the noise on
+    :param dtype: Data type of the noise
+    :param seed: Seed for the random number generator
+    :returns: Noise tensor"""
+    # Get the generator's device to ensure compatibility
+    generator_device = rng._torch_generator.device if rng._torch_generator is not None else torch.device("cpu")
+
+    # Create tensor on generator's device first (required for MPS compatibility)
+    noise = torch.randn(
+        num_samples,
+        16,
+        # allow for packing
+        2 * math.ceil(height / 16),
+        2 * math.ceil(width / 16),
+        dtype=dtype,
+        generator=rng._torch_generator,
+        device=generator_device,
+    )
+
+    # Move to target device if different
+    if device is not None and generator_device != device:
+        noise = noise.to(device)
+
+    return noise
 
 
 def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:
@@ -146,6 +185,11 @@ def denoise(
     initial_layer_dropout: Optional[list[int]] = None,
     t5: Optional[HFEmbedder] = None,  # T5 embedder for prompt changes
     clip: Optional[HFEmbedder] = None,  # CLIP embedder for prompt changes
+    neg_pred_enabled: bool = False,
+    neg_txt: Tensor | None = None,
+    neg_txt_ids: Tensor | None = None,
+    neg_vec: Tensor | None = None,
+    true_gs=1,
 ):
     """Denoise using Flux model with optional ManualTimestepController.\n
     :param model: Flux model instance
@@ -189,6 +233,16 @@ def denoise(
     current_txt: list[Tensor] = [txt]
     current_txt_ids: list[Tensor] = [txt_ids]
     current_vec: list[Tensor] = [vec]
+    if neg_pred_enabled and all([neg_txt, neg_txt_ids, neg_vec]):
+        current_neg_txt: list[Tensor] = [neg_txt]  # type: ignore
+        current_neg_txt_ids: list[Tensor] = [neg_txt_ids]  # type: ignore
+        current_neg_vec: list[Tensor] = [neg_vec]  # type: ignore
+        true_gs = true_gs
+    else:
+        current_neg_txt: list[Tensor] | None = None
+        current_neg_txt_ids: list[Tensor] | None = None
+        current_neg_vec: list[Tensor] | None = None
+        true_gs = 1
     current_prompt: list[Optional[str]] = [state.prompt]  # Track current prompt to detect changes
 
     clear_prediction_cache = create_clear_prediction_cache(cached_prediction, cached_prediction_state)
@@ -210,6 +264,11 @@ def denoise(
         current_vec,
         cached_prediction,
         cached_prediction_state,
+        neg_pred_enabled,
+        current_neg_txt,  # pyright: ignore[reportArgumentType]
+        current_neg_txt_ids,  # pyright: ignore[reportArgumentType]
+        current_neg_vec,  # pyright: ignore[reportArgumentType]
+        true_gs,
     )
 
     denoise_step_fn = create_denoise_step_fn(  # formatting
