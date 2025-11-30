@@ -9,6 +9,7 @@ import torch
 from torch import Tensor
 from nnll.init_gpu import device
 from divisor.variant import apply_variation_noise
+from divisor.spec import GetPredictionSettings
 
 # Try to import model types for type checking
 try:
@@ -144,38 +145,9 @@ def _is_flux2_model(model: Any) -> bool:
         return "Flux2" in model_class_name or "flux2" in model_class_name.lower()
 
 
-def create_get_prediction(
-    model_ref: list[Any],
-    img_ids: Tensor,
-    img: Tensor,
-    state: Any,
-    img_cond: Optional[Tensor],
-    img_cond_seq: Optional[Tensor],
-    img_cond_seq_ids: Optional[Tensor],
-    current_txt: list[Tensor],
-    current_txt_ids: list[Tensor],
-    current_vec: list[Tensor],
-    cached_prediction: list[Optional[Tensor]],
-    cached_prediction_state: list[Optional[dict]],
-    neg_pred_enabled: bool = False,
-    current_neg_txt: Optional[Tensor] | None = None,
-    current_neg_txt_ids: Optional[Tensor] | None = None,
-    current_neg_vec: Optional[Tensor] | None = None,
-    true_gs: Optional[int] = None,
-) -> Callable[[Tensor, float, float, Optional[list[int]]], Tensor]:
+def create_get_prediction(pred_set: GetPredictionSettings) -> Callable[[Tensor, float, float, Optional[list[int]]], Tensor]:
     """Create a function to generate model prediction with caching.\n
-    :param model_ref: Mutable list containing model reference
-    :param img_ids: Image position IDs tensor
-    :param img: Image tensor for shape/device reference
-    :param state: DenoisingState object
-    :param img_cond: Optional channel-wise image conditioning
-    :param img_cond_seq: Optional sequence-wise image conditioning
-    :param img_cond_seq_ids: Optional sequence-wise image conditioning IDs
-    :param current_txt: Mutable list containing current text embeddings
-    :param current_txt_ids: Mutable list containing current text IDs
-    :param current_vec: Mutable list containing current CLIP embeddings
-    :param cached_prediction: Mutable list containing cached prediction
-    :param cached_prediction_state: Mutable list containing cached prediction state
+    :param config: GetPredictionSettings containing all configuration parameters
     :return: Function that generates predictions with caching"""
 
     def get_prediction(
@@ -209,21 +181,21 @@ def create_get_prediction(
         }
 
         if (
-            cached_prediction[0] is not None
-            and cached_prediction_state[0] is not None
-            and cached_prediction_state[0]["sample_hash"] == current_state["sample_hash"]
-            and cached_prediction_state[0]["t_curr"] == current_state["t_curr"]
-            and cached_prediction_state[0]["guidance"] == current_state["guidance"]
-            and cached_prediction_state[0]["layer_dropout"] == current_state["layer_dropout"]
+            pred_set.cached_prediction[0] is not None
+            and pred_set.cached_prediction_state[0] is not None
+            and pred_set.cached_prediction_state[0]["sample_hash"] == current_state["sample_hash"]
+            and pred_set.cached_prediction_state[0]["t_curr"] == current_state["t_curr"]
+            and pred_set.cached_prediction_state[0]["guidance"] == current_state["guidance"]
+            and pred_set.cached_prediction_state[0]["layer_dropout"] == current_state["layer_dropout"]
         ):
-            return cached_prediction[0]
+            return pred_set.cached_prediction[0]
 
         # Generate new prediction
         # When autocast is disabled (MPS), ensure all inputs are in correct dtype (bfloat16)
         # Get model dtype to ensure inputs match
         # Safely get model dtype, handling Mock objects in tests
         try:
-            model_dtype = next(model_ref[0].parameters()).dtype
+            model_dtype = next(pred_set.model_ref[0].parameters()).dtype
         except (TypeError, StopIteration, AttributeError):
             # Fallback: use sample dtype if we can't get model dtype (for Mock objects in tests)
             model_dtype = sample.dtype
@@ -235,99 +207,99 @@ def create_get_prediction(
 
         t_vec = torch.full((sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device)
         img_input = sample
-        img_input_ids = img_ids
+        img_input_ids = pred_set.img_ids
 
-        if img_cond is not None:
+        if pred_set.img_cond is not None:
             # Ensure img_cond matches sample dtype before concatenation
-            img_cond_converted = img_cond.to(dtype=model_dtype) if not use_autocast else img_cond
+            img_cond_converted = pred_set.img_cond.to(dtype=model_dtype) if not use_autocast else pred_set.img_cond
             img_input = torch.cat((sample, img_cond_converted), dim=-1)
-        if img_cond_seq is not None:
-            assert img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
+        if pred_set.img_cond_seq is not None:
+            assert pred_set.img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
             # Ensure img_cond_seq matches dtype before concatenation
-            img_cond_seq_converted = img_cond_seq.to(dtype=model_dtype) if not use_autocast else img_cond_seq
+            img_cond_seq_converted = pred_set.img_cond_seq.to(dtype=model_dtype) if not use_autocast else pred_set.img_cond_seq
             img_input = torch.cat((img_input, img_cond_seq_converted), dim=1)
-            img_input_ids = torch.cat((img_input_ids, img_cond_seq_ids), dim=1)
+            img_input_ids = torch.cat((img_input_ids, pred_set.img_cond_seq_ids), dim=1)
 
         # Determine model type and prepare inputs accordingly
-        is_flux2 = _is_flux2_model(model_ref[0])
+        is_flux2 = _is_flux2_model(pred_set.model_ref[0])
 
         if is_flux2:
             # Flux2 model signature: model(x=..., x_ids=..., timesteps=..., ctx=..., ctx_ids=..., guidance=..., layer_dropouts=...)
-            guidance_vec = torch.full((img.shape[0],), state.guidance, device=img.device, dtype=img.dtype)
+            guidance_vec = torch.full((pred_set.img.shape[0],), pred_set.state.guidance, device=pred_set.img.device, dtype=pred_set.img.dtype)
 
             if not use_autocast:
                 # MPS: Convert all inputs to model dtype (bfloat16) before processing
                 img_input = img_input.to(dtype=model_dtype)
-                ctx_input = current_txt[0].to(dtype=model_dtype)
+                ctx_input = pred_set.current_txt[0].to(dtype=model_dtype)
                 t_vec = t_vec.to(dtype=model_dtype)
                 guidance_vec = guidance_vec.to(dtype=model_dtype)
             else:
-                ctx_input = current_txt[0]
+                ctx_input = pred_set.current_txt[0]
 
             # Flux2 uses x, x_ids, ctx, ctx_ids instead of img, img_ids, txt, txt_ids, y
-            pred = model_ref[0](
+            pred = pred_set.model_ref[0](
                 x=img_input,
                 x_ids=img_input_ids,
                 timesteps=t_vec,
                 ctx=ctx_input,
-                ctx_ids=current_txt_ids[0],
+                ctx_ids=pred_set.current_txt_ids[0],
                 guidance=guidance_vec,
                 layer_dropouts=layer_dropouts_val,
             )
         else:
             # Flux1 model signature: model(img=..., img_ids=..., txt=..., txt_ids=..., y=..., timesteps=..., guidance=..., layer_dropouts=...)
-            guidance_vec = (torch.full((img.shape[0],), state.guidance, device=img.device, dtype=img.dtype) * 0.0) * 0.0
+            guidance_vec = (torch.full((pred_set.img.shape[0],), pred_set.state.guidance, device=pred_set.img.device, dtype=pred_set.img.dtype) * 0.0) * 0.0
 
             if not use_autocast:
                 # MPS: Convert all inputs to model dtype (bfloat16) before processing
                 img_input = img_input.to(dtype=model_dtype)
 
-                if neg_pred_enabled and all([current_neg_txt, current_neg_txt_ids, current_neg_vec]):
-                    txt_input = current_neg_txt[0].to(dtype=model_dtype)  # type: ignore
-                    vec_input = current_neg_vec[0].to(dtype=model_dtype)  # type: ignore
+                if pred_set.neg_pred_enabled and all([pred_set.current_neg_txt, pred_set.current_neg_txt_ids, pred_set.current_neg_vec]):
+                    txt_input = pred_set.current_neg_txt[0].to(dtype=model_dtype)  # type: ignore
+                    vec_input = pred_set.current_neg_vec[0].to(dtype=model_dtype)  # type: ignore
                 else:
-                    txt_input = current_txt[0].to(dtype=model_dtype)
-                    vec_input = current_vec[0].to(dtype=model_dtype)
+                    txt_input = pred_set.current_txt[0].to(dtype=model_dtype)
+                    vec_input = pred_set.current_vec[0].to(dtype=model_dtype)
                 t_vec = t_vec.to(dtype=model_dtype)
                 guidance_vec = guidance_vec.to(dtype=model_dtype)
             else:
-                if neg_pred_enabled and all([current_neg_txt, current_neg_txt_ids, current_neg_vec]):
-                    txt_input = current_neg_txt[0]  # type: ignore
-                    vec_input = current_neg_vec[0]  # type: ignore
+                if pred_set.neg_pred_enabled and all([pred_set.current_neg_txt, pred_set.current_neg_txt_ids, pred_set.current_neg_vec]):
+                    txt_input = pred_set.current_neg_txt[0]  # type: ignore
+                    vec_input = pred_set.current_neg_vec[0]  # type: ignore
                 else:
-                    txt_input = current_txt[0]
-                    vec_input = current_vec[0]
+                    txt_input = pred_set.current_txt[0]
+                    vec_input = pred_set.current_vec[0]
 
             # Use current embeddings (which may have been updated if prompt changed)
-            pred = model_ref[0](
+            pred = pred_set.model_ref[0](
                 img=img_input,
                 img_ids=img_input_ids,
                 txt=txt_input,
-                txt_ids=current_txt_ids[0],
+                txt_ids=pred_set.current_txt_ids[0],
                 y=vec_input,
                 timesteps=t_vec,
                 guidance=guidance_vec,
                 layer_dropouts=layer_dropouts_val,
             )
-            if neg_pred_enabled and all([current_neg_txt, current_neg_txt_ids, current_neg_vec]):
-                neg_pred = model_ref[0](
+            if pred_set.neg_pred_enabled and all([pred_set.current_neg_txt, pred_set.current_neg_txt_ids, pred_set.current_neg_vec]):
+                neg_pred = pred_set.model_ref[0](
                     img=img_input,
                     img_ids=img_input_ids,
-                    txt=current_neg_txt[0],  # type: ignore
-                    txt_ids=current_neg_txt_ids[0],  # type: ignore
-                    y=current_neg_vec[0],  # type: ignore
+                    txt=pred_set.current_neg_txt[0],  # type: ignore
+                    txt_ids=pred_set.current_neg_txt_ids[0],  # type: ignore
+                    y=pred_set.current_neg_vec[0],  # type: ignore
                     timesteps=t_vec,
                     guidance=guidance_vec,
                     layer_dropouts=layer_dropouts_val,
                 )
-                pred = neg_pred + true_gs * (pred - neg_pred)
+                pred = neg_pred + pred_set.true_gs * (pred - neg_pred)
 
         if img_input_ids is not None:
             pred = pred[:, : sample.shape[1]]
 
         # Cache the prediction
-        cached_prediction[0] = pred
-        cached_prediction_state[0] = current_state
+        pred_set.cached_prediction[0] = pred
+        pred_set.cached_prediction_state[0] = current_state
 
         return pred
 

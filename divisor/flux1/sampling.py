@@ -17,11 +17,11 @@ from torch import Tensor
 
 from divisor.commands import process_choice
 from divisor.controller import (
-    DenoisingState,
     ManualTimestepController,
     rng,
     variation_rng,
 )
+from divisor.spec import DenoisingState, DenoiseSettings, GetPredictionSettings
 from divisor.denoise_step import (
     create_clear_prediction_cache,
     create_recompute_text_embeddings,
@@ -169,45 +169,35 @@ def get_schedule(
 @torch.inference_mode()
 def denoise(
     model: Flux,
-    # model input
-    img: Tensor,
-    img_ids: Tensor,
-    txt: Tensor,
-    txt_ids: Tensor,
-    vec: Tensor,
-    state: DenoisingState,
-    ae: AutoEncoder,
-    timesteps: list[float],  # sampling parameters
-    img_cond: Tensor | None = None,  # extra img tokens (channel-wise)
-    img_cond_seq: Tensor | None = None,  # extra img tokens (sequence-wise)
-    img_cond_seq_ids: Tensor | None = None,
-    device: torch.device = device,
-    initial_layer_dropout: Optional[list[int]] = None,
-    t5: Optional[HFEmbedder] = None,  # T5 embedder for prompt changes
-    clip: Optional[HFEmbedder] = None,  # CLIP embedder for prompt changes
-    neg_pred_enabled: bool = False,
-    neg_txt: Tensor | None = None,
-    neg_txt_ids: Tensor | None = None,
-    neg_vec: Tensor | None = None,
-    true_gs=1,
+    settings: DenoiseSettings,
 ):
     """Denoise using Flux model with optional ManualTimestepController.\n
     :param model: Flux model instance
-    :param img: Initial noisy image tensor
-    :param img_ids: Image position IDs tensor
-    :param txt: Text embeddings tensor
-    :param txt_ids: Text position IDs tensor
-    :param vec: CLIP embeddings vector tensor
-    :param state: DenoisingState containing current state parameters (guidance, width, height, seed, prompt, num_steps, etc.)
-    :param timesteps: List of timestep values
-    :param img_cond: Optional channel-wise image conditioning
-    :param img_cond_seq: Optional sequence-wise image conditioning
-    :param img_cond_seq_ids: Optional sequence-wise image conditioning IDs
-    :param ae: AutoEncoder for decoding previews
-    :param device: PyTorch device
-    :param initial_layer_dropout: Initial layer dropout configuration
-    :param t5: Optional T5 embedder for recomputing text embeddings when prompt changes
-    :param clip: Optional CLIP embedder for recomputing text embeddings when prompt changes"""
+    :param settings: DenoiseSettings containing all denoising configuration parameters"""
+
+    # Extract settings for easier access
+    img = settings.img
+    img_ids = settings.img_ids
+    txt = settings.txt
+    txt_ids = settings.txt_ids
+    vec = settings.vec
+    state = settings.state
+    ae = settings.ae
+    timesteps = settings.timesteps
+    img_cond = settings.img_cond
+    img_cond_seq = settings.img_cond_seq
+    img_cond_seq_ids = settings.img_cond_seq_ids
+    from nnll.init_gpu import device as default_device
+
+    denoise_device = settings.device if settings.device is not None else default_device
+    initial_layer_dropout = settings.initial_layer_dropout
+    t5 = settings.t5
+    clip = settings.clip
+    neg_pred_enabled = settings.neg_pred_enabled
+    neg_txt = settings.neg_txt
+    neg_txt_ids = settings.neg_txt_ids
+    neg_vec = settings.neg_vec
+    true_gs = settings.true_gs
 
     # this is ignored for schnell
     current_layer_dropout = [initial_layer_dropout]
@@ -232,6 +222,7 @@ def denoise(
     # Store embeddings in mutable containers so they can be updated when prompt changes
     current_txt: list[Tensor] = [txt]
     current_txt_ids: list[Tensor] = [txt_ids]
+    assert vec is not None, "vec (CLIP embeddings) is required for Flux1"
     current_vec: list[Tensor] = [vec]
     if neg_pred_enabled and all([neg_txt, neg_txt_ids, neg_vec]):
         current_neg_txt: list[Tensor] = [neg_txt]  # type: ignore
@@ -251,25 +242,26 @@ def denoise(
         img, t5, clip, current_txt, current_txt_ids, current_vec, current_prompt, clear_prediction_cache, is_flux2=False
     )
 
-    get_prediction = create_get_prediction(
-        model_ref,
-        img_ids,
-        img,
-        state,
-        img_cond,
-        img_cond_seq,
-        img_cond_seq_ids,
-        current_txt,
-        current_txt_ids,
-        current_vec,
-        cached_prediction,
-        cached_prediction_state,
-        neg_pred_enabled,
-        current_neg_txt,  # pyright: ignore[reportArgumentType]
-        current_neg_txt_ids,  # pyright: ignore[reportArgumentType]
-        current_neg_vec,  # pyright: ignore[reportArgumentType]
-        true_gs,
+    pred_set = GetPredictionSettings(
+        model_ref=model_ref,
+        img_ids=img_ids,
+        img=img,
+        state=state,
+        img_cond=img_cond,
+        img_cond_seq=img_cond_seq,
+        img_cond_seq_ids=img_cond_seq_ids,
+        current_txt=current_txt,
+        current_txt_ids=current_txt_ids,
+        current_vec=current_vec,
+        cached_prediction=cached_prediction,
+        cached_prediction_state=cached_prediction_state,
+        neg_pred_enabled=neg_pred_enabled,
+        current_neg_txt=current_neg_txt,  # pyright: ignore[reportArgumentType]
+        current_neg_txt_ids=current_neg_txt_ids,  # pyright: ignore[reportArgumentType]
+        current_neg_vec=current_neg_vec,  # pyright: ignore[reportArgumentType]
+        true_gs=int(true_gs) if true_gs is not None else None,
     )
+    get_prediction = create_get_prediction(pred_set)
 
     denoise_step_fn = create_denoise_step_fn(  # formatting
         controller_ref, current_layer_dropout, previous_step_tensor, get_prediction
@@ -343,20 +335,20 @@ def denoise(
             # Unpack requires float32, but we'll convert back to correct dtype after
             intermediate = unpack(intermediate.float(), state.height, state.width)
 
-            sync_torch(device)
+            sync_torch(denoise_device)
             t1 = time.perf_counter()
 
             nfo(f"Step time: {t1 - t0:.1f}s")
 
-            if device.type == "cuda":
-                context = torch.autocast(device_type=device.type, dtype=torch.bfloat16)
+            if denoise_device.type == "cuda":
+                context = torch.autocast(device_type=denoise_device.type, dtype=torch.bfloat16)
             else:
                 from contextlib import nullcontext
 
                 context = nullcontext()
             with context:
                 # When autocast is disabled (MPS), ensure intermediate is in correct dtype for VAE
-                if device.type != "cuda":
+                if denoise_device.type != "cuda":
                     # Get VAE encoder dtype to ensure intermediate matches (bfloat16)
                     # Safely get encoder dtype, handling Mock objects in tests
                     try:

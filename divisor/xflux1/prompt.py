@@ -7,7 +7,8 @@ from fire import Fire
 from nnll.init_gpu import device, clear_cache
 from nnll.console import nfo
 
-from divisor.controller import DenoisingState, rng
+from divisor.spec import DenoisingState
+from divisor.controller import rng
 from divisor.flux1.sampling import get_noise, get_schedule, prepare, SamplingOptions
 from divisor.flux1.prompt import parse_prompt
 from divisor.flux1.spec import configs, get_model_spec, CompatibilitySpec, ModelSpec, InitialParams
@@ -183,15 +184,24 @@ def main(
                 is_compiled = True
 
         # denoise initial noise
-        x = denoise(
-            model,  # type: ignore[arg-type]
-            **inp,  # type: ignore
-            timesteps=timesteps,
+        from divisor.spec import DenoiseSettings
+
+        settings = DenoiseSettings(
+            img=inp["img"],
+            img_ids=inp["img_ids"],
+            txt=inp["txt"],
+            txt_ids=inp["txt_ids"],
+            vec=inp["vec"],
             state=state,
             ae=ae,
+            timesteps=timesteps,
             device=device,
             t5=t5,
             clip=clip,
+        )
+        x = denoise(
+            model,  # type: ignore[arg-type]
+            settings=settings,
         )
 
         if loop:

@@ -16,10 +16,16 @@ from divisor.xflux1.autoencoder import AutoEncoder
 from divisor.flux1.text_embedder import HFEmbedder
 from divisor.commands import process_choice
 from divisor.controller import (
-    DenoisingState,
     ManualTimestepController,
     rng,
     variation_rng,
+)
+from divisor.spec import (
+    DenoisingState,
+    DenoiseSettings,
+    GetPredictionSettings,
+    AdditionalPredictionSettings,
+    SimpleDenoiseSettingsXFlux1,
 )
 from divisor.denoise_step import (
     create_clear_prediction_cache,
@@ -29,49 +35,9 @@ from divisor.denoise_step import (
 from divisor.flux1.sampling import unpack
 
 
-def create_get_prediction_xflux1(
-    model_ref: list[XFlux],
-    img_ids: Tensor,
-    img: Tensor,
-    state: DenoisingState,
-    current_txt: list[Tensor],
-    current_txt_ids: list[Tensor],
-    current_vec: list[Tensor],
-    cached_prediction: list[Optional[Tensor]],
-    cached_prediction_state: list[Optional[dict]],
-    neg_pred_enabled: bool,
-    current_neg_txt: list[Tensor] | None,
-    current_neg_txt_ids: list[Tensor] | None,
-    current_neg_vec: list[Tensor] | None,
-    true_gs: float,
-    timestep_to_start_cfg: int,
-    image_proj: Tensor | None,
-    neg_image_proj: Tensor | None,
-    ip_scale: Tensor,
-    neg_ip_scale: Tensor,
-    current_timestep_index: list[int],
-) -> Callable[[Tensor, float, float, Optional[list[int]]], Tensor]:
+def create_get_prediction_xflux1(pred_set: GetPredictionSettings, add_set: AdditionalPredictionSettings) -> Callable[[Tensor, float, float, Optional[list[int]]], Tensor]:
     """Create a function to generate model prediction with caching for XFlux1.\n
-    :param model_ref: Mutable list containing model reference
-    :param img_ids: Image position IDs tensor
-    :param img: Image tensor for shape/device reference
-    :param state: DenoisingState object
-    :param current_txt: Mutable list containing current text embeddings
-    :param current_txt_ids: Mutable list containing current text IDs
-    :param current_vec: Mutable list containing current CLIP embeddings
-    :param cached_prediction: Mutable list containing cached prediction
-    :param cached_prediction_state: Mutable list containing cached prediction state
-    :param neg_pred_enabled: Whether negative prompt is enabled
-    :param current_neg_txt: Mutable list containing negative text embeddings
-    :param current_neg_txt_ids: Mutable list containing negative text IDs
-    :param current_neg_vec: Mutable list containing negative CLIP embeddings
-    :param true_gs: True guidance scale for CFG
-    :param timestep_to_start_cfg: Timestep index to start CFG
-    :param image_proj: IP-Adapter image projection
-    :param neg_image_proj: IP-Adapter negative image projection
-    :param ip_scale: IP-Adapter scale
-    :param neg_ip_scale: IP-Adapter negative scale
-    :param current_timestep_index: Mutable list containing current timestep index
+    :param config: GetPredictionSettings containing all configuration parameters
     :return: Function that generates predictions with caching"""
 
     def get_prediction(
@@ -102,18 +68,18 @@ def create_get_prediction_xflux1(
         }
 
         if (
-            cached_prediction[0] is not None
-            and cached_prediction_state[0] is not None
-            and cached_prediction_state[0]["sample_hash"] == current_state["sample_hash"]
-            and cached_prediction_state[0]["t_curr"] == current_state["t_curr"]
-            and cached_prediction_state[0]["guidance"] == current_state["guidance"]
-            and cached_prediction_state[0]["layer_dropout"] == current_state["layer_dropout"]
+            pred_set.cached_prediction[0] is not None
+            and pred_set.cached_prediction_state[0] is not None
+            and pred_set.cached_prediction_state[0]["sample_hash"] == current_state["sample_hash"]
+            and pred_set.cached_prediction_state[0]["t_curr"] == current_state["t_curr"]
+            and pred_set.cached_prediction_state[0]["guidance"] == current_state["guidance"]
+            and pred_set.cached_prediction_state[0]["layer_dropout"] == current_state["layer_dropout"]
         ):
-            return cached_prediction[0]
+            return pred_set.cached_prediction[0]
 
         # Generate new prediction
         try:
-            model_dtype = next(model_ref[0].parameters()).dtype
+            model_dtype = next(pred_set.model_ref[0].parameters()).dtype
         except (TypeError, StopIteration, AttributeError):
             model_dtype = sample.dtype
         use_autocast = device.type == "cuda"
@@ -122,60 +88,64 @@ def create_get_prediction_xflux1(
             sample = sample.to(dtype=model_dtype)
 
         t_vec = torch.full((sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device)
-        guidance_vec = torch.full((img.shape[0],), guidance_val, device=img.device, dtype=img.dtype)
+        guidance_vec = torch.full((pred_set.img.shape[0],), guidance_val, device=pred_set.img.device, dtype=pred_set.img.dtype)
 
         if not use_autocast:
             img_input = sample.to(dtype=model_dtype)
-            txt_input = current_txt[0].to(dtype=model_dtype)
-            vec_input = current_vec[0].to(dtype=model_dtype)
+            txt_input = pred_set.current_txt[0].to(dtype=model_dtype)
+            vec_input = pred_set.current_vec[0].to(dtype=model_dtype)
             t_vec = t_vec.to(dtype=model_dtype)
             guidance_vec = guidance_vec.to(dtype=model_dtype)
         else:
             img_input = sample
-            txt_input = current_txt[0]
-            vec_input = current_vec[0]
+            txt_input = pred_set.current_txt[0]
+            vec_input = pred_set.current_vec[0]
 
         # Get current timestep index for CFG check
-        timestep_index = current_timestep_index[0]
+        timestep_index = add_set.current_timestep_index[0]
 
         # Generate positive prediction
-        pred = model_ref[0](
+        pred = pred_set.model_ref[0](
             img=img_input,
-            img_ids=img_ids,
+            img_ids=pred_set.img_ids,
             txt=txt_input,
-            txt_ids=current_txt_ids[0],
+            txt_ids=pred_set.current_txt_ids[0],
             y=vec_input,
             timesteps=t_vec,
             guidance=guidance_vec,
-            image_proj=image_proj,
-            ip_scale=ip_scale,
+            image_proj=add_set.image_proj,
+            ip_scale=add_set.ip_scale,
         )
 
         # Apply CFG if enabled and past start timestep
-        if neg_pred_enabled and all([current_neg_txt, current_neg_txt_ids, current_neg_vec]) and timestep_index >= timestep_to_start_cfg:
+        if (
+            pred_set.neg_pred_enabled
+            and all([pred_set.current_neg_txt, pred_set.current_neg_txt_ids, pred_set.current_neg_vec])
+            and timestep_index >= add_set.timestep_to_start_cfg
+        ):
             if not use_autocast:
-                neg_txt_input = current_neg_txt[0].to(dtype=model_dtype)  # type: ignore
-                neg_vec_input = current_neg_vec[0].to(dtype=model_dtype)  # type: ignore
+                neg_txt_input = pred_set.current_neg_txt[0].to(dtype=model_dtype)  # type: ignore
+                neg_vec_input = pred_set.current_neg_vec[0].to(dtype=model_dtype)  # type: ignore
             else:
-                neg_txt_input = current_neg_txt[0]  # type: ignore
-                neg_vec_input = current_neg_vec[0]  # type: ignore
+                neg_txt_input = pred_set.current_neg_txt[0]  # type: ignore
+                neg_vec_input = pred_set.current_neg_vec[0]  # type: ignore
 
-            neg_pred = model_ref[0](
+            neg_pred = pred_set.model_ref[0](
                 img=img_input,
-                img_ids=img_ids,
+                img_ids=pred_set.img_ids,
                 txt=neg_txt_input,
-                txt_ids=current_neg_txt_ids[0],  # type: ignore
+                txt_ids=pred_set.current_neg_txt_ids[0],  # type: ignore
                 y=neg_vec_input,
                 timesteps=t_vec,
                 guidance=guidance_vec,
-                image_proj=neg_image_proj,
-                ip_scale=neg_ip_scale,
+                image_proj=add_set.neg_image_proj,
+                ip_scale=add_set.neg_ip_scale,
             )
-            pred = neg_pred + true_gs * (pred - neg_pred)
+            pred = neg_pred + pred_set.true_gs * (pred - neg_pred)
 
         # Cache the prediction
-        cached_prediction[0] = pred
-        cached_prediction_state[0] = current_state
+        pred_set.cached_prediction[0] = pred
+        pred_set.cached_prediction_state[0] = current_state
 
         return pred
 
@@ -185,55 +155,33 @@ def create_get_prediction_xflux1(
 @torch.inference_mode()
 def denoise(
     model: XFlux,
-    # model input
-    img: Tensor,
-    img_ids: Tensor,
-    txt: Tensor,
-    txt_ids: Tensor,
-    vec: Tensor,
-    neg_txt: Tensor,
-    neg_txt_ids: Tensor,
-    neg_vec: Tensor,
-    state: DenoisingState,
-    ae: AutoEncoder,
-    timesteps: list[float],
-    # sampling parameters
-    guidance: float = 4.0,
-    true_gs: float = 1.0,
-    timestep_to_start_cfg: int = 0,
-    # ip-adapter parameters
-    image_proj: Tensor | None = None,
-    neg_image_proj: Tensor | None = None,
-    ip_scale: Tensor = torch.tensor(1.0),
-    neg_ip_scale: Tensor = torch.tensor(1.0),
-    initial_layer_dropout: Optional[list[int]] = None,
-    t5: Optional[HFEmbedder] = None,
-    clip: Optional[HFEmbedder] = None,
+    settings: DenoiseSettings,
 ):
     """Denoise using XFlux model with optional ManualTimestepController.\n
     :param model: XFlux model instance
-    :param img: Initial noisy image tensor
-    :param img_ids: Image position IDs tensor
-    :param txt: Text embeddings tensor
-    :param txt_ids: Text position IDs tensor
-    :param vec: CLIP embeddings vector tensor
-    :param neg_txt: Negative text embeddings tensor
-    :param neg_txt_ids: Negative text position IDs tensor
-    :param neg_vec: Negative CLIP embeddings vector tensor
-    :param state: DenoisingState containing current state parameters
-    :param timesteps: List of timestep values
-    :param guidance: Guidance value
-    :param true_gs: True guidance scale for CFG
-    :param timestep_to_start_cfg: Timestep index to start CFG
-    :param image_proj: IP-Adapter image projection
-    :param neg_image_proj: IP-Adapter negative image projection
-    :param ip_scale: IP-Adapter scale
-    :param neg_ip_scale: IP-Adapter negative scale
-    :param ae: AutoEncoder for decoding previews
-    :param device: PyTorch device
-    :param initial_layer_dropout: Initial layer dropout configuration
-    :param t5: Optional T5 embedder for recomputing text embeddings when prompt changes
-    :param clip: Optional CLIP embedder for recomputing text embeddings when prompt changes"""
+    :param settings: DenoiseSettings containing all denoising configuration parameters"""
+
+    # Extract settings for easier access
+    img = settings.img
+    img_ids = settings.img_ids
+    txt = settings.txt
+    txt_ids = settings.txt_ids
+    vec = settings.vec
+    neg_txt = settings.neg_txt
+    neg_txt_ids = settings.neg_txt_ids
+    neg_vec = settings.neg_vec
+    state = settings.state
+    ae = settings.ae
+    timesteps = settings.timesteps
+    true_gs = settings.true_gs
+    timestep_to_start_cfg = settings.timestep_to_start_cfg
+    image_proj = settings.image_proj
+    neg_image_proj = settings.neg_image_proj
+    ip_scale = settings.ip_scale if settings.ip_scale is not None else torch.tensor(1.0)
+    neg_ip_scale = settings.neg_ip_scale if settings.neg_ip_scale is not None else torch.tensor(1.0)
+    initial_layer_dropout = settings.initial_layer_dropout
+    t5 = settings.t5
+    clip = settings.clip
 
     # this is ignored for schnell
     current_layer_dropout = [initial_layer_dropout]
@@ -259,8 +207,10 @@ def denoise(
     # Store embeddings in mutable containers so they can be updated when prompt changes
     current_txt: list[Tensor] = [txt]
     current_txt_ids: list[Tensor] = [txt_ids]
+    assert vec is not None, "vec (CLIP embeddings) is required for XFlux1"
     current_vec: list[Tensor] = [vec]
-    neg_pred_enabled = all([neg_txt is not None, neg_txt_ids is not None, neg_vec is not None])
+    assert neg_txt is not None and neg_txt_ids is not None and neg_vec is not None, "Negative prompt embeddings are required for XFlux1"
+    neg_pred_enabled = True
     if neg_pred_enabled:
         current_neg_txt: list[Tensor] = [neg_txt]  # type: ignore
         current_neg_txt_ids: list[Tensor] = [neg_txt_ids]  # type: ignore
@@ -275,28 +225,31 @@ def denoise(
 
     recompute_text_embeddings = create_recompute_text_embeddings(img, t5, clip, current_txt, current_txt_ids, current_vec, current_prompt, clear_prediction_cache, is_flux2=False)
 
-    get_prediction = create_get_prediction_xflux1(
-        model_ref,
-        img_ids,
-        img,
-        state,
-        current_txt,
-        current_txt_ids,
-        current_vec,
-        cached_prediction,
-        cached_prediction_state,
-        neg_pred_enabled,
-        current_neg_txt,  # type: ignore
-        current_neg_txt_ids,  # type: ignore
-        current_neg_vec,  # type: ignore
-        true_gs,
-        timestep_to_start_cfg,
-        image_proj,
-        neg_image_proj,
-        ip_scale,
-        neg_ip_scale,
-        current_timestep_index,
+    pred_set = GetPredictionSettings(
+        model_ref=model_ref,
+        img_ids=img_ids,
+        img=img,
+        state=state,
+        current_txt=current_txt,
+        current_txt_ids=current_txt_ids,
+        current_vec=current_vec,
+        cached_prediction=cached_prediction,
+        cached_prediction_state=cached_prediction_state,
+        neg_pred_enabled=neg_pred_enabled,
+        current_neg_txt=current_neg_txt,  # type: ignore
+        current_neg_txt_ids=current_neg_txt_ids,  # type: ignore
+        current_neg_vec=current_neg_vec,  # type: ignore
+        true_gs=true_gs,
     )
+    add_set = AdditionalPredictionSettings(
+        timestep_to_start_cfg=timestep_to_start_cfg,
+        image_proj=image_proj,
+        neg_image_proj=neg_image_proj,
+        ip_scale=ip_scale,
+        neg_ip_scale=neg_ip_scale,
+        current_timestep_index=current_timestep_index,
+    )
+    get_prediction = create_get_prediction_xflux1(pred_set, add_set)
 
     denoise_step_fn = create_denoise_step_fn(controller_ref, current_layer_dropout, previous_step_tensor, get_prediction)
 
@@ -369,20 +322,22 @@ def denoise(
             # Unpack requires float32, but we'll convert back to correct dtype after
             intermediate = unpack(intermediate.float(), state.height, state.width)
 
-            sync_torch(device)
+            from nnll.init_gpu import device as default_device
+
+            sync_torch(default_device)
             t1 = time.perf_counter()
 
             nfo(f"Step time: {t1 - t0:.1f}s")
 
-            if device.type == "cuda":
-                context = torch.autocast(device_type=device.type, dtype=torch.bfloat16)
+            if default_device.type == "cuda":
+                context = torch.autocast(device_type=default_device.type, dtype=torch.bfloat16)
             else:
                 from contextlib import nullcontext
 
                 context = nullcontext()
             with context:
                 # When autocast is disabled (MPS), ensure intermediate is in correct dtype for VAE
-                if device.type != "cuda":
+                if default_device.type != "cuda":
                     # Get VAE encoder dtype to ensure intermediate matches (bfloat16)
                     # Safely get encoder dtype, handling Mock objects in tests
                     try:
@@ -411,7 +366,19 @@ def denoise(
     return controller.current_sample
 
 
-def denoise_simple(model, img, img_ids, txt, txt_ids, vec, timesteps, guidance=4.0):
+def denoise_simple(settings: SimpleDenoiseSettingsXFlux1) -> Tensor:
+    """Simple non-interactive denoising function for XFlux1.\n
+    :param settings: SimpleDenoiseSettingsXFlux1 containing all denoising configuration parameters
+    :returns: Denoised image tensor"""
+    model = settings.model
+    img = settings.img
+    img_ids = settings.img_ids
+    txt = settings.txt
+    txt_ids = settings.txt_ids
+    vec = settings.vec
+    timesteps = settings.timesteps
+    guidance = settings.guidance
+
     device = list(model.parameters())[0].device
     guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
     for i, (t_curr, t_prev) in enumerate(zip(timesteps[:-1], timesteps[1:])):

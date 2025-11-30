@@ -5,7 +5,8 @@
 
 from typing import Callable, Optional, Any
 from nnll.console import nfo
-from divisor.controller import ManualTimestepController, DenoisingState
+from divisor.controller import ManualTimestepController
+from divisor.spec import DenoisingState
 
 
 def update_state_and_cache(

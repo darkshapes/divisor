@@ -16,11 +16,11 @@ from divisor.cli_helpers import (
     update_state_and_cache,
 )
 from divisor.controller import (
-    DenoisingState,
     ManualTimestepController,
     rng,
     variation_rng,
 )
+from divisor.spec import DenoisingState
 from divisor.variant import change_variation
 
 

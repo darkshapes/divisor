@@ -22,6 +22,7 @@ from divisor.xflux1.sampling import denoise
 from divisor.flux1.sampling import get_noise, get_schedule, prepare, unpack
 from divisor.flux1.loading import load_ae, load_clip, load_flow_model, load_t5
 from divisor.xflux1.loading import get_lora_rank, load_checkpoint
+from divisor.spec import DenoiseSettings, DenoisingState
 
 
 class XFluxPipeline:
@@ -195,20 +196,49 @@ class XFluxPipeline:
             if self.offload:
                 self.offload_model_to_cpu(self.t5, self.clip)
                 self.model = self.model.to(self.device)
-            x = denoise(
-                self.model,
-                **inp_cond,
-                timesteps=timesteps,
+
+            # Create DenoisingState
+            state = DenoisingState(
+                current_timestep=0,
+                previous_timestep=None,
+                current_sample=x,
+                timestep_index=0,
+                total_timesteps=len(timesteps),
                 guidance=guidance,
-                timestep_to_start_cfg=timestep_to_start_cfg,
+                width=width,
+                height=height,
+                seed=seed,
+                num_steps=num_steps,
+            )
+
+            # Create DenoiseSettings
+            settings = DenoiseSettings(
+                img=inp_cond["img"],
+                img_ids=inp_cond["img_ids"],
+                txt=inp_cond["txt"],
+                txt_ids=inp_cond["txt_ids"],
+                vec=inp_cond["vec"],
+                state=state,
+                ae=None,  # Pipeline doesn't use AE in denoise
+                timesteps=timesteps,
+                device=self.device,
+                t5=self.t5,
+                clip=self.clip,
+                neg_pred_enabled=True,
                 neg_txt=neg_inp_cond["txt"],
                 neg_txt_ids=neg_inp_cond["txt_ids"],
                 neg_vec=neg_inp_cond["vec"],
                 true_gs=true_gs,
+                timestep_to_start_cfg=timestep_to_start_cfg,
                 image_proj=image_proj,
                 neg_image_proj=neg_image_proj,
-                ip_scale=ip_scale,
-                neg_ip_scale=neg_ip_scale,
+                ip_scale=torch.tensor(ip_scale) if isinstance(ip_scale, (int, float)) else ip_scale,
+                neg_ip_scale=torch.tensor(neg_ip_scale) if isinstance(neg_ip_scale, (int, float)) else neg_ip_scale,
+            )
+
+            x = denoise(
+                self.model,
+                settings=settings,
             )
 
             if self.offload:

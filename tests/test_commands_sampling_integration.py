@@ -16,7 +16,8 @@ from divisor.commands import (
     toggle_deterministic,
     change_prompt,
 )
-from divisor.controller import ManualTimestepController, DenoisingState
+from divisor.controller import ManualTimestepController
+from divisor.spec import DenoisingState, DenoiseSettings
 from divisor.flux1.sampling import denoise
 from divisor.flux1.autoencoder import AutoEncoder
 
@@ -317,8 +318,7 @@ class TestCommandsSamplingIntegration:
                 patch("divisor.flux1.sampling.sync_torch"),
                 patch("divisor.flux1.sampling.nfo"),
             ):
-                result = denoise(
-                    model=mock_model,
+                settings = DenoiseSettings(
                     img=img,
                     img_ids=img_ids,
                     txt=txt,
@@ -327,6 +327,10 @@ class TestCommandsSamplingIntegration:
                     state=state,
                     ae=mock_ae,
                     timesteps=timesteps,
+                )
+                result = denoise(
+                    model=mock_model,
+                    settings=settings,
                 )
 
                 # Verify controller was created with correct initial guidance
@@ -521,8 +525,7 @@ class TestCommandsSamplingIntegration:
                     patch("divisor.flux1.sampling.sync_torch"),
                     patch("divisor.flux1.sampling.nfo"),
                 ):
-                    denoise(
-                        model=mock_model,
+                    settings = DenoiseSettings(
                         img=img,
                         img_ids=img_ids,
                         txt=txt,
@@ -531,6 +534,10 @@ class TestCommandsSamplingIntegration:
                         state=state,
                         ae=mock_ae,
                         timesteps=timesteps,
+                    )
+                    denoise(
+                        model=mock_model,
+                        settings=settings,
                     )
 
                     # Verify process_choice was called (from the denoise loop)
