@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
+# <!-- // /*  d a r k s h a p e s */ -->
+# adapted BFL Flux code from https://github.com/black-forest-labs/flux2
+
 import math
 import time
 from typing import Optional

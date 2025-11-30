@@ -1,111 +1,47 @@
-import json
-import os
-import random
-import sys
-from pathlib import Path
-from typing import Any, Dict, Optional
+# SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
+# <!-- // /*  d a r k s h a p e s */ -->
+# adapted BFL Flux code from https://github.com/black-forest-labs/flux2
 
 import torch
-from einops import rearrange
-from PIL import ExifTags, Image
+from PIL import Image
+from fire import Fire
 from nnll.console import nfo
-from nnll.init_gpu import device, sync_torch, clear_cache
+from nnll.init_gpu import device, clear_cache
 
 from divisor.controller import rng
-from divisor.flux1.sampling import SamplingOptions, DenoisingState
 from divisor.noise import get_noise
-from divisor.flux2.openrouter_api_client import DEFAULT_SAMPLING_PARAMS, OpenRouterAPIClient
+from divisor.flux1.sampling import SamplingOptions, DenoisingState
+from divisor.flux1.prompt import parse_prompt
 from divisor.flux2.sampling import (
     batched_prc_img,
     batched_prc_txt,
     denoise_interactive,
     encode_image_refs,
     get_schedule,
-    scatter_ids,
 )
 from divisor.flux2.util import FLUX2_MODEL_INFO, load_ae, load_flow_model, load_mistral_small_embedder
-
 from divisor.flux2 import precision
 
 
-def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
-    user_question = "Next prompt (write /h for help, /q to quit and leave empty to repeat):\n"
-    usage = (
-        "Usage: Either write your prompt directly, leave this field empty "
-        "to repeat the prompt or write a command starting with a slash:\n"
-        "- '/w <width>' will set the width of the generated image\n"
-        "- '/h <height>' will set the height of the generated image\n"
-        "- '/s <seed>' sets the next seed\n"
-        "- '/g <guidance>' sets the guidance (flux-dev only)\n"
-        "- '/n <steps>' sets the number of steps\n"
-        "- '/q' to quit"
-    )
-
-    while (prompt := input(user_question)).startswith("/"):
-        if prompt.startswith("/w"):
-            if prompt.count(" ") != 1:
-                nfo(f"Got invalid command '{prompt}'\n{usage}")
-                continue
-            _, width = prompt.split()
-            options.width = 16 * (int(width) // 16)
-            nfo(f"Setting resolution to {options.width} x {options.height} ({options.height * options.width / 1e6:.2f}MP)")
-        elif prompt.startswith("/h"):
-            if prompt.count(" ") != 1:
-                nfo(f"Got invalid command '{prompt}'\n{usage}")
-                continue
-            _, height = prompt.split()
-            options.height = 16 * (int(height) // 16)
-            nfo(f"Setting resolution to {options.width} x {options.height} ({options.height * options.width / 1e6:.2f}MP)")
-        elif prompt.startswith("/g"):
-            if prompt.count(" ") != 1:
-                nfo(f"Got invalid command '{prompt}'\n{usage}")
-                continue
-            _, guidance = prompt.split()
-            options.guidance = float(guidance)
-            nfo(f"Setting guidance to {options.guidance}")
-        elif prompt.startswith("/s"):
-            if prompt.count(" ") != 1:
-                nfo(f"Got invalid command '{prompt}'\n{usage}")
-                continue
-            _, seed = prompt.split()
-            options.seed = int(seed)
-            nfo(f"Setting seed to {options.seed}")
-        elif prompt.startswith("/n"):
-            if prompt.count(" ") != 1:
-                nfo(f"Got invalid command '{prompt}'\n{usage}")
-                continue
-            _, steps = prompt.split()
-            options.num_steps = int(steps)
-            nfo(f"Setting number of steps to {options.num_steps}")
-        elif prompt.startswith("/q"):
-            nfo("Quitting")
-            return None
-        else:
-            if not prompt.startswith("/h"):
-                nfo(f"Got invalid command '{prompt}'\n{usage}")
-            nfo(usage)
-    if prompt != "":
-        options.prompt = prompt
-    return options
-
-
 def main(
-    model_name: str = "flux.2-dev",
-    single_eval: bool = False,
-    prompt: str = "",
+    model_id: str = "flux2-dev",
+    ae_id: str = "flux2-dev",
     width: int = 1360,
     height: int = 768,
     guidance: float = 4,
     seed: int | None = rng.next_seed(),
-    num_steps: int = 50,
+    prompt: str = "",
     device: torch.device = device,
+    num_steps: int = 50,
     upsample_prompt: bool = False,
     loop: bool = False,
     offload: bool = False,
     compile: bool = False,
     input_images: list[str] | None = None,
 ):
-    assert model_name.lower() in FLUX2_MODEL_INFO, f"{model_name} is not available, choose from {FLUX2_MODEL_INFO.keys()}"
+    model_id = f"model.dit.{model_id}".lower()
+    ae_id = f"model.vae.{ae_id}".lower()
+    assert model_id.lower() in FLUX2_MODEL_INFO, f"{model_id} is not available, choose from {FLUX2_MODEL_INFO.keys()}"
 
     prompt_parts = prompt.split("|")
     if len(prompt_parts) == 1:
@@ -118,7 +54,7 @@ def main(
     assert not ((additional_prompts is not None) and loop), "Do not provide additional prompts and set loop to True"
 
     mistral = load_mistral_small_embedder()
-    model = load_flow_model(model_name, device=torch.device("cpu") if offload else device)
+    model = load_flow_model(model_id, device=torch.device("cpu") if offload else device)
 
     is_compiled = False
     if compile and not offload:
@@ -127,7 +63,7 @@ def main(
         model = torch.compile(model)  # type: ignore[assignment]
         is_compiled = True
 
-    ae = load_ae(model_name)
+    ae = load_ae(ae_id)
     ae.eval()
     mistral.eval()
 
@@ -248,6 +184,4 @@ def main(
 
 
 if __name__ == "__main__":
-    from fire import Fire
-
     Fire(main)
