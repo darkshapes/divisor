@@ -3,8 +3,8 @@
 
 """Divisor class definitions and configuration dataclasses."""
 
-from dataclasses import dataclass
-from typing import Any, Optional
+from dataclasses import dataclass, replace
+from typing import Any, Optional, Tuple
 
 import torch
 from torch import Tensor
@@ -54,9 +54,9 @@ class GetPredictionSettings:
     cached_prediction: list[Optional[Tensor]]
     cached_prediction_state: list[Optional[dict]]
     neg_pred_enabled: bool = False
-    current_neg_txt: Optional[Tensor] | None = None
-    current_neg_txt_ids: Optional[Tensor] | None = None
-    current_neg_vec: Optional[Tensor] | None = None
+    current_neg_txt: Optional[Tensor] | str | None = ""
+    current_neg_txt_ids: Optional[Tensor] | str | None = ""
+    current_neg_vec: Optional[Tensor] | str | None = ""
     true_gs: Optional[int] = None
 
 
@@ -156,3 +156,102 @@ class SimpleDenoiseSettingsXFlux1:
     vec: Tensor  # CLIP embeddings (required for XFlux1)
     timesteps: list[float]
     guidance: float = 4.0
+
+
+def find_mir_spec(
+    model_id: str,
+    ae_id: str,
+    configs: dict,
+    tiny: bool = False,
+    prefix: str = "model.dit.",
+) -> Tuple[str, Optional[str], str]:
+    """Find/validate model specifications by MIR (Machine Intelligence Resource) ID.\n
+    :param model_id: Model ID, optionally with subkey (e.g., "flux1-dev" or "flux1-dev:mini")
+    :param ae_id: Autoencoder ID
+    :param configs: Configuration dictionary containing model specs
+    :param tiny: Whether to use tiny autoencoder prefix (model.taesd. instead of model.vae.)
+    :param prefix: Prefix to add to model_id (default: "model.dit.")
+    :returns: Tuple of (normalized_model_id, subkey, normalized_ae_id)
+    :raises ValueError: If model_id, subkey, or ae_id is not found in configs
+    """
+
+    def _validate_in_configs(key: str, key_type: str, available: list[str] | None = None) -> None:
+        """Helper to validate a key exists in configs."""
+        if key not in configs:
+            available_keys = available if available is not None else list(configs.keys())
+            available_str = ", ".join(available_keys)
+            raise ValueError(f"Got unknown {key_type}: {key}, chose from {available_str}")
+
+    # Handle model_id with optional subkey
+    subkey = None
+    if ":" in model_id:
+        base_model_id, subkey = model_id.split(":", 1)
+        normalized_model_id = f"{prefix}{base_model_id}".lower()
+        subkey = subkey.lower()
+        _validate_in_configs(
+            normalized_model_id,
+            "base model id",
+        )
+        base_model = configs[normalized_model_id]
+
+        if subkey not in base_model:
+            available_subkeys = [k for k in base_model.keys() if k != "*"]
+            available_str = ", ".join(available_subkeys)
+            raise ValueError(f"Got unknown subkey '{subkey}' for model {normalized_model_id}. Available subkeys: {available_str}")
+
+        base_spec = base_model["*"]
+        subkey_spec = base_model[subkey]
+
+        # Merge subkey spec with base spec (subkey values take precedence)
+        merged_spec = merge_spec(base_spec, subkey_spec)
+        if merged_spec is not base_spec:
+            # Update configs with merged spec so subsequent lookups use merged values
+            configs[normalized_model_id] = {**base_model, "*": merged_spec}
+    else:
+        normalized_model_id = f"{prefix}{model_id}".lower()
+        _validate_in_configs(normalized_model_id, "model id")
+
+    ae_prefix = "model.taesd." if tiny else "model.vae."
+    normalized_ae_id = f"{ae_prefix}{ae_id}".lower()
+    _validate_in_configs(normalized_ae_id, "ae id")
+
+    return normalized_model_id, subkey, normalized_ae_id
+
+
+def merge_spec(base_spec: Any, subkey_spec: Any) -> Any:
+    """Merge two dataclass specs with subkey values taking precedence over base values.
+
+    Handles nested dataclasses recursively (e.g., init: InitialParams).
+    Only merges if both specs are dataclasses with the same structure.
+
+    :param base_spec: Base specification dataclass
+    :param subkey_spec: Subkey specification dataclass (values take precedence)
+    :returns: Merged specification with subkey values overriding base values
+    """
+    if not hasattr(subkey_spec, "__dataclass_fields__"):
+        return base_spec
+
+    merge_kwargs = {}
+    for field_name in subkey_spec.__dataclass_fields__:
+        subkey_value = getattr(subkey_spec, field_name, None)
+        base_value = getattr(base_spec, field_name, None)
+
+        if subkey_value is not None:
+            # Handle nested dataclasses (e.g., init: InitialParams)
+            if hasattr(subkey_value, "__dataclass_fields__") and base_value is not None and hasattr(base_value, "__dataclass_fields__"):
+                # Merge nested dataclass: subkey fields override base fields
+                nested_merge_kwargs = {}
+                for nested_field in subkey_value.__dataclass_fields__:
+                    nested_subkey_val = getattr(subkey_value, nested_field, None)
+                    if nested_subkey_val is not None:
+                        nested_merge_kwargs[nested_field] = nested_subkey_val
+                if nested_merge_kwargs:
+                    merge_kwargs[field_name] = replace(base_value, **nested_merge_kwargs)
+                else:
+                    merge_kwargs[field_name] = subkey_value
+            else:
+                merge_kwargs[field_name] = subkey_value
+
+    if merge_kwargs:
+        return replace(base_spec, **merge_kwargs)
+    return base_spec

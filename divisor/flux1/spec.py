@@ -70,9 +70,19 @@ configs = {
             repo_id="Kijai/flux-fp8",
             file_name="flux1-dev-fp8-e4m3fn.safetensors",
         ),
+        "fp8-sai": CompatibilitySpec(
+            repo_id="XLabs-AI/flux-dev-fp8",
+            file_name="flux-dev-fp8.safetensors",
+        ),
         "mini": ModelSpec(
             repo_id="TencentARC/flux-mini",
             file_name="flux-mini.safetensors",
+            init=InitialParams(
+                num_steps=25,
+                max_length=512,
+                guidance=3.5,
+                shift=True,
+            ),
             params=FluxParams(
                 in_channels=64,
                 vec_in_dim=768,
@@ -87,10 +97,6 @@ configs = {
                 qkv_bias=True,
                 guidance_embed=True,
             ),
-        ),
-        "fp8-sai": CompatibilitySpec(
-            repo_id="XLabs-AI/flux-dev-fp8",
-            file_name="flux-dev-fp8.safetensors",
         ),
     },
     "model.vae.flux1-dev": {
@@ -180,16 +186,6 @@ def get_model_spec(mir_id: str, compatibility_key: str | None = None) -> ModelSp
             raise ValueError(f"Model {mir_id} base spec is not a ModelSpec")
 
         return base_spec
-
-
-def get_compatibility_spec(mir_id: str, compatibility_key: str) -> CompatibilitySpec | None:
-    """Get a compatibility spec for a model if available.\n
-    :param mir_id: Model ID (e.g., "model.dit.flux1-dev")
-    :param compatibility_key: Compatibility key (e.g., "fp8-sai")
-    :returns: CompatibilitySpec if available, None otherwise
-    """
-    result = get_model_spec(mir_id, compatibility_key)
-    return result if isinstance(result, CompatibilitySpec) else None
 
 
 def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> dict:

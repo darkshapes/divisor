@@ -8,7 +8,6 @@ from divisor.flux1.prompt import main
 from divisor.flux1.spec import (
     configs,
     get_model_spec,
-    get_compatibility_spec,
     ModelSpec,
     CompatibilitySpec,
 )
@@ -50,7 +49,9 @@ class TestPromptModelSpecs:
 
     def test_main_raises_error_for_invalid_ae_id(self):
         """Test that main() raises ValueError for invalid AE IDs."""
-        with pytest.raises(ValueError, match="Got unknown model id"):
+        with pytest.raises(
+            ValueError, match="Got unknown ae id: model.vae.invalid-ae-id, chose from model.dit.flux1-dev, model.vae.flux1-dev, model.taesd.flux1-dev, model.dit.flux1-schnell"
+        ):
             with (
                 patch("divisor.flux1.prompt.load_flow_model"),
                 patch("divisor.flux1.prompt.load_ae"),
@@ -87,8 +88,7 @@ class TestPromptModelSpecs:
         """Test that main() uses compatibility spec when quantization=True."""
         model_id = "model.dit.flux1-dev"
 
-        # Verify compatibility spec exists
-        compat_spec = get_compatibility_spec(model_id, "fp8-sai")
+        compat_spec = get_model_spec(model_id, "fp8-sai")
         assert compat_spec is not None
         assert isinstance(compat_spec, CompatibilitySpec)
         assert hasattr(compat_spec, "repo_id")

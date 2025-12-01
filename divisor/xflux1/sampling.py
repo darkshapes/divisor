@@ -12,8 +12,6 @@ from nnll.init_gpu import device, sync_torch
 from nnll.save_generation import name_save_file_as, save_with_hyperchain
 
 from divisor.xflux1.model import XFlux
-from divisor.xflux1.autoencoder import AutoEncoder
-from divisor.flux1.text_embedder import HFEmbedder
 from divisor.commands import process_choice
 from divisor.controller import (
     ManualTimestepController,
@@ -21,7 +19,6 @@ from divisor.controller import (
     variation_rng,
 )
 from divisor.spec import (
-    DenoisingState,
     DenoiseSettings,
     GetPredictionSettings,
     AdditionalPredictionSettings,
@@ -32,7 +29,7 @@ from divisor.denoise_step import (
     create_recompute_text_embeddings,
     create_denoise_step_fn,
 )
-from divisor.flux1.sampling import unpack
+from divisor.flux1.sampling import unpack, prepare
 
 
 def create_get_prediction_xflux1(pred_set: GetPredictionSettings, add_set: AdditionalPredictionSettings) -> Callable[[Tensor, float, float, Optional[list[int]]], Tensor]:
@@ -104,6 +101,12 @@ def create_get_prediction_xflux1(pred_set: GetPredictionSettings, add_set: Addit
         # Get current timestep index for CFG check
         timestep_index = add_set.current_timestep_index[0]
 
+        kwargs = {}
+        if "image_proj" in pred_set.model_ref[0].__dict__:
+            kwargs = {"image_proj": add_set.image_proj}
+        if "ip_scale" in pred_set.model_ref[0].__dict__:
+            kwargs.setdefault("ip_scale", add_set.ip_scale)
+
         # Generate positive prediction
         pred = pred_set.model_ref[0](
             img=img_input,
@@ -113,8 +116,7 @@ def create_get_prediction_xflux1(pred_set: GetPredictionSettings, add_set: Addit
             y=vec_input,
             timesteps=t_vec,
             guidance=guidance_vec,
-            image_proj=add_set.image_proj,
-            ip_scale=add_set.ip_scale,
+            **kwargs,
         )
 
         # Apply CFG if enabled and past start timestep
@@ -167,6 +169,7 @@ def denoise(
     txt = settings.txt
     txt_ids = settings.txt_ids
     vec = settings.vec
+    neg_pred_enabled = settings.neg_pred_enabled
     neg_txt = settings.neg_txt
     neg_txt_ids = settings.neg_txt_ids
     neg_vec = settings.neg_vec
@@ -209,9 +212,23 @@ def denoise(
     current_txt_ids: list[Tensor] = [txt_ids]
     assert vec is not None, "vec (CLIP embeddings) is required for XFlux1"
     current_vec: list[Tensor] = [vec]
-    assert neg_txt is not None and neg_txt_ids is not None and neg_vec is not None, "Negative prompt embeddings are required for XFlux1"
-    neg_pred_enabled = True
+
+    # Handle negative prompts: XFlux1 supports negative prompts but they're optional
+    # If neg_pred_enabled is True, negative prompts must be provided
     if neg_pred_enabled:
+        if neg_txt is None or neg_txt_ids is None or neg_vec is None:
+            # Generate empty negative prompts if not provided but neg_pred_enabled is True
+            if t5 is not None and clip is not None:
+                # Use empty string to generate embeddings
+                neg_inp = prepare(t5, clip, img, prompt="")
+                neg_txt = neg_inp["txt"]
+                neg_txt_ids = neg_inp["txt_ids"]
+                neg_vec = neg_inp["vec"]
+            else:
+                # If embedders not available, disable negative prompts
+                neg_pred_enabled = False
+
+    if neg_pred_enabled and neg_txt is not None and neg_txt_ids is not None and neg_vec is not None:
         current_neg_txt: list[Tensor] = [neg_txt]  # type: ignore
         current_neg_txt_ids: list[Tensor] = [neg_txt_ids]  # type: ignore
         current_neg_vec: list[Tensor] = [neg_vec]  # type: ignore
@@ -219,6 +236,7 @@ def denoise(
         current_neg_txt: list[Tensor] | None = None
         current_neg_txt_ids: list[Tensor] | None = None
         current_neg_vec: list[Tensor] | None = None
+        neg_pred_enabled = False
     current_prompt: list[Optional[str]] = [state.prompt]  # Track current prompt to detect changes
 
     clear_prediction_cache = create_clear_prediction_cache(cached_prediction, cached_prediction_state)
@@ -229,6 +247,9 @@ def denoise(
         model_ref=model_ref,
         img_ids=img_ids,
         img=img,
+        img_cond=None,
+        img_cond_seq=None,
+        img_cond_seq_ids=None,
         state=state,
         current_txt=current_txt,
         current_txt_ids=current_txt_ids,

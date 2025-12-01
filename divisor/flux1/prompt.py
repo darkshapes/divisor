@@ -7,7 +7,7 @@ from fire import Fire
 from nnll.init_gpu import clear_cache, device
 from nnll.console import nfo
 
-from divisor.spec import DenoisingState
+from divisor.spec import DenoisingState, find_mir_spec
 from divisor.controller import rng
 from divisor.flux1.sampling import SamplingOptions, denoise, get_schedule, prepare
 from divisor.noise import get_noise
@@ -108,12 +108,7 @@ def main(
     :param loop: start an interactive session and sample multiple times
     :param guidance: guidance value used for guidance distillation
     """
-
-    model_id = f"model.dit.{model_id}".lower()
-    ae_id = f"model.vae.{ae_id}".lower() if not tiny else f"model.taesd.{ae_id}".lower()
-    if model_id not in configs or ae_id not in configs:
-        available = ", ".join(configs.keys())
-        raise ValueError(f"Got unknown model id: {model_id} or {ae_id}, chose from {available}")
+    model_id, subkey, ae_id = find_mir_spec(model_id, ae_id, configs, tiny=tiny)
 
     spec = get_model_spec(model_id)
     init = getattr(spec, "init", None)
