@@ -9,7 +9,7 @@ import torch
 from torch import Tensor
 from nnll.init_gpu import device
 from divisor.variant import apply_variation_noise
-from divisor.spec import GetPredictionSettings
+from divisor.spec import GetPredictionSettings, GetImagePredictionSettings
 
 # Try to import model types for type checking
 try:
@@ -145,7 +145,7 @@ def _is_flux2_model(model: Any) -> bool:
         return "Flux2" in model_class_name or "flux2" in model_class_name.lower()
 
 
-def create_get_prediction(pred_set: GetPredictionSettings) -> Callable[[Tensor, float, float, Optional[list[int]]], Tensor]:
+def create_get_prediction(pred_set: GetPredictionSettings, img_set: GetImagePredictionSettings) -> Callable[[Tensor, float, float, Optional[list[int]]], Tensor]:
     """Create a function to generate model prediction with caching.\n
     :param config: GetPredictionSettings containing all configuration parameters
     :return: Function that generates predictions with caching"""
@@ -207,25 +207,25 @@ def create_get_prediction(pred_set: GetPredictionSettings) -> Callable[[Tensor, 
 
         t_vec = torch.full((sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device)
         img_input = sample
-        img_input_ids = pred_set.img_ids
+        img_input_ids = img_set.img_ids
 
-        if pred_set.img_cond is not None:
+        if img_set.img_cond is not None:
             # Ensure img_cond matches sample dtype before concatenation
-            img_cond_converted = pred_set.img_cond.to(dtype=model_dtype) if not use_autocast else pred_set.img_cond
+            img_cond_converted = img_set.img_cond.to(dtype=model_dtype) if not use_autocast else img_set.img_cond
             img_input = torch.cat((sample, img_cond_converted), dim=-1)
-        if pred_set.img_cond_seq is not None:
-            assert pred_set.img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
+        if img_set.img_cond_seq is not None:
+            assert img_set.img_cond_seq_ids is not None, "You need to provide either both or neither of the sequence conditioning"
             # Ensure img_cond_seq matches dtype before concatenation
-            img_cond_seq_converted = pred_set.img_cond_seq.to(dtype=model_dtype) if not use_autocast else pred_set.img_cond_seq
+            img_cond_seq_converted = img_set.img_cond_seq.to(dtype=model_dtype) if not use_autocast else img_set.img_cond_seq
             img_input = torch.cat((img_input, img_cond_seq_converted), dim=1)
-            img_input_ids = torch.cat((img_input_ids, pred_set.img_cond_seq_ids), dim=1)
+            img_input_ids = torch.cat((img_input_ids, img_set.img_cond_seq_ids), dim=1)
 
         # Determine model type and prepare inputs accordingly
         is_flux2 = _is_flux2_model(pred_set.model_ref[0])
 
         if is_flux2:
             # Flux2 model signature: model(x=..., x_ids=..., timesteps=..., ctx=..., ctx_ids=..., guidance=..., layer_dropouts=...)
-            guidance_vec = torch.full((pred_set.img.shape[0],), pred_set.state.guidance, device=pred_set.img.device, dtype=pred_set.img.dtype)
+            guidance_vec = torch.full((img_set.img.shape[0],), pred_set.state.guidance, device=img_set.img.device, dtype=img_set.img.dtype)
 
             if not use_autocast:
                 # MPS: Convert all inputs to model dtype (bfloat16) before processing
@@ -248,7 +248,7 @@ def create_get_prediction(pred_set: GetPredictionSettings) -> Callable[[Tensor, 
             )
         else:
             # Flux1 model signature: model(img=..., img_ids=..., txt=..., txt_ids=..., y=..., timesteps=..., guidance=..., layer_dropouts=...)
-            guidance_vec = (torch.full((pred_set.img.shape[0],), pred_set.state.guidance, device=pred_set.img.device, dtype=pred_set.img.dtype) * 0.0) * 0.0
+            guidance_vec = (torch.full((img_set.img.shape[0],), pred_set.state.guidance, device=img_set.img.device, dtype=img_set.img.dtype) * 0.0) * 0.0
 
             if not use_autocast:
                 # MPS: Convert all inputs to model dtype (bfloat16) before processing

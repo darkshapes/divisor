@@ -76,11 +76,3 @@ def load_ae(model_name: str, device: str | torch.device = device) -> AutoEncoder
     sd = load_sft(weight_path, device=str(device))
     ae.load_state_dict(sd, strict=True, assign=True)
     return ae.to(device)
-
-
-def image_to_base64(image: Image.Image) -> str:
-    """Convert PIL Image to base64 string."""
-    buffered = io.BytesIO()
-    image.save(buffered, format="PNG")
-    img_str = base64.b64encode(buffered.getvalue()).decode()
-    return img_str

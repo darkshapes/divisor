@@ -6,16 +6,19 @@
 import os
 import torch
 from pathlib import Path
-from huggingface_hub import snapshot_download
-from safetensors.torch import load_file as load_sft
+
 from diffusers.models.autoencoders.autoencoder_tiny import AutoencoderTiny
+from huggingface_hub import snapshot_download
 from nnll.console import nfo
 from nnll.init_gpu import device
+from safetensors.torch import load_file as load_sft
 
-from divisor.flux1.spec import optionally_expand_state_dict, get_model_spec
-from divisor.flux1.model import FluxLoraWrapper, Flux, FluxParams
 from divisor.flux1.autoencoder import AutoEncoder, AutoEncoderParams
+from divisor.flux1.model import FluxLoraWrapper, Flux
+from divisor.flux1.spec import optionally_expand_state_dict, get_merged_model_spec
 from divisor.flux1.text_embedder import HFEmbedder
+from divisor.flux2.autoencoder import AutoEncoder as AutoEncoder2, AutoEncoderParams as AutoEncoder2Params
+from divisor.flux2.model import Flux2, Flux2Params
 
 
 def print_load_warning(missing: list[str], unexpected: list[str]) -> None:
@@ -122,55 +125,42 @@ def load_lora_weights(
 def load_flow_model(
     mir_id: str,
     device: torch.device = device,
-    repo_id: str | None = None,
-    file_name: str | None = None,
     verbose: bool = True,
     lora_repo_id: str | None = None,
     lora_filename: str | None = None,
+    compatibility_key: str | None = None,
 ) -> Flux:
     """Load a flow model (DiT model).\n
     :param mir_id: Model ID (e.g., "model.dit.flux1-dev")
     :param device: Device to load the model on
     :param verbose: Whether to print loading warnings
-    :param repo_id: Optional repository ID to override the base spec's repo_id
-    :param file_name: Optional file name to override the base spec's file_name
     :param lora_repo_id: Optional LoRA repository ID (if not in config)
     :param lora_filename: Optional LoRA filename (if not in config)
+    :param compatibility_key: Optional compatibility key (e.g., "fp8-sai") to override repo_id and file_name
     :returns: Loaded Flux model"""
 
-    config = get_model_spec(mir_id)
+    config = get_merged_model_spec(mir_id, compatibility_key=compatibility_key)
 
-    if not isinstance(config.params, FluxParams):
-        raise ValueError(f"Config {mir_id} is not a flow model (expected FluxParams, got {type(config.params).__name__})")
-
-    # Use provided repo_id/file_name or fall back to base spec
-    checkpoint_repo_id = repo_id if repo_id is not None else config.repo_id
-    checkpoint_file_name = file_name if file_name is not None else config.file_name
-
-    # Create model
     with torch.device("meta"):
-        if lora_repo_id and lora_filename:
-            model = FluxLoraWrapper(params=config.params).to(torch.bfloat16)
+        if config.params is Flux2Params:
+            model = Flux2(config.params).to(torch.bfloat16)
         else:
-            model = Flux(config.params).to(torch.bfloat16)
+            if lora_repo_id and lora_filename:
+                model = FluxLoraWrapper(params=config.params).to(torch.bfloat16)
+            else:
+                model = Flux(config.params).to(torch.bfloat16)  # type: ignore
 
-    # Load base checkpoint
-    ckpt_path = str(retrieve_model(checkpoint_repo_id, checkpoint_file_name))
+    ckpt_path = str(retrieve_model(config.repo_id, config.file_name))
     nfo(f": {os.path.basename(ckpt_path)}")
     sd = load_sft(ckpt_path, device=device.type)
-
-    load_state_dict_into_model(model, sd, verbose=verbose)
-
+    load_state_dict_into_model(model, sd, verbose=verbose)  # type: ignore
     if device.type == "mps":
-        convert_fp8_to_bf16(model, verbose=verbose)
-
-    # Load LoRA if provided
+        convert_fp8_to_bf16(model, verbose=verbose)  # type: ignore
     if lora_repo_id and lora_filename:
-        if not isinstance(model, FluxLoraWrapper):
+        if not isinstance(model, FluxLoraWrapper):  # type: ignore
             raise ValueError("LoRA weights can only be loaded into FluxLoraWrapper models")
         load_lora_weights(model, lora_repo_id, lora_filename, device, verbose)
-
-    return model
+    return model  # type: ignore
 
 
 def load_t5(device: str | torch.device = device, max_length: int = 512) -> HFEmbedder:
@@ -182,26 +172,27 @@ def load_clip(device: str | torch.device = device) -> HFEmbedder:
     return HFEmbedder("openai/clip-vit-large-patch14", max_length=77, dtype=torch.bfloat16).to(device)
 
 
-def load_ae(mir_id: str, device: str | torch.device = device) -> AutoEncoder:
+def load_ae(mir_id: str, device: torch.device = device) -> AutoEncoder:
     """Load the autoencoder model.\n
     :param mir_id: Model ID (e.g., "model.vae.flux1-dev" or "model.taesd.flux1-dev")
     :param device: Device to load the model on
     :returns: Loaded AutoEncoder instance
     """
-    config = get_model_spec(mir_id)
-
-    if config.params is AutoencoderTiny:
-        raise NotImplementedError("AutoencoderTiny loading not yet implemented. Use model.vae.flux1-dev instead.")
-
-    if not isinstance(config.params, AutoEncoderParams):
-        raise ValueError(f"Config {mir_id} is not an autoencoder (expected AutoEncoderParams, got {type(config.params).__name__})")
+    config = get_merged_model_spec(mir_id)
 
     ckpt_path = str(retrieve_model(config.repo_id, config.file_name))
 
     with torch.device("meta"):
-        ae = AutoEncoder(config.params)
+        if isinstance(config.params, AutoEncoderParams):
+            ae = AutoEncoder(config.params)
+        elif isinstance(config.params, AutoEncoder2Params):
+            ae = AutoEncoder2(config.params)
+        elif config.params is AutoencoderTiny:
+            raise NotImplementedError("AutoencoderTiny loading not yet implemented. Use model.vae.flux1-dev instead.")
+        else:
+            raise ValueError(f"Config {mir_id} is not an autoencoder (expected AutoEncoderParams or AutoEncoder2Params, got {type(config.params).__name__})")
 
     nfo(f": {os.path.basename(ckpt_path)}")
     sd = load_sft(ckpt_path, device=device.type)
     load_state_dict_into_model(ae, sd, verbose=True)
-    return ae
+    return ae  # type: ignore # to device flux2

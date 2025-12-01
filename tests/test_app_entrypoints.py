@@ -124,5 +124,4 @@ class TestAppEntryPoints:
         sys.argv = ["dvzr", "--model-type", "invalid"]
         with pytest.raises(SystemExit):
             # argparse will raise SystemExit for invalid choices
-            print("tested")
             main()

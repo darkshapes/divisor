@@ -350,7 +350,7 @@ def change_prompt(
     :returns: Updated DenoisingState
     """
     current_prompt = state.prompt if state.prompt is not None else ""
-    new_prompt = input(f"Enter new prompt (current: {current_prompt[:60]}...): ").strip()
+    new_prompt = input(f"Enter new prompt (current: {current_prompt}): ").strip()
 
     if new_prompt:
         controller.set_prompt(new_prompt)
@@ -359,7 +359,7 @@ def change_prompt(
         else:
             clear_prediction_cache()
         state = controller.current_state
-        nfo(f"Prompt set to: {new_prompt[:60]}...")
+        nfo(f"Prompt set to: {new_prompt}")
     else:
         nfo("Prompt unchanged")
 

@@ -11,7 +11,7 @@ from divisor.spec import DenoisingState, find_mir_spec
 from divisor.controller import rng
 from divisor.flux1.sampling import get_noise, get_schedule, prepare, SamplingOptions
 from divisor.flux1.prompt import parse_prompt
-from divisor.flux1.spec import configs, get_model_spec, CompatibilitySpec, ModelSpec, InitialParams
+from divisor.flux1.spec import configs, get_model_spec, InitialParams
 from divisor.flux1.loading import load_ae, load_clip, load_flow_model, load_t5
 from divisor.xflux1.sampling import denoise
 
@@ -62,26 +62,9 @@ def main(
 
     assert not ((additional_prompts is not None) and loop), "Do not provide additional prompts and set loop to True"
 
-    compat_spec = {}
-    if quantization:
-        # For quantization, use fp8-sai compatibility key
-        spec = get_model_spec(model_id, "fp8-sai")
-        if spec is None:
-            raise ValueError(f"Model {model_id} does not have a compatibility spec configured")
-        if isinstance(spec, CompatibilitySpec):
-            compat_spec = {
-                "repo_id": spec.repo_id,
-                "file_name": spec.file_name,
-                "verbose": verbose,
-            }
-        elif isinstance(spec, ModelSpec):
-            pass
-    else:
-        # If subkey was provided, use it; otherwise get base spec
-        if subkey is not None:
-            spec = get_model_spec(model_id, subkey)
-        else:
-            spec = get_model_spec(model_id)
+    # Determine compatibility key: use fp8-sai for quantization, otherwise use subkey if provided
+    compatibility_key = "fp8-sai" if quantization else subkey
+    spec = get_model_spec(model_id)
 
     init = getattr(
         spec,
@@ -99,7 +82,8 @@ def main(
     model = load_flow_model(
         model_id,
         device=torch.device("cpu") if offload else device,
-        **compat_spec,
+        compatibility_key=compatibility_key,
+        verbose=verbose,
     )
 
     is_compiled = False
@@ -109,7 +93,7 @@ def main(
         model = torch.compile(model)  # type: ignore[assignment]
         is_compiled = True
 
-    ae = load_ae(ae_id, device="cpu" if offload else device)
+    ae = load_ae(ae_id, device=torch.device("cpu") if offload else device)
 
     # Validate user inputs
     opts = SamplingOptions(

@@ -126,21 +126,8 @@ def main(
 
     assert not ((additional_prompts is not None) and loop), "Do not provide additional prompts and set loop to True"
 
-    compat_spec = {}
-    if quantization:
-        spec = get_model_spec(model_id, "fp8-sai")
-        if spec is None:
-            raise ValueError(f"Model {model_id} does not have a compatibility spec configured")
-        if isinstance(spec, CompatibilitySpec):
-            compat_spec = {
-                "repo_id": spec.repo_id,
-                "file_name": spec.file_name,
-                "verbose": verbose,
-            }
-            spec = get_model_spec(model_id)
-    else:
-        spec = get_model_spec(model_id)
-    print(spec)
+    compatibility_key = "fp8-sai" if quantization else None
+    spec = get_model_spec(model_id)
     init = getattr(
         spec,
         "init",
@@ -158,7 +145,8 @@ def main(
     model = load_flow_model(
         model_id,
         device=torch.device("cpu") if offload else device,
-        **compat_spec,
+        compatibility_key=compatibility_key,
+        verbose=verbose,
     )
 
     is_compiled = False

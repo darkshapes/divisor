@@ -10,6 +10,8 @@ from nnll.console import nfo
 
 from divisor.flux1.autoencoder import AutoEncoderParams
 from divisor.flux1.model import FluxLoraWrapper, FluxParams
+from divisor.flux2.model import Flux2Params
+from divisor.flux2.autoencoder import AutoEncoderParams as AutoEncoder2Params
 
 
 @dataclass
@@ -32,7 +34,7 @@ class InitialParams:
 class ModelSpec:
     repo_id: str
     file_name: str
-    params: FluxParams | AutoEncoderParams | type[AutoencoderTiny] | type[FluxLoraWrapper]
+    params: FluxParams | AutoEncoderParams | Flux2Params | AutoEncoder2Params | type[AutoencoderTiny] | type[FluxLoraWrapper]
     init: InitialParams | None = None
 
 
@@ -153,6 +155,27 @@ configs = {
             file_name="flux1-schnell-fp8-e4m3fn.safetensors",
         ),
     },
+    "model.dit.flux2-dev": {
+        "*": ModelSpec(
+            repo_id="black-forest-labs/FLUX.2-dev",
+            file_name="flux2-dev.safetensors",
+            params=Flux2Params(),
+        )
+    },
+    "model.vae.flux2-dev": {
+        "*": ModelSpec(
+            repo_id="black-forest-labs/FLUX.2-dev",
+            file_name="ae.safetensors",
+            params=AutoEncoder2Params(),
+        )
+    },
+    "model.dit.flux2-dev:fp8-sai": {
+        "*": ModelSpec(
+            repo_id="Comfy-Org/flux2-dev",
+            file_name="split_files/diffusion_models/flux2_dev_fp8mixed.safetensors",
+            params=Flux2Params(),
+        )
+    },
 }
 
 
@@ -186,6 +209,33 @@ def get_model_spec(mir_id: str, compatibility_key: str | None = None) -> ModelSp
             raise ValueError(f"Model {mir_id} base spec is not a ModelSpec")
 
         return base_spec
+
+
+def get_merged_model_spec(mir_id: str, compatibility_key: str | None = None) -> ModelSpec:
+    """Get a ModelSpec with compatibility overrides merged in.\n
+    :param mir_id: Model ID (e.g., "model.dit.flux1-dev")
+    :param compatibility_key: Optional compatibility key (e.g., "fp8-sai")
+    :returns: ModelSpec with compatibility overrides applied
+    """
+    base_spec = get_model_spec(mir_id)
+    if not isinstance(base_spec, ModelSpec):
+        raise ValueError(f"Model {mir_id} does not have a base ModelSpec")
+    if compatibility_key is None:
+        return base_spec
+
+    compat_spec = get_model_spec(mir_id, compatibility_key)
+    if compat_spec is None:
+        raise ValueError(f"Model {mir_id} does not have compatibility spec '{compatibility_key}'")
+
+    if isinstance(compat_spec, CompatibilitySpec):
+        return ModelSpec(
+            repo_id=compat_spec.repo_id,
+            file_name=compat_spec.file_name,
+            params=base_spec.params,
+            init=base_spec.init,
+        )
+
+    return compat_spec
 
 
 def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> dict:
