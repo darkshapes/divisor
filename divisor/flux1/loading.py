@@ -14,7 +14,7 @@ from nnll.init_gpu import device
 from safetensors.torch import load_file as load_sft
 
 from divisor.flux1.autoencoder import AutoEncoder, AutoEncoderParams
-from divisor.flux1.model import FluxLoraWrapper, Flux, FluxParams
+from divisor.flux1.model import FluxLoraWrapper, Flux
 from divisor.flux1.spec import optionally_expand_state_dict, get_merged_model_spec
 from divisor.flux1.text_embedder import HFEmbedder
 from divisor.flux2.autoencoder import AutoEncoder as AutoEncoder2, AutoEncoderParams as AutoEncoder2Params

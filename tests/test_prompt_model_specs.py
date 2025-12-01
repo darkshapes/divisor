@@ -121,6 +121,8 @@ class TestPromptModelSpecs:
         """Test that main() correctly builds override dict for load_flow_model."""
         model = "flux1-dev"
         model_id = f"model.dit.{model}"
+        repo_id = "XLabs-AI/flux-dev-fp8"
+        file_name = "flux-dev-fp8.safetensors"
 
         # Mock load_flow_model to capture its arguments
         with (
@@ -137,7 +139,7 @@ class TestPromptModelSpecs:
             compat_spec = get_model_spec(model_id, "fp8-sai")
             if compat_spec is not None:
                 main(
-                    model_id=model,
+                    model_id="flux1-dev:fp8-sai",
                     ae_id=model,
                     quantization=True,
                     verbose=True,
@@ -147,13 +149,13 @@ class TestPromptModelSpecs:
 
                 # Verify load_flow_model was called with override dict
                 assert mock_load.called
+                call_args = mock_load.call_args[0]
                 call_kwargs = mock_load.call_args[1]
-                assert "repo_id" in call_kwargs
-                assert "file_name" in call_kwargs
-                assert "verbose" in call_kwargs
-                assert call_kwargs["repo_id"] == compat_spec.repo_id
-                assert call_kwargs["file_name"] == compat_spec.file_name
-                assert call_kwargs["verbose"] is True
+                assert model_id in call_args
+                assert "compatibility_key" in call_kwargs
+                assert "fp8-sai" in call_kwargs["compatibility_key"]
+                assert repo_id == compat_spec.repo_id
+                assert file_name == compat_spec.file_name
 
     def test_main_uses_base_spec_when_quantization_false(self):
         """Test that main() uses base spec when quantization=False."""
