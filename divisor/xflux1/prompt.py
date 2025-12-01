@@ -7,7 +7,7 @@ from fire import Fire
 from nnll.init_gpu import device, clear_cache
 from nnll.console import nfo
 
-from divisor.spec import DenoisingState
+from divisor.spec import DenoisingState, find_mir_spec
 from divisor.controller import rng
 from divisor.flux1.sampling import get_noise, get_schedule, prepare, SamplingOptions
 from divisor.flux1.prompt import parse_prompt
@@ -18,7 +18,7 @@ from divisor.xflux1.sampling import denoise
 
 @torch.inference_mode()
 def main(
-    model_id: str = "flux1-dev",
+    model_id: str = "flux1-dev:mini",
     ae_id: str = "flux1-dev",
     width: int = 1360,
     height: int = 768,
@@ -49,11 +49,8 @@ def main(
     :param guidance: guidance value used for guidance distillation
     """
 
-    model_id = f"model.dit.{model_id}".lower()
-    ae_id = f"model.vae.{ae_id}".lower() if not tiny else f"model.taesd.{ae_id}".lower()
-    if model_id not in configs or ae_id not in configs:
-        available = ", ".join(configs.keys())
-        raise ValueError(f"Got unknown model id: {model_id} or {ae_id}, chose from {available}")
+    # Find and validate MIR specs for model and autoencoder
+    model_id, subkey, ae_id = find_mir_spec(model_id, ae_id, configs, tiny=tiny)
 
     prompt_parts = prompt.split("|")
     if len(prompt_parts) == 1:
@@ -67,6 +64,7 @@ def main(
 
     compat_spec = {}
     if quantization:
+        # For quantization, use fp8-sai compatibility key
         spec = get_model_spec(model_id, "fp8-sai")
         if spec is None:
             raise ValueError(f"Model {model_id} does not have a compatibility spec configured")
@@ -79,7 +77,11 @@ def main(
         elif isinstance(spec, ModelSpec):
             pass
     else:
-        spec = get_model_spec(model_id)
+        # If subkey was provided, use it; otherwise get base spec
+        if subkey is not None:
+            spec = get_model_spec(model_id, subkey)
+        else:
+            spec = get_model_spec(model_id)
 
     init = getattr(
         spec,

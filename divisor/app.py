@@ -45,16 +45,16 @@ def main():
 
         model_id = f"flux2-{args.model_type.strip('2')}"
 
-    elif args.model_type == "mini":
-        main = xflux1_main
-        model_id = "mini"
-
     else:
-        main = flux1_main
-        model_id = f"flux1-{args.model_type}"
+        if args.model_type == "mini":
+            main = xflux1_main
+            model_id = f"flux1-dev:{args.model_type}"
+        else:
+            main = flux1_main
+            model_id = f"flux1-{args.model_type}"
     remaining_argv = ["--model-id", model_id] + remaining_argv
     sys.argv = [sys.argv[0]] + remaining_argv
-    Fire(main())
+    Fire(main)
 
 
 if __name__ == "__main__":

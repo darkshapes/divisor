@@ -8,7 +8,6 @@ from divisor.flux1.prompt import main
 from divisor.flux1.spec import (
     configs,
     get_model_spec,
-    get_compatibility_spec,
     ModelSpec,
     CompatibilitySpec,
 )
@@ -87,8 +86,7 @@ class TestPromptModelSpecs:
         """Test that main() uses compatibility spec when quantization=True."""
         model_id = "model.dit.flux1-dev"
 
-        # Verify compatibility spec exists
-        compat_spec = get_compatibility_spec(model_id, "fp8-sai")
+        compat_spec = get_model_spec(model_id, "fp8-sai")
         assert compat_spec is not None
         assert isinstance(compat_spec, CompatibilitySpec)
         assert hasattr(compat_spec, "repo_id")
