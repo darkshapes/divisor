@@ -86,7 +86,7 @@ class TestAppEntryPoints:
         mock_fire.assert_called_once()
         # Check that sys.argv was modified correctly
         assert sys.argv[1] == "--model-id"
-        assert sys.argv[2] == "mini"
+        assert sys.argv[2] == "flux1-dev:mini"
 
     def test_defaults_to_flux1_when_no_model_type(self, mock_fire, mock_flux1_main, preserve_argv):
         """Test that default (no model-type) routes to flux1_main."""
