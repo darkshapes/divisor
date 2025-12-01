@@ -35,19 +35,26 @@ class DenoisingState:
 
 
 @dataclass
-class GetPredictionSettings:
-    """Base configuration class for get_prediction function creation.
+class GetImagePredictionSettings:
+    """Image-related configuration for get_prediction function creation."""
 
-    Consolidates all arguments needed to create a get_prediction function.
-    """
-
-    model_ref: list[Any]
     img_ids: Tensor
     img: Tensor
+    img_cond: Optional[Tensor] = None
+    img_cond_seq: Optional[Tensor] = None
+    img_cond_seq_ids: Optional[Tensor] = None
+    image_proj: Optional[Tensor] = None
+    neg_image_proj: Optional[Tensor] = None
+    ip_scale: Optional[Tensor] = None
+    neg_ip_scale: Optional[Tensor] = None
+
+
+@dataclass
+class GetPredictionSettings:
+    """Base configuration class for get_prediction function creation."""
+
+    model_ref: list[Any]
     state: Any
-    img_cond: Optional[Tensor]
-    img_cond_seq: Optional[Tensor]
-    img_cond_seq_ids: Optional[Tensor]
     current_txt: list[Tensor]
     current_txt_ids: list[Tensor]
     current_vec: list[Tensor]
@@ -62,25 +69,15 @@ class GetPredictionSettings:
 
 @dataclass
 class AdditionalPredictionSettings:
-    """Additional configuration for XFlux1-specific prediction settings.
-
-    Consolidates XFlux1-specific arguments for get_prediction function creation.
-    """
+    """Additional configuration for XFlux1-specific prediction settings."""
 
     timestep_to_start_cfg: int
-    image_proj: Tensor | None
-    neg_image_proj: Tensor | None
-    ip_scale: Tensor
-    neg_ip_scale: Tensor
     current_timestep_index: list[int]
 
 
 @dataclass
 class DenoiseSettings:
-    """Base configuration class for denoise function parameters.
-
-    Consolidates common arguments needed for denoise functions across Flux1, Flux2, and XFlux1.
-    """
+    """Base configuration class for denoise function parameters."""
 
     # Model and core inputs (required)
     img: Tensor
@@ -90,45 +87,33 @@ class DenoiseSettings:
     state: Any  # DenoisingState
     ae: Any  # AutoEncoder
     timesteps: list[float]
-
-    # Optional image conditioning
-    img_cond: Tensor | None = None  # Channel-wise image conditioning (Flux1 only)
-    img_cond_seq: Tensor | None = None  # Sequence-wise image conditioning
-    img_cond_seq_ids: Tensor | None = None
-
-    # Optional device and layer dropout
-    device: torch.device | None = None
-    initial_layer_dropout: Optional[list[int]] = None
-
-    # Flux1/XFlux1 specific - CLIP embeddings
     vec: Tensor | None = None  # CLIP embeddings (Flux1/XFlux1)
-
-    # Flux1/XFlux1 specific - negative prompt support
     neg_pred_enabled: bool = False
     neg_txt: Tensor | None = None
     neg_txt_ids: Tensor | None = None
     neg_vec: Tensor | None = None
     true_gs: float | int = 1
 
-    # XFlux1 specific - IP-Adapter and CFG
+    # Text embedders for prompt changes
+    t5: Any | None = None  # T5 embedder (Flux1/XFlux1)
+    clip: Any | None = None  # CLIP embedder (Flux1/XFlux1)
+    text_embedder: Any | None = None  # Mistral embedder (Flux2)
+
+    img_cond: Tensor | None = None  # Channel-wise image conditioning (Flux1 only)
+    img_cond_seq: Tensor | None = None  # Sequence-wise image conditioning
+    img_cond_seq_ids: Tensor | None = None
+    device: torch.device | None = None
+    initial_layer_dropout: Optional[list[int]] = None
     timestep_to_start_cfg: int = 0
     image_proj: Tensor | None = None
     neg_image_proj: Tensor | None = None
     ip_scale: Tensor | None = None
     neg_ip_scale: Tensor | None = None
 
-    # Text embedders for prompt changes
-    t5: Any | None = None  # T5 embedder (Flux1/XFlux1)
-    clip: Any | None = None  # CLIP embedder (Flux1/XFlux1)
-    text_embedder: Any | None = None  # Mistral embedder (Flux2)
-
 
 @dataclass
 class SimpleDenoiseSettingsFlux2:
-    """Configuration for simple (non-interactive) Flux2 denoising.
-
-    Consolidates arguments for the simple denoise function in Flux2.
-    """
+    """Configuration for simple (non-interactive) Flux2 denoising."""
 
     model: Any  # Flux2
     img: Tensor
@@ -143,10 +128,7 @@ class SimpleDenoiseSettingsFlux2:
 
 @dataclass
 class SimpleDenoiseSettingsXFlux1:
-    """Configuration for simple (non-interactive) XFlux1 denoising.
-
-    Consolidates arguments for the denoise_simple function in XFlux1.
-    """
+    """Configuration for simple (non-interactive) XFlux1 denoising."""
 
     model: Any  # XFlux
     img: Tensor

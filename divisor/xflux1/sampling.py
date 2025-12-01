@@ -21,6 +21,7 @@ from divisor.controller import (
 from divisor.spec import (
     DenoiseSettings,
     GetPredictionSettings,
+    GetImagePredictionSettings,
     AdditionalPredictionSettings,
     SimpleDenoiseSettingsXFlux1,
 )
@@ -32,7 +33,11 @@ from divisor.denoise_step import (
 from divisor.flux1.sampling import unpack, prepare
 
 
-def create_get_prediction_xflux1(pred_set: GetPredictionSettings, add_set: AdditionalPredictionSettings) -> Callable[[Tensor, float, float, Optional[list[int]]], Tensor]:
+def create_get_prediction_xflux1(
+    pred_set: GetPredictionSettings,
+    img_set: GetImagePredictionSettings,
+    add_set: AdditionalPredictionSettings,
+) -> Callable[[Tensor, float, float, Optional[list[int]]], Tensor]:
     """Create a function to generate model prediction with caching for XFlux1.\n
     :param config: GetPredictionSettings containing all configuration parameters
     :return: Function that generates predictions with caching"""
@@ -85,7 +90,7 @@ def create_get_prediction_xflux1(pred_set: GetPredictionSettings, add_set: Addit
             sample = sample.to(dtype=model_dtype)
 
         t_vec = torch.full((sample.shape[0],), t_curr, dtype=sample.dtype, device=sample.device)
-        guidance_vec = torch.full((pred_set.img.shape[0],), guidance_val, device=pred_set.img.device, dtype=pred_set.img.dtype)
+        guidance_vec = torch.full((img_set.img.shape[0],), guidance_val, device=img_set.img.device, dtype=img_set.img.dtype)
 
         if not use_autocast:
             img_input = sample.to(dtype=model_dtype)
@@ -103,14 +108,14 @@ def create_get_prediction_xflux1(pred_set: GetPredictionSettings, add_set: Addit
 
         kwargs = {}
         if "image_proj" in pred_set.model_ref[0].__dict__:
-            kwargs = {"image_proj": add_set.image_proj}
+            kwargs = {"image_proj": img_set.image_proj}
         if "ip_scale" in pred_set.model_ref[0].__dict__:
-            kwargs.setdefault("ip_scale", add_set.ip_scale)
+            kwargs.setdefault("ip_scale", img_set.ip_scale)
 
         # Generate positive prediction
         pred = pred_set.model_ref[0](
             img=img_input,
-            img_ids=pred_set.img_ids,
+            img_ids=img_set.img_ids,
             txt=txt_input,
             txt_ids=pred_set.current_txt_ids[0],
             y=vec_input,
@@ -134,14 +139,14 @@ def create_get_prediction_xflux1(pred_set: GetPredictionSettings, add_set: Addit
 
             neg_pred = pred_set.model_ref[0](
                 img=img_input,
-                img_ids=pred_set.img_ids,
+                img_ids=img_set.img_ids,
                 txt=neg_txt_input,
                 txt_ids=pred_set.current_neg_txt_ids[0],  # type: ignore
                 y=neg_vec_input,
                 timesteps=t_vec,
                 guidance=guidance_vec,
-                image_proj=add_set.neg_image_proj,
-                ip_scale=add_set.neg_ip_scale,
+                image_proj=img_set.neg_image_proj,
+                ip_scale=img_set.neg_ip_scale,
             )
             pred = neg_pred + pred_set.true_gs * (pred - neg_pred)
 
@@ -245,11 +250,6 @@ def denoise(
 
     pred_set = GetPredictionSettings(
         model_ref=model_ref,
-        img_ids=img_ids,
-        img=img,
-        img_cond=None,
-        img_cond_seq=None,
-        img_cond_seq_ids=None,
         state=state,
         current_txt=current_txt,
         current_txt_ids=current_txt_ids,
@@ -262,15 +262,22 @@ def denoise(
         current_neg_vec=current_neg_vec,  # type: ignore
         true_gs=true_gs,
     )
-    add_set = AdditionalPredictionSettings(
-        timestep_to_start_cfg=timestep_to_start_cfg,
+    img_set = GetImagePredictionSettings(
+        img_ids=img_ids,
+        img=img,
+        img_cond=None,
+        img_cond_seq=None,
+        img_cond_seq_ids=None,
         image_proj=image_proj,
         neg_image_proj=neg_image_proj,
         ip_scale=ip_scale,
         neg_ip_scale=neg_ip_scale,
+    )
+    add_set = AdditionalPredictionSettings(
+        timestep_to_start_cfg=timestep_to_start_cfg,
         current_timestep_index=current_timestep_index,
     )
-    get_prediction = create_get_prediction_xflux1(pred_set, add_set)
+    get_prediction = create_get_prediction_xflux1(pred_set, img_set, add_set)
 
     denoise_step_fn = create_denoise_step_fn(controller_ref, current_layer_dropout, previous_step_tensor, get_prediction)
 

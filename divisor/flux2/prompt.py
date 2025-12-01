@@ -11,7 +11,7 @@ from nnll.init_gpu import device, clear_cache
 from divisor.controller import rng
 from divisor.noise import get_noise
 from divisor.flux1.sampling import SamplingOptions
-from divisor.spec import DenoisingState
+from divisor.spec import DenoisingState, DenoiseSettings
 from divisor.flux1.prompt import parse_prompt
 from divisor.flux2.sampling import (
     batched_prc_img,
@@ -164,15 +164,17 @@ def main(
 
             x = denoise_interactive(
                 model,  # type: ignore
-                x,
-                x_ids,
-                ctx,
-                ctx_ids,
-                timesteps=timesteps,
-                img_cond_seq=ref_tokens,
-                img_cond_seq_ids=ref_ids,
-                state=state,
-                ae=ae,
+                DenoiseSettings(
+                    img=x,
+                    img_ids=x_ids,
+                    txt=ctx,
+                    txt_ids=ctx_ids,
+                    timesteps=timesteps,
+                    img_cond_seq=ref_tokens,
+                    img_cond_seq_ids=ref_ids,
+                    state=state,
+                    ae=ae,
+                ),
             )
             if loop:
                 nfo("-" * 80)

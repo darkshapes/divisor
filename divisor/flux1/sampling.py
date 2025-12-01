@@ -21,7 +21,7 @@ from divisor.controller import (
     rng,
     variation_rng,
 )
-from divisor.spec import DenoisingState, DenoiseSettings, GetPredictionSettings
+from divisor.spec import DenoisingState, DenoiseSettings, GetPredictionSettings, GetImagePredictionSettings
 from divisor.denoise_step import (
     create_clear_prediction_cache,
     create_recompute_text_embeddings,
@@ -244,12 +244,7 @@ def denoise(
 
     pred_set = GetPredictionSettings(
         model_ref=model_ref,
-        img_ids=img_ids,
-        img=img,
         state=state,
-        img_cond=img_cond,
-        img_cond_seq=img_cond_seq,
-        img_cond_seq_ids=img_cond_seq_ids,
         current_txt=current_txt,
         current_txt_ids=current_txt_ids,
         current_vec=current_vec,
@@ -261,7 +256,14 @@ def denoise(
         current_neg_vec=current_neg_vec,  # pyright: ignore[reportArgumentType]
         true_gs=int(true_gs) if true_gs is not None else None,
     )
-    get_prediction = create_get_prediction(pred_set)
+    img_set = GetImagePredictionSettings(
+        img_ids=img_ids,
+        img=img,
+        img_cond=img_cond,
+        img_cond_seq=img_cond_seq,
+        img_cond_seq_ids=img_cond_seq_ids,
+    )
+    get_prediction = create_get_prediction(pred_set, img_set)
 
     denoise_step_fn = create_denoise_step_fn(  # formatting
         controller_ref, current_layer_dropout, previous_step_tensor, get_prediction

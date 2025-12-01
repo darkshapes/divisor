@@ -30,6 +30,7 @@ from divisor.spec import (
     DenoisingState,
     DenoiseSettings,
     GetPredictionSettings,
+    GetImagePredictionSettings,
     SimpleDenoiseSettingsFlux2,
 )
 from divisor.commands import process_choice
@@ -401,19 +402,21 @@ def denoise_interactive(
 
     pred_set = GetPredictionSettings(
         model_ref=model_ref,
-        img_ids=img_ids,
-        img=img,
         state=state,
-        img_cond=None,  # img_cond not used in Flux2 (only img_cond_seq)
-        img_cond_seq=img_cond_seq,
-        img_cond_seq_ids=img_cond_seq_ids,
         current_txt=current_txt,
         current_txt_ids=current_txt_ids,
         current_vec=current_vec,  # type: ignore
         cached_prediction=cached_prediction,
         cached_prediction_state=cached_prediction_state,
     )
-    get_prediction = create_get_prediction(pred_set)
+    img_set = GetImagePredictionSettings(
+        img_ids=img_ids,
+        img=img,
+        img_cond=None,  # img_cond not used in Flux2 (only img_cond_seq)
+        img_cond_seq=img_cond_seq,
+        img_cond_seq_ids=img_cond_seq_ids,
+    )
+    get_prediction = create_get_prediction(pred_set, img_set)
 
     denoise_step_fn = create_denoise_step_fn(
         controller_ref,
