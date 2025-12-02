@@ -8,14 +8,20 @@ from nnll.init_gpu import clear_cache, device
 from nnll.console import nfo
 
 from divisor.spec import DenoisingState, find_mir_spec
+from dataclasses import replace
 from divisor.controller import rng
-from divisor.flux1.sampling import SamplingOptions, denoise, get_schedule, prepare
-from divisor.noise import get_noise
-from divisor.flux1.spec import configs, get_model_spec, CompatibilitySpec, InitialParams
+from divisor.flux1.sampling import denoise, get_schedule, prepare
+from divisor.noise import prepare_noise_for_model
+from divisor.flux1.spec import configs, get_model_spec, InitialParams
 from divisor.flux1.loading import load_ae, load_clip, load_flow_model, load_t5
 
 
-def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
+def parse_prompt(state: DenoisingState) -> DenoisingState | None:
+    """Parse user input and update DenoisingState.
+
+    :param state: Current DenoisingState to update
+    :returns: Updated DenoisingState or None to quit
+    """
     user_question = "Next prompt (write /h for help, /q to quit and leave empty to repeat):\n"
     usage = (
         "Usage: Either write your prompt directly, leave this field empty "
@@ -34,36 +40,38 @@ def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
                 nfo(f"Got invalid command '{prompt}'\n{usage}")
                 continue
             _, width = prompt.split()
-            options.width = 16 * (int(width) // 16)
-            nfo(f"Setting resolution to {options.width} x {options.height} ({options.height * options.width / 1e6:.2f}MP)")
+            width = 16 * (int(width) // 16)
+            state = replace(state, width=width)
+            nfo(f"Setting resolution to {state.width} x {state.height} ({state.height * state.width / 1e6:.2f}MP)")
         elif prompt.startswith("/h"):
             if prompt.count(" ") != 1:
                 nfo(f"Got invalid command '{prompt}'\n{usage}")
                 continue
             _, height = prompt.split()
-            options.height = 16 * (int(height) // 16)
-            nfo(f"Setting resolution to {options.width} x {options.height} ({options.height * options.width / 1e6:.2f}MP)")
+            height = 16 * (int(height) // 16)
+            state = replace(state, height=height)
+            nfo(f"Setting resolution to {state.width} x {state.height} ({state.height * state.width / 1e6:.2f}MP)")
         elif prompt.startswith("/g"):
             if prompt.count(" ") != 1:
                 nfo(f"Got invalid command '{prompt}'\n{usage}")
                 continue
             _, guidance = prompt.split()
-            options.guidance = float(guidance)
-            nfo(f"Setting guidance to {options.guidance}")
+            state = replace(state, guidance=float(guidance))
+            nfo(f"Setting guidance to {state.guidance}")
         elif prompt.startswith("/s"):
             if prompt.count(" ") != 1:
                 nfo(f"Got invalid command '{prompt}'\n{usage}")
                 continue
             _, seed = prompt.split()
-            options.seed = int(seed)
-            nfo(f"Setting seed to {options.seed}")
+            state = replace(state, seed=int(seed))
+            nfo(f"Setting seed to {state.seed}")
         elif prompt.startswith("/n"):
             if prompt.count(" ") != 1:
                 nfo(f"Got invalid command '{prompt}'\n{usage}")
                 continue
             _, steps = prompt.split()
-            options.num_steps = int(steps)
-            nfo(f"Setting number of steps to {options.num_steps}")
+            state = replace(state, num_steps=int(steps))
+            nfo(f"Setting number of steps to {state.num_steps}")
         elif prompt.startswith("/q"):
             nfo("Quitting")
             return None
@@ -72,8 +80,8 @@ def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
                 nfo(f"Got invalid command '{prompt}'\n{usage}")
             nfo(usage)
     if prompt != "":
-        options.prompt = prompt
-    return options
+        state = replace(state, prompt=prompt)
+    return state
 
 
 @torch.inference_mode()
@@ -156,10 +164,10 @@ def main(
         model = torch.compile(model)  # type: ignore[assignment]
         is_compiled = True
 
-    ae = load_ae(ae_id, device="cpu" if offload else device)
+    ae = load_ae(ae_id, device=torch.device("cpu") if offload else device)
 
-    # Validate user inputs
-    opts = SamplingOptions(
+    # Create initial state from CLI args
+    state = DenoisingState.from_cli_args(
         prompt=prompt,
         width=width,
         height=height,
@@ -169,21 +177,30 @@ def main(
     )
 
     if loop:
-        opts = parse_prompt(opts)
+        state = parse_prompt(state)
 
-    while opts is not None:
-        if opts.seed is None:
-            opts.seed = rng.next_seed()
+    while state is not None:
+        if state.seed is None:
+            seed = rng.next_seed()
+            state = replace(state, seed=seed)
         else:
-            rng.next_seed(opts.seed)
-        # At this point, opts.seed is guaranteed to be an int
-        assert opts.seed is not None, "Seed must be set"
-        nfo(f"Generating with seed {rng.seed}: {opts.prompt}")
+            rng.next_seed(state.seed)
+        # At this point, state.seed is guaranteed to be an int
+        assert state.seed is not None, "Seed must be set"
+        assert state.width is not None and state.height is not None, "Width and height must be set"
+        assert state.num_steps is not None, "num_steps must be set"
+        assert state.prompt is not None, "Prompt must be set"
+        nfo(f"Generating with seed {rng.seed}: {state.prompt}")
+
+        # Generate noise and convert to 3D format for model input
+        # Note: We still need the 4D noise for prepare() to generate text embeddings and img_ids
+        # So we generate it separately first, then convert to 3D
+        from divisor.noise import get_noise
 
         x = get_noise(
             1,
-            opts.height,
-            opts.width,
+            state.height,
+            state.width,
             device=device,
             dtype=torch.bfloat16,
             seed=rng.seed,  # type: ignore
@@ -195,22 +212,26 @@ def main(
             clear_cache()
 
             t5, clip = t5.to(device), clip.to(device)
-        inp = prepare(t5, clip, x, prompt=opts.prompt)
-        timesteps = get_schedule(opts.num_steps, inp["img"].shape[1], shift=init.shift)
-        state = DenoisingState(
-            current_timestep=0,
-            previous_timestep=None,
-            current_sample=x,
+        # Convert 4D noise to 3D format for model input
+        x_3d = prepare_noise_for_model(
+            height=state.height,  # type: ignore
+            width=state.width,  # type: ignore
+            seed=rng.seed,  # type: ignore
+            t5=t5,
+            clip=clip,
+            prompt=state.prompt,
+            device=device,
+            dtype=torch.bfloat16,
+        )
+        # Still need prepare() for text embeddings and img_ids (uses the 4D x)
+        inp = prepare(t5, clip, x, prompt=state.prompt)
+        timesteps = get_schedule(state.num_steps, inp["img"].shape[1], shift=init.shift)
+        # Update state with runtime information (use 3D format for current_sample)
+        state = state.with_runtime_state(
+            current_timestep=0.0,
+            current_sample=x_3d,
             timestep_index=0,
             total_timesteps=len(timesteps),
-            layer_dropout=None,
-            guidance=opts.guidance,
-            seed=rng.seed,
-            width=opts.width,
-            height=opts.height,
-            prompt=opts.prompt,
-            num_steps=opts.num_steps,
-            deterministic=bool(torch.get_deterministic_debug_mode()),
         )
         # offload TEs to CPU, load model to gpu
         if offload:
@@ -255,12 +276,12 @@ def main(
 
         if loop:
             nfo("-" * 80)
-            opts = parse_prompt(opts)
+            state = parse_prompt(state)
         elif additional_prompts:
             next_prompt = additional_prompts.pop(0)
-            opts.prompt = next_prompt
+            state = replace(state, prompt=next_prompt)
         else:
-            opts = None
+            state = None
 
 
 if __name__ == "__main__":

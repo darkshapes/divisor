@@ -117,11 +117,11 @@ class DoubleStreamBlockLoraProcessor(nn.Module):
         attn1 = attention(q, k, v, pe=pe)
         txt_attn, img_attn = attn1[:, : txt.shape[1]], attn1[:, txt.shape[1] :]
 
-        # calculate the img bloks
+        # calculate the img blocks
         img = img + img_mod1.gate * attn.img_attn.proj(img_attn) + img_mod1.gate * self.proj_lora1(img_attn) * self.lora_weight
         img = img + img_mod2.gate * attn.img_mlp((1 + img_mod2.scale) * attn.img_norm2(img) + img_mod2.shift)
 
-        # calculate the txt bloks
+        # calculate the txt blocks
         txt = txt + txt_mod1.gate * attn.txt_attn.proj(txt_attn) + txt_mod1.gate * self.proj_lora2(txt_attn) * self.lora_weight
         txt = txt + txt_mod2.gate * attn.txt_mlp((1 + txt_mod2.scale) * attn.txt_norm2(txt) + txt_mod2.shift)
 

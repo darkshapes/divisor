@@ -17,7 +17,7 @@ from divisor.commands import (
     change_prompt,
 )
 from divisor.controller import ManualTimestepController
-from divisor.spec import DenoisingState, DenoiseSettings
+from divisor.spec import DenoisingState, DenoiseSettings, TimestepState
 from divisor.flux1.sampling import denoise
 from divisor.flux1.autoencoder import AutoEncoder
 
@@ -30,12 +30,15 @@ class TestCommandsSamplingIntegration:
         """Create a mock controller for testing."""
         controller = Mock(spec=ManualTimestepController)
         controller.is_complete = False
-        controller.current_state = DenoisingState(
+        timestep = TimestepState(
             current_timestep=0.5,
             previous_timestep=0.6,
             current_sample=torch.randn(1, 16, 8, 8),
             timestep_index=0,
             total_timesteps=10,
+        )
+        controller.current_state = DenoisingState(
+            timestep=timestep,
             guidance=4.0,
             layer_dropout=None,
             width=512,
@@ -280,12 +283,16 @@ class TestCommandsSamplingIntegration:
         txt_ids = torch.zeros(1, 77, 3)
         vec = torch.randn(1, 77, 768)
 
-        state = DenoisingState(
+        from divisor.spec import TimestepState
+        timestep = TimestepState(
             current_timestep=0.0,
             previous_timestep=None,
             current_sample=img,
             timestep_index=0,
             total_timesteps=10,
+        )
+        state = DenoisingState(
+            timestep=timestep,
             guidance=4.0,
             layer_dropout=[1, 2],
             width=512,
@@ -364,12 +371,15 @@ class TestCommandsSamplingIntegration:
         txt_ids = torch.zeros(1, 77, 3)
         vec = torch.randn(1, 77, 768)
 
-        state = DenoisingState(
+        timestep = TimestepState(
             current_timestep=0.0,
             previous_timestep=None,
             current_sample=img,
             timestep_index=0,
             total_timesteps=2,
+        )
+        state = DenoisingState(
+            timestep=timestep,
             guidance=5.0,
             layer_dropout=None,
             width=512,
@@ -481,12 +491,15 @@ class TestCommandsSamplingIntegration:
         mock_ae.encoder = Mock()
         mock_ae.encoder.parameters.return_value = iter([mock_encoder_param])
 
-        state = DenoisingState(
+        timestep = TimestepState(
             current_timestep=0.5,
             previous_timestep=0.6,
             current_sample=img,
             timestep_index=5,
             total_timesteps=10,
+        )
+        state = DenoisingState(
+            timestep=timestep,
             guidance=4.0,
             layer_dropout=None,
             width=512,

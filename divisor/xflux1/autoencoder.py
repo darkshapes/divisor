@@ -44,6 +44,8 @@ class AutoEncoder(nn.Module):
 
 
 if __name__ == "__main__":
+    import torch
+
     params = AutoEncoderParams(
         resolution=256,
         in_channels=3,

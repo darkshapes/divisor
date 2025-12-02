@@ -11,14 +11,12 @@ import torchvision
 from einops import rearrange
 from PIL import Image
 from torch import Tensor
-from torch import nn
 from nnll.console import nfo
 from nnll.constants import ExtensionType
-from nnll.init_gpu import device, sync_torch
+from nnll.init_gpu import sync_torch
 from nnll.save_generation import name_save_file_as, save_with_hyperchain
 
 from divisor.flux2.model import Flux2
-from divisor.flux2.autoencoder import AutoEncoder
 
 from divisor.flux2 import precision
 from divisor.controller import (
@@ -27,11 +25,10 @@ from divisor.controller import (
     variation_rng,
 )
 from divisor.spec import (
-    DenoisingState,
     DenoiseSettings,
     GetPredictionSettings,
     GetImagePredictionSettings,
-    SimpleDenoiseSettingsFlux2,
+    DenoiseSettingsFlux2,
 )
 from divisor.commands import process_choice
 from divisor.denoise_step import (
@@ -294,7 +291,7 @@ def compute_empirical_mu(image_seq_len: int, num_steps: int) -> float:
     return float(mu)
 
 
-def denoise(settings: SimpleDenoiseSettingsFlux2) -> Tensor:
+def denoise(settings: DenoiseSettingsFlux2) -> Tensor:
     """Simple non-interactive denoising function for Flux2.\n
     :param settings: SimpleDenoiseSettingsFlux2 containing all denoising configuration parameters
     :returns: Denoised image tensor"""

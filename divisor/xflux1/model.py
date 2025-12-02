@@ -7,9 +7,24 @@ import torch
 
 from torch import Tensor, nn
 
-from divisor.flux1.model import FluxParams
 from divisor.flux1.layers import EmbedND, LastLayer, MLPEmbedder, timestep_embedding
 from divisor.xflux1.layers import DoubleStreamBlock, SingleStreamBlock
+
+
+@dataclass
+class XFluxParams:
+    in_channels: int
+    vec_in_dim: int
+    context_in_dim: int
+    hidden_size: int
+    mlp_ratio: float
+    num_heads: int
+    depth: int
+    depth_single_blocks: int
+    axes_dim: list[int]
+    theta: int
+    qkv_bias: bool
+    guidance_embed: bool
 
 
 class XFlux(nn.Module):
@@ -19,7 +34,7 @@ class XFlux(nn.Module):
 
     _supports_gradient_checkpointing = True
 
-    def __init__(self, params: FluxParams):
+    def __init__(self, params: XFluxParams):
         super().__init__()
 
         self.params = params

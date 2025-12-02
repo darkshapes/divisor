@@ -10,9 +10,9 @@ from nnll.init_gpu import device, clear_cache
 
 from divisor.controller import rng
 from divisor.noise import get_noise
-from divisor.flux1.sampling import SamplingOptions
 from divisor.spec import DenoisingState, DenoiseSettings
 from divisor.flux1.prompt import parse_prompt
+from dataclasses import replace
 from divisor.flux2.sampling import (
     batched_prc_img,
     batched_prc_txt,
@@ -68,8 +68,8 @@ def main(
     ae.eval()
     mistral.eval()
 
-    # Validate user inputs
-    opts = SamplingOptions(
+    # Create initial state from CLI args
+    state = DenoisingState.from_cli_args(
         prompt=prompt,
         width=width,
         height=height,
@@ -79,21 +79,25 @@ def main(
     )
 
     if loop:
-        opts = parse_prompt(opts)
+        state = parse_prompt(state)
 
-    while opts is not None:
-        if opts.seed is None:
-            opts.seed = rng.next_seed()
+    while state is not None:
+        if state.seed is None:
+            seed = rng.next_seed()
+            state = replace(state, seed=seed)
         else:
-            rng.next_seed(opts.seed)
-        # At this point, opts.seed is guaranteed to be an int
-        assert opts.seed is not None, "Seed must be set"
-        nfo(f"Generating with seed {rng.seed}: {opts.prompt}")
+            rng.next_seed(state.seed)
+        # At this point, state.seed is guaranteed to be an int
+        assert state.seed is not None, "Seed must be set"
+        assert state.width is not None and state.height is not None, "Width and height must be set"
+        assert state.num_steps is not None, "num_steps must be set"
+        assert state.prompt is not None, "Prompt must be set"
+        nfo(f"Generating with seed {rng.seed}: {state.prompt}")
 
         x = get_noise(
             1,
-            opts.height,
-            opts.width,
+            state.height,
+            state.width,
             dtype=torch.bfloat16,
             seed=rng.seed,  # type: ignore
             device=device,
@@ -110,41 +114,34 @@ def main(
 
             if upsample_prompt:
                 # Use local model for upsampling
-                upsampled_prompts = mistral.upsample_prompt([prompt], img=[img_ctx] if img_ctx else None)  # type: ignore
-                prompt = upsampled_prompts[0] if upsampled_prompts else prompt
+                upsampled_prompts = mistral.upsample_prompt([state.prompt], img=[img_ctx] if img_ctx else None)  # type: ignore
+                prompt = upsampled_prompts[0] if upsampled_prompts else state.prompt
+                state = replace(state, prompt=prompt)
             else:
-                prompt = prompt
+                prompt = state.prompt
 
             ctx = mistral([prompt]).to(precision)  # type: ignore
             ctx, ctx_ids = batched_prc_txt(ctx)
 
             randn = get_noise(
                 1,
-                opts.height,
-                opts.width,
+                state.height,  # type: ignore
+                state.width,  # type: ignore
                 dtype=torch.bfloat16,
-                seed=opts.seed,
+                seed=state.seed,  # type: ignore
                 device=device,
                 version_2=True,
             )
 
             x, x_ids = batched_prc_img(randn)
 
-            timesteps = get_schedule(opts.num_steps, x.shape[1])
-            state = DenoisingState(
-                current_timestep=0,
-                previous_timestep=None,
+            timesteps = get_schedule(state.num_steps, x.shape[1])  # type: ignore
+            # Update state with runtime information
+            state = state.with_runtime_state(
+                current_timestep=0.0,
                 current_sample=x,
                 timestep_index=0,
                 total_timesteps=len(timesteps),
-                layer_dropout=None,
-                guidance=opts.guidance,
-                seed=rng.seed,
-                width=opts.width,
-                height=opts.height,
-                prompt=opts.prompt,
-                num_steps=opts.num_steps,
-                deterministic=bool(torch.get_deterministic_debug_mode()),
             )
 
             if offload:
@@ -178,12 +175,12 @@ def main(
             )
             if loop:
                 nfo("-" * 80)
-                opts = parse_prompt(opts)
+                state = parse_prompt(state)
             elif additional_prompts:
                 next_prompt = additional_prompts.pop(0)
-                opts.prompt = next_prompt
+                state = replace(state, prompt=next_prompt)
             else:
-                opts = None
+                state = None
 
 
 if __name__ == "__main__":

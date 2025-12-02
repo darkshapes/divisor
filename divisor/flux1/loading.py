@@ -19,6 +19,7 @@ from divisor.flux1.spec import optionally_expand_state_dict, get_merged_model_sp
 from divisor.flux1.text_embedder import HFEmbedder
 from divisor.flux2.autoencoder import AutoEncoder as AutoEncoder2, AutoEncoderParams as AutoEncoder2Params
 from divisor.flux2.model import Flux2, Flux2Params
+from divisor.xflux1.model import XFlux, XFluxParams
 
 
 def print_load_warning(missing: list[str], unexpected: list[str]) -> None:
@@ -144,11 +145,12 @@ def load_flow_model(
     with torch.device("meta"):
         if config.params is Flux2Params:
             model = Flux2(config.params).to(torch.bfloat16)
+        elif lora_repo_id and lora_filename:
+            model = FluxLoraWrapper(params=config.params).to(torch.bfloat16)
+        elif config.params is XFluxParams:
+            model = XFlux(config.params).to(torch.bfloat16)
         else:
-            if lora_repo_id and lora_filename:
-                model = FluxLoraWrapper(params=config.params).to(torch.bfloat16)
-            else:
-                model = Flux(config.params).to(torch.bfloat16)  # type: ignore
+            model = Flux(config.params).to(torch.bfloat16)  # type: ignore
 
     ckpt_path = str(retrieve_model(config.repo_id, config.file_name))
     nfo(f": {os.path.basename(ckpt_path)}")
