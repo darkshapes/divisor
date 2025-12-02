@@ -19,6 +19,7 @@ divisor = "divisor.app:main"
 [dependency-groups]
 dev = [
   "nnll[dev]",
+  "pdoc>=16.0.0",
 ]
 [tool.pyright]
 include = ["divisor"]
