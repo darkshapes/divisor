@@ -36,6 +36,7 @@ def get_noise(
     """
     # Get the generator's device to ensure compatibility
     generator_device = rng._torch_generator.device if rng._torch_generator is not None else torch.device("cpu")
+    rng._torch_generator.manual_seed(seed)  # type: ignore # reset seed
 
     if version_2:
         # Flux2: (num_samples, 128, height // 16, width // 16)

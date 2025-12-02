@@ -130,8 +130,7 @@ class TestPromptModelSpecs:
             patch("divisor.flux1.prompt.load_ae"),
             patch("divisor.flux1.prompt.load_t5"),
             patch("divisor.flux1.prompt.load_clip"),
-            patch("divisor.flux1.prompt.get_noise"),
-            patch("divisor.flux1.prompt.prepare"),
+            patch("divisor.flux1.prompt.prepare_noise_for_model"),
             patch("divisor.flux1.prompt.get_schedule"),
             patch("divisor.flux1.prompt.denoise"),
         ):
@@ -166,8 +165,7 @@ class TestPromptModelSpecs:
             patch("divisor.flux1.prompt.load_ae"),
             patch("divisor.flux1.prompt.load_t5"),
             patch("divisor.flux1.prompt.load_clip"),
-            patch("divisor.flux1.prompt.get_noise"),
-            patch("divisor.flux1.prompt.prepare"),
+            patch("divisor.noise.prepare_noise_for_model"),
             patch("divisor.flux1.prompt.get_schedule"),
             patch("divisor.flux1.prompt.denoise"),
         ):
