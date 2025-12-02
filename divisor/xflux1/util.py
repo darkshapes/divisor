@@ -5,7 +5,6 @@ import numpy as np
 import cv2
 
 
-# type: ignore
 def c_crop(image):
     width, height = image.size
     new_size = min(width, height)
@@ -51,15 +50,15 @@ def resize_image_with_pad(input_image, resolution, skip_hwc3=False, mode="edge")
         img = input_image
     else:
         img = HWC3(input_image)
-    H_raw, W_raw, _ = img.shape
+    H_raw, W_raw, _ = img.shape  # type: ignore
     if resolution == 0:
         return img, lambda x: x
     k = float(resolution) / float(min(H_raw, W_raw))
     H_target = int(np.round(float(H_raw) * k))
     W_target = int(np.round(float(W_raw) * k))
-    img = cv2.resize(img, (W_target, H_target), interpolation=cv2.INTER_AREA)
+    img = cv2.resize(img, (W_target, H_target), interpolation=cv2.INTER_AREA)  # type: ignore
     H_pad, W_pad = pad64(H_target), pad64(W_target)
-    img_padded = np.pad(img, [[0, H_pad], [0, W_pad], [0, 0]], mode=mode)
+    img_padded = np.pad(img, [[0, H_pad], [0, W_pad], [0, 0]], mode=mode)  # type: ignore
 
     def remove_pad(x):
         return safer_memory(x[:H_target, :W_target, ...])

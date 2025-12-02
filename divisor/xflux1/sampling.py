@@ -2,7 +2,7 @@
 # original XFlux code from https://github.com/TencentARC/FluxKits
 
 import time
-from typing import Callable, Optional
+from typing import Callable
 
 import torch
 from torch import Tensor
@@ -23,7 +23,6 @@ from divisor.spec import (
     GetPredictionSettings,
     GetImagePredictionSettings,
     AdditionalPredictionSettings,
-    SimpleDenoiseSettingsXFlux1,
 )
 from divisor.denoise_step import (
     create_clear_prediction_cache,
@@ -37,7 +36,7 @@ def create_get_prediction_xflux1(
     pred_set: GetPredictionSettings,
     img_set: GetImagePredictionSettings,
     add_set: AdditionalPredictionSettings,
-) -> Callable[[Tensor, float, float, Optional[list[int]]], Tensor]:
+) -> Callable[[Tensor, float, float, list[int] | None], Tensor]:
     """Create a function to generate model prediction with caching for XFlux1.\n
     :param config: GetPredictionSettings containing all configuration parameters
     :return: Function that generates predictions with caching"""
@@ -46,7 +45,7 @@ def create_get_prediction_xflux1(
         sample: Tensor,
         t_curr: float,
         guidance_val: float,
-        layer_dropouts_val: Optional[list[int]],
+        layer_dropouts_val: list[int] | None,
     ) -> Tensor:
         """Generate model prediction, reusing cached prediction if state hasn't changed.\n
         :param sample: Current sample tensor
@@ -193,10 +192,10 @@ def denoise(
 
     # this is ignored for schnell
     current_layer_dropout = [initial_layer_dropout]
-    previous_step_tensor: list[Optional[Tensor]] = [None]  # Store previous step's tensor for masking
-    cached_prediction: list[Optional[Tensor]] = [None]  # Cache prediction to avoid duplicate model calls
-    cached_prediction_state: list[Optional[dict]] = [None]  # Cache state when prediction was generated
-    controller_ref: list[Optional["ManualTimestepController"]] = [None]  # Reference to controller for closure access
+    previous_step_tensor: list[Tensor | None] = [None]  # Store previous step's tensor for masking
+    cached_prediction: list[Tensor | None] = [None]  # Cache prediction to avoid duplicate model calls
+    cached_prediction_state: list[dict | None] = [None]  # Cache state when prediction was generated
+    controller_ref: list[ManualTimestepController | None] = [None]  # Reference to controller for closure access
     current_timestep_index: list[int] = [0]  # Track current timestep index for CFG
 
     model_ref: list[XFlux] = [model]
@@ -242,7 +241,7 @@ def denoise(
         current_neg_txt_ids: list[Tensor] | None = None
         current_neg_vec: list[Tensor] | None = None
         neg_pred_enabled = False
-    current_prompt: list[Optional[str]] = [state.prompt]  # Track current prompt to detect changes
+    current_prompt: list[str | None] = [state.prompt]  # Track current prompt to detect changes
 
     clear_prediction_cache = create_clear_prediction_cache(cached_prediction, cached_prediction_state)
 
@@ -392,33 +391,3 @@ def denoise(
                 )
 
     return controller.current_sample
-
-
-def denoise_simple(settings: SimpleDenoiseSettingsXFlux1) -> Tensor:
-    """Simple non-interactive denoising function for XFlux1.\n
-    :param settings: SimpleDenoiseSettingsXFlux1 containing all denoising configuration parameters
-    :returns: Denoised image tensor"""
-    model = settings.model
-    img = settings.img
-    img_ids = settings.img_ids
-    txt = settings.txt
-    txt_ids = settings.txt_ids
-    vec = settings.vec
-    timesteps = settings.timesteps
-    guidance = settings.guidance
-
-    device = list(model.parameters())[0].device
-    guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
-    for i, (t_curr, t_prev) in enumerate(zip(timesteps[:-1], timesteps[1:])):
-        t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
-        pred = model(
-            img=img,
-            img_ids=img_ids,
-            txt=txt,
-            txt_ids=txt_ids,
-            y=vec,
-            timesteps=t_vec,
-            guidance=guidance_vec,
-        )
-        img = img + (t_prev - t_curr) * pred
-    return img

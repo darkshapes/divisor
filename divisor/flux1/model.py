@@ -4,7 +4,6 @@
 from dataclasses import dataclass
 
 import torch
-from nnll.console import nfo
 from torch import Tensor, nn
 
 

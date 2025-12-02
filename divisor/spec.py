@@ -3,35 +3,182 @@
 
 """Divisor class definitions and configuration dataclasses."""
 
-from dataclasses import dataclass, replace
-from typing import Any, Optional, Tuple
+from dataclasses import dataclass, replace, field
+from typing import Any, Tuple, List, Optional, Dict
 
 import torch
 from torch import Tensor
 
 
 @dataclass
-class DenoisingState:
-    """State of the denoising process at a given timestep."""
+class TimestepState:
+    """Runtime state that changes at each denoising step."""
 
     current_timestep: float
-    previous_timestep: Optional[float]
     current_sample: torch.Tensor
     timestep_index: int
     total_timesteps: int
+    previous_timestep: float | None = None
+
+    def with_runtime_state(
+        self,
+        current_timestep: float | None = None,
+        current_sample: torch.Tensor | None = None,
+        timestep_index: int | None = None,
+        total_timesteps: int | None = None,
+        previous_timestep: float | None = None,
+    ) -> "TimestepState":
+        """Create a new TimestepState with updated runtime fields.
+
+        :param current_timestep: Current timestep value (if None, keeps existing)
+        :param current_sample: Current sample tensor (if None, keeps existing)
+        :param timestep_index: Current timestep index (if None, keeps existing)
+        :param total_timesteps: Total number of timesteps (if None, keeps existing)
+        :param previous_timestep: Previous timestep value (if None, keeps existing)
+        :returns: New TimestepState with updated fields
+        """
+        return replace(
+            self,
+            current_timestep=current_timestep if current_timestep is not None else self.current_timestep,
+            current_sample=current_sample if current_sample is not None else self.current_sample,
+            timestep_index=timestep_index if timestep_index is not None else self.timestep_index,
+            total_timesteps=total_timesteps if total_timesteps is not None else self.total_timesteps,
+            previous_timestep=previous_timestep if previous_timestep is not None else self.previous_timestep,
+        )
+
+
+@dataclass
+class DenoisingState:
+    """State of the denoising process at a given timestep.
+
+    This is the single source of truth for denoising configuration and runtime state.
+    Use from_cli_args() to create from command-line arguments, and with_runtime_state()
+    to update runtime fields during denoising.
+    """
+
+    # Runtime state (changes every step)
+    timestep: TimestepState
+
+    # Configuration (set at start, may change via controller)
     guidance: float
-    layer_dropout: Optional[list[int]] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    seed: Optional[int] = None
-    prompt: Optional[str] = None
-    num_steps: Optional[int] = None
+    layer_dropout: List[int] | None = None
+    width: int = 1024
+    height: int = 1024
+    seed: int = 0
+    prompt: str | None = None
+    num_steps: int | None = None
+    neg_prompt: str | None = None
     vae_shift_offset: float = 0.0
     vae_scale_offset: float = 0.0
     use_previous_as_mask: bool = False
-    variation_seed: Optional[int] = None
+    variation_seed: int = 0
     variation_strength: float = 0.0
     deterministic: bool = False
+
+    # Convenience properties for backward compatibility
+    @property
+    def current_timestep(self) -> float:
+        """Current timestep value."""
+        return self.timestep.current_timestep
+
+    @property
+    def current_sample(self) -> torch.Tensor:
+        """Current sample tensor."""
+        return self.timestep.current_sample
+
+    @property
+    def timestep_index(self) -> int:
+        """Current timestep index."""
+        return self.timestep.timestep_index
+
+    @property
+    def total_timesteps(self) -> int:
+        """Total number of timesteps."""
+        return self.timestep.total_timesteps
+
+    @property
+    def previous_timestep(self) -> float | None:
+        """Previous timestep value."""
+        return self.timestep.previous_timestep
+
+    @classmethod
+    def from_cli_args(
+        cls,
+        prompt: str,
+        width: int,
+        height: int,
+        num_steps: int,
+        guidance: float,
+        seed: int = 0,
+        neg_prompt: str | None = None,
+        current_sample: torch.Tensor | None = None,
+        timesteps: List[float] | None = None,
+        **kwargs,
+    ) -> "DenoisingState":
+        """Create DenoisingState from CLI arguments.
+
+        :param prompt: Text prompt
+        :param width: Image width
+        :param height: Image height
+        :param num_steps: Number of denoising steps
+        :param guidance: Guidance scale
+        :param seed: Random seed
+        :param neg_prompt: Negative prompt
+        :param current_sample: Initial sample tensor (if available, otherwise empty tensor)
+        :param timesteps: List of timesteps (if available, used to determine total_timesteps)
+        :param kwargs: Additional fields to set (e.g., deterministic, vae_shift_offset, etc.)
+        :returns: DenoisingState initialized from CLI args
+        """
+        total_timesteps = len(timesteps) if timesteps else num_steps
+
+        timestep_state = TimestepState(
+            current_timestep=0.0,
+            previous_timestep=None,
+            current_sample=current_sample if current_sample is not None else torch.empty(0),
+            timestep_index=0,
+            total_timesteps=total_timesteps,
+        )
+
+        return cls(
+            timestep=timestep_state,
+            guidance=guidance,
+            width=width,
+            height=height,
+            seed=seed,
+            prompt=prompt,
+            num_steps=num_steps,
+            neg_prompt=neg_prompt,
+            deterministic=bool(torch.get_deterministic_debug_mode()) if "deterministic" not in kwargs else kwargs.pop("deterministic"),
+            **kwargs,
+        )
+
+    def with_runtime_state(
+        self,
+        current_timestep: float,
+        current_sample: torch.Tensor,
+        timestep_index: int,
+        total_timesteps: int | None = None,
+        previous_timestep: float | None = None,
+    ) -> "DenoisingState":
+        """Create a new DenoisingState with updated runtime state.
+
+        Delegates to TimestepState.with_runtime_state() and replaces the timestep.
+
+        :param current_timestep: Current timestep value
+        :param current_sample: Current sample tensor
+        :param timestep_index: Current timestep index
+        :param total_timesteps: Total number of timesteps (if changed)
+        :param previous_timestep: Previous timestep value
+        :returns: New DenoisingState with updated runtime fields
+        """
+        new_timestep = self.timestep.with_runtime_state(
+            current_timestep=current_timestep,
+            current_sample=current_sample,
+            timestep_index=timestep_index,
+            total_timesteps=total_timesteps,
+            previous_timestep=previous_timestep,
+        )
+        return replace(self, timestep=new_timestep)
 
 
 @dataclass
@@ -40,31 +187,31 @@ class GetImagePredictionSettings:
 
     img_ids: Tensor
     img: Tensor
-    img_cond: Optional[Tensor] = None
-    img_cond_seq: Optional[Tensor] = None
-    img_cond_seq_ids: Optional[Tensor] = None
-    image_proj: Optional[Tensor] = None
-    neg_image_proj: Optional[Tensor] = None
-    ip_scale: Optional[Tensor] = None
-    neg_ip_scale: Optional[Tensor] = None
+    img_cond: Tensor | None = None
+    img_cond_seq: Tensor | None = None
+    img_cond_seq_ids: Tensor | None = None
+    image_proj: Tensor | None = None
+    neg_image_proj: Tensor | None = None
+    ip_scale: Tensor | None = None
+    neg_ip_scale: Tensor | None = None
 
 
 @dataclass
 class GetPredictionSettings:
     """Base configuration class for get_prediction function creation."""
 
-    model_ref: list[Any]
+    model_ref: List[Any]
     state: Any
-    current_txt: list[Tensor]
-    current_txt_ids: list[Tensor]
-    current_vec: list[Tensor]
-    cached_prediction: list[Optional[Tensor]]
-    cached_prediction_state: list[Optional[dict]]
+    current_txt: List[Tensor]
+    current_txt_ids: List[Tensor]
+    current_vec: List[Tensor]
+    cached_prediction: List[Optional[Tensor]] = field(default_factory=lambda: [None])
+    cached_prediction_state: List[Optional[Dict]] = field(default_factory=lambda: [None])
     neg_pred_enabled: bool = False
-    current_neg_txt: Optional[Tensor] | str | None = ""
-    current_neg_txt_ids: Optional[Tensor] | str | None = ""
-    current_neg_vec: Optional[Tensor] | str | None = ""
-    true_gs: Optional[int] = None
+    current_neg_txt: Tensor | str | None = ""
+    current_neg_txt_ids: Tensor | str | None = ""
+    current_neg_vec: Tensor | str | None = ""
+    true_gs: float | None = None
 
 
 @dataclass
@@ -72,7 +219,7 @@ class AdditionalPredictionSettings:
     """Additional configuration for XFlux1-specific prediction settings."""
 
     timestep_to_start_cfg: int
-    current_timestep_index: list[int]
+    current_timestep_index: List[int]
 
 
 @dataclass
@@ -86,13 +233,13 @@ class DenoiseSettings:
     txt_ids: Tensor
     state: Any  # DenoisingState
     ae: Any  # AutoEncoder
-    timesteps: list[float]
+    timesteps: List[float]
     vec: Tensor | None = None  # CLIP embeddings (Flux1/XFlux1)
     neg_pred_enabled: bool = False
     neg_txt: Tensor | None = None
     neg_txt_ids: Tensor | None = None
     neg_vec: Tensor | None = None
-    true_gs: float | int = 1
+    true_gs: float = 1.0
 
     # Text embedders for prompt changes
     t5: Any | None = None  # T5 embedder (Flux1/XFlux1)
@@ -103,7 +250,7 @@ class DenoiseSettings:
     img_cond_seq: Tensor | None = None  # Sequence-wise image conditioning
     img_cond_seq_ids: Tensor | None = None
     device: torch.device | None = None
-    initial_layer_dropout: Optional[list[int]] = None
+    initial_layer_dropout: List[int] | None = None
     timestep_to_start_cfg: int = 0
     image_proj: Tensor | None = None
     neg_image_proj: Tensor | None = None
@@ -112,7 +259,7 @@ class DenoiseSettings:
 
 
 @dataclass
-class SimpleDenoiseSettingsFlux2:
+class DenoiseSettingsFlux2:
     """Configuration for simple (non-interactive) Flux2 denoising."""
 
     model: Any  # Flux2
@@ -120,24 +267,10 @@ class SimpleDenoiseSettingsFlux2:
     img_ids: Tensor
     txt: Tensor
     txt_ids: Tensor
-    timesteps: list[float]
+    timesteps: List[float]
     guidance: float = 4.0
     img_cond_seq: Tensor | None = None
     img_cond_seq_ids: Tensor | None = None
-
-
-@dataclass
-class SimpleDenoiseSettingsXFlux1:
-    """Configuration for simple (non-interactive) XFlux1 denoising."""
-
-    model: Any  # XFlux
-    img: Tensor
-    img_ids: Tensor
-    txt: Tensor
-    txt_ids: Tensor
-    vec: Tensor  # CLIP embeddings (required for XFlux1)
-    timesteps: list[float]
-    guidance: float = 4.0
 
 
 def find_mir_spec(
@@ -146,7 +279,7 @@ def find_mir_spec(
     configs: dict,
     tiny: bool = False,
     prefix: str = "model.dit.",
-) -> Tuple[str, Optional[str], str]:
+) -> Tuple[str, str | None, str]:
     """Find/validate model specifications by MIR (Machine Intelligence Resource) ID.\n
     :param model_id: Model ID, optionally with subkey (e.g., "flux1-dev" or "flux1-dev:mini")
     :param ae_id: Autoencoder ID
@@ -157,7 +290,7 @@ def find_mir_spec(
     :raises ValueError: If model_id, subkey, or ae_id is not found in configs
     """
 
-    def _validate_in_configs(key: str, key_type: str, available: list[str] | None = None) -> None:
+    def _validate_in_configs(key: str, key_type: str, available: List[str] | None = None) -> None:
         """Helper to validate a key exists in configs."""
         if key not in configs:
             available_keys = available if available is not None else list(configs.keys())
@@ -201,11 +334,7 @@ def find_mir_spec(
 
 
 def merge_spec(base_spec: Any, subkey_spec: Any) -> Any:
-    """Merge two dataclass specs with subkey values taking precedence over base values.
-
-    Handles nested dataclasses recursively (e.g., init: InitialParams).
-    Only merges if both specs are dataclasses with the same structure.
-
+    """Merge two dataclass or nested dataclass specs with overlapping subkey values taking precedence over base values.\n
     :param base_spec: Base specification dataclass
     :param subkey_spec: Subkey specification dataclass (values take precedence)
     :returns: Merged specification with subkey values overriding base values

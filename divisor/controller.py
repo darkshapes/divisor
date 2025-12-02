@@ -13,7 +13,7 @@ import torch
 from nnll.hyperchain import HyperChain
 from nnll.random import RNGState
 from nnll.init_gpu import device
-from divisor.spec import DenoisingState
+from divisor.spec import DenoisingState, TimestepState
 
 rng = RNGState(device=device.type)
 variation_rng = RNGState(device=device.type)
@@ -56,8 +56,13 @@ def serialize_state_for_chain(state: "DenoisingState", current_seed: int) -> str
     :returns: JSON string representation of the state
     """
     state_dict = asdict(state)
-    # Remove the tensor (current_sample) as it's not serializable
-    state_dict.pop("current_sample", None)
+    # Remove the tensor (current_sample) from nested timestep as it's not serializable
+    if "timestep" in state_dict and isinstance(state_dict["timestep"], dict):
+        state_dict["timestep"].pop("current_sample", None)
+    # Flatten timestep fields for backward compatibility
+    if "timestep" in state_dict and isinstance(state_dict["timestep"], dict):
+        timestep_dict = state_dict.pop("timestep")
+        state_dict.update(timestep_dict)
     # Add the seed instead
     state_dict["current_seed"] = current_seed
     return json.dumps(state_dict, default=str)
@@ -70,12 +75,15 @@ def reconstruct_state_from_dict(state_dict: dict, current_sample: torch.Tensor) 
     :param current_sample: The current sample tensor to include in the state
     :returns: Reconstructed DenoisingState object
     """
-    return DenoisingState(
+    timestep = TimestepState(
         current_timestep=state_dict["current_timestep"],
         previous_timestep=state_dict.get("previous_timestep"),
         current_sample=current_sample,
         timestep_index=state_dict["timestep_index"],
         total_timesteps=state_dict["total_timesteps"],
+    )
+    return DenoisingState(
+        timestep=timestep,
         guidance=state_dict["guidance"],
         layer_dropout=state_dict.get("layer_dropout"),
         width=state_dict.get("width"),
@@ -159,12 +167,16 @@ class ManualTimestepController:
         t_curr = self.timesteps[self.current_index]
         t_prev = self.timesteps[self.current_index + 1] if self.current_index + 1 < len(self.timesteps) else None
 
-        return DenoisingState(
+        timestep = TimestepState(
             current_timestep=t_curr,
             previous_timestep=t_prev,
             current_sample=self.current_sample,
             timestep_index=self.current_index,
             total_timesteps=len(self.timesteps),
+        )
+
+        return DenoisingState(
+            timestep=timestep,
             guidance=self.guidance,
             layer_dropout=self.layer_dropout,
             width=self.width,

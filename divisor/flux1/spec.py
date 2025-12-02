@@ -12,6 +12,7 @@ from divisor.flux1.autoencoder import AutoEncoderParams
 from divisor.flux1.model import FluxLoraWrapper, FluxParams
 from divisor.flux2.model import Flux2Params
 from divisor.flux2.autoencoder import AutoEncoderParams as AutoEncoder2Params
+from divisor.xflux1.model import XFluxParams
 
 
 @dataclass
@@ -34,7 +35,7 @@ class InitialParams:
 class ModelSpec:
     repo_id: str
     file_name: str
-    params: FluxParams | AutoEncoderParams | Flux2Params | AutoEncoder2Params | type[AutoencoderTiny] | type[FluxLoraWrapper]
+    params: FluxParams | AutoEncoderParams | XFluxParams | Flux2Params | AutoEncoder2Params | type[AutoencoderTiny] | type[FluxLoraWrapper]
     init: InitialParams | None = None
 
 
@@ -85,7 +86,7 @@ configs = {
                 guidance=3.5,
                 shift=True,
             ),
-            params=FluxParams(
+            params=XFluxParams(
                 in_channels=64,
                 vec_in_dim=768,
                 context_in_dim=4096,

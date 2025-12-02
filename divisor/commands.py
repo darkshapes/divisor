@@ -22,6 +22,7 @@ from divisor.controller import (
 )
 from divisor.spec import DenoisingState
 from divisor.variant import change_variation
+from divisor.noise import prepare_noise_for_model
 
 
 def process_choice(
@@ -75,6 +76,7 @@ def process_choice(
         nfo("[V]Variation: OFF")
     nfo(f"[D]eterministic: {'ON' if state.deterministic else 'OFF'}")
     nfo("[E]dit Mode (REPL) ")
+    nfo("[ / ] Rerender")
     if state.prompt is not None:
         prompt_display = state.prompt
         nfo(f"[P]rompt: {prompt_display}")
@@ -87,7 +89,7 @@ def process_choice(
             controller.current_state,
         ),
         "g": lambda: change_guidance(controller, state, clear_prediction_cache),
-        "s": lambda: change_seed(controller, state, rng, clear_prediction_cache),
+        "s": lambda: change_seed(controller, state, rng, clear_prediction_cache, t5, clip),
         "r": lambda: change_resolution(controller, state, clear_prediction_cache),
         "l": lambda: change_layer_dropout(controller, state, current_layer_dropout, clear_prediction_cache),
         "b": lambda: toggle_buffer_mask(controller, state),
@@ -96,11 +98,19 @@ def process_choice(
         "d": lambda: toggle_deterministic(controller, state, clear_prediction_cache),
         "e": lambda: edit_mode(clear_prediction_cache),
         "p": lambda: change_prompt(controller, state, clear_prediction_cache, recompute_text_embeddings),
+        "/": lambda: nfo("Rerendering..."),
     }
     prompt = "".join(key.upper() for key in choice_handlers if key)
     choice = input(f": [{prompt}] or advance with Enter: ").lower().strip()
 
-    if choice in choice_handlers:
+    if choice == "/":
+        return controller.current_state
+    elif choice == "q":
+        import sys
+
+        nfo("Quitting...")
+        sys.exit(0)
+    elif choice in choice_handlers:
         result = choice_handlers[choice]()
         state = result if isinstance(result, type(state)) else state
     else:
@@ -221,28 +231,41 @@ def change_seed(
     state: DenoisingState,
     rng,
     clear_prediction_cache: Callable[[], None],
+    t5: Optional[Any] = None,
+    clip: Optional[Any] = None,
 ) -> DenoisingState:
     """Handle seed change.\n
     :param controller: ManualTimestepController instance
     :param state: Current DenoisingState
     :param rng: Random number generator instance
     :param clear_prediction_cache: Function to clear prediction cache
+    :param t5: Optional T5 embedder instance (required for Flux1/XFlux1 to prepare sample)
+    :param clip: Optional CLIP embedder instance (required for Flux1/XFlux1 to prepare sample)
     :returns: Updated DenoisingState
     """
     current_seed = state.seed if state.seed is not None else 0
-    new_seed = get_int_input(
+    if new_seed := get_int_input(
         f"Enter new seed number (current: {current_seed}, or press Enter for random): ",
         current_seed,
         generate_random=lambda: rng.next_seed(),
-    )
-    if new_seed is not None:
-        return update_state_and_cache(
-            controller,
-            controller.set_seed,
-            new_seed,
-            clear_prediction_cache,
-            f"Seed set to: {new_seed}",
+    ):
+        controller.set_seed(new_seed)
+        new_sample = prepare_noise_for_model(
+            height=state.height,  # type: ignore
+            width=state.width,  # type: ignore
+            seed=new_seed,
+            t5=t5,
+            clip=clip,
+            prompt=state.prompt,
         )
+
+        # Update controller's current_sample
+        controller.current_sample = new_sample
+        # Get updated state from controller (it will use the updated current_sample)
+        clear_prediction_cache()
+        updated_state = controller.current_state
+        nfo(f"Seed set to: {new_seed}")
+        return updated_state
     nfo("Invalid seed value, keeping current seed")
     return state
 
