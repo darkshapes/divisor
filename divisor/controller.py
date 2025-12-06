@@ -153,8 +153,6 @@ class ManualTimestepController:
         self.variation_seed: Optional[int] = None
         self.variation_strength: float = 0.0
         self.deterministic: bool = False
-        if self.hyperchain is not None and len(self.hyperchain.chain) == 0:
-            self.hyperchain.synthesize_genesis_block()
 
     @property
     def is_complete(self) -> bool:
@@ -440,8 +438,6 @@ class ManualTimestepController:
         :param serialized_state_int: Optional pre-serialized state as integer. If provided, current_seed is ignored.
         :returns: The created Block if hyperchain is configured, None otherwise
         """
-        if self.hyperchain is None:
-            return None
 
         if serialized_state_int is not None:
             # Deserialize the int back to JSON string for HyperChain
