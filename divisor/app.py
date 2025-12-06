@@ -13,6 +13,8 @@ from fire import Fire
 from divisor.flux2.prompt import main as flux2_main
 from divisor.xflux1.prompt import main as xflux1_main
 from divisor.flux1.prompt import main as flux1_main
+from divisor.mmada.generate import main as mmada_main
+from divisor.mmada.app import main as mmada_app_main
 
 
 def main():
@@ -33,14 +35,17 @@ def main():
     parser.add_argument(
         "-m",
         "--model-type",
-        choices=["dev", "schnell", "dev2", "mini"],
+        choices=["dev", "schnell", "dev2", "mini", "llm"],
         default="dev",
         help="Model type to use: 'dev' (flux1-dev), 'schnell' (flux1-schnell), or 'dev2' (flux2-dev), 'mini' (flux1-mini). Default: dev",
     )
 
     args, remaining_argv = parser.parse_known_args()
+    if args.model_type == "llm":
+        main = mmada_app_main
+        model_id = "Gen-Verse/MMaDA-8B-MixCoT"  # Gen-Verse/MMaDA-8B-Base, Gen-Verse/TraDo-4B-Instruct, Gen-Verse/TraDo-8B-Instruct
 
-    if args.model_type == "dev2":
+    elif args.model_type == "dev2":
         main = flux2_main
 
         model_id = f"flux2-{args.model_type.strip('2')}"
