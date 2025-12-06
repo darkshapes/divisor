@@ -1,10 +1,25 @@
-[uv](https://docs.astral.sh/uv/#installation)
-[git (Windows 10/11)](https://github.com/darkshapes/sdbx/wiki/_Setup-:-Git-%E2%80%90Windows-only%E2%80%90)
+[UV](https://docs.astral.sh/uv/#installation)<br>
+[Git (Windows 10/11)](https://github.com/darkshapes/sdbx/wiki/_Setup-:-Git-%E2%80%90Windows-only%E2%80%90)<br>
+
+> ```
+> git clone https://github.com/darkshapes/divisor
+> cd divisor
+> uv sync --dev
+> ```
+
+> Linux/Macos:
+>
+> ```
+> source .venv/bin/activate
+> ```
+
+> Windows Powershell:
+>
+> ```
+> Set-ExecutionPolicy Bypass -Scope Process -Force; .venv\Scripts\Activate.ps1
+> ```
 
 ```
-git clone https://github.com/darkshapes/divisor
-cd divisor
-uv sync --dev
 dvzr
 ```
 
