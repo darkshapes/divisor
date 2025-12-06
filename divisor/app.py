@@ -19,7 +19,7 @@ from divisor.mmada.app import main as mmada_app_main
 
 def main():
     """Main entry point that routes to appropriate inference function."""
-    parser = argparse.ArgumentParser(description="Divisor CLI - Flux image generation and multimodal understanding")
+    parser = argparse.ArgumentParser(description="Divisor Multimodal CLI")
     parser.usage = "divisor --model-type dev --quantization <args>"
     parser.epilog = """Valid arguments : 
     --ae_id, --width, --height, --guidance, --seed, --prompt,
