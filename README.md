@@ -2,7 +2,7 @@
 [git (Windows 10/11)]https://github.com/darkshapes/sdbx/wiki/_Setup-:-Git-%E2%80%90Windows-only%E2%80%90
 
 ```
-git clone https://github.com/darkshapes/divisors
+git clone https://github.com/darkshapes/divisor
 cd divisor
 uv sync --dev
 dvzr
