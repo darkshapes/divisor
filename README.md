@@ -1,5 +1,5 @@
 [uv](https://docs.astral.sh/uv/#installation)
-[git (Windows 10/11)]https://github.com/darkshapes/sdbx/wiki/_Setup-:-Git-%E2%80%90Windows-only%E2%80%90
+[git (Windows 10/11)](https://github.com/darkshapes/sdbx/wiki/_Setup-:-Git-%E2%80%90Windows-only%E2%80%90)
 
 ```
 git clone https://github.com/darkshapes/divisor
