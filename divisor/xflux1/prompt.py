@@ -2,19 +2,20 @@
 # <!-- // /*  d a r k s h a p e s */ -->
 # adapted XFlux code from https://github.com/TencentARC/FluxKits
 
-import torch
+from dataclasses import replace
+
 from fire import Fire
-from nnll.init_gpu import device, clear_cache
 from nnll.console import nfo
+from nnll.init_gpu import clear_cache, device
+import torch
 
 from divisor.controller import rng
+from divisor.flux1.loading import load_ae, load_clip, load_flow_model, load_t5
+from divisor.flux1.prompt import parse_prompt
+from divisor.flux1.sampling import get_schedule, prepare
+from divisor.flux1.spec import InitialParams, configs, get_model_spec
 from divisor.noise import get_noise
 from divisor.spec import DenoisingState, find_mir_spec
-from divisor.flux1.sampling import get_schedule, prepare
-from divisor.flux1.prompt import parse_prompt
-from dataclasses import replace
-from divisor.flux1.spec import configs, get_model_spec, InitialParams
-from divisor.flux1.loading import load_ae, load_clip, load_flow_model, load_t5
 from divisor.xflux1.sampling import denoise
 
 

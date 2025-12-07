@@ -2,18 +2,19 @@
 # <!-- // /*  d a r k s h a p e s */ -->
 # adapted BFL Flux code from https://github.com/black-forest-labs/flux
 
-import torch
-from fire import Fire
-from nnll.init_gpu import clear_cache, device
-from nnll.console import nfo
-
-from divisor.spec import DenoisingState, find_mir_spec
 from dataclasses import replace
+
+from fire import Fire
+from nnll.console import nfo
+from nnll.init_gpu import clear_cache, device
+import torch
+
 from divisor.controller import rng
-from divisor.flux1.sampling import denoise, get_schedule, prepare
-from divisor.noise import prepare_noise_for_model
-from divisor.flux1.spec import configs, get_model_spec, InitialParams
 from divisor.flux1.loading import load_ae, load_clip, load_flow_model, load_t5
+from divisor.flux1.sampling import denoise, get_schedule, prepare
+from divisor.flux1.spec import InitialParams, configs, get_model_spec
+from divisor.noise import prepare_noise_for_model
+from divisor.spec import DenoisingState, find_mir_spec
 
 
 def parse_prompt(state: DenoisingState) -> DenoisingState | None:

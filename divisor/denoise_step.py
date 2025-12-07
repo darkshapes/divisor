@@ -3,13 +3,15 @@
 
 """Denoising step functions for interactive/manual controller-based denoising."""
 
-from typing import Callable, Optional, Any
+from typing import Any, Callable, Optional
+
 from einops import repeat
+from nnll.init_gpu import device
 import torch
 from torch import Tensor
-from nnll.init_gpu import device
+
+from divisor.spec import GetImagePredictionSettings, GetPredictionSettings
 from divisor.variant import apply_variation_noise
-from divisor.spec import GetPredictionSettings, GetImagePredictionSettings
 
 # Try to import model types for type checking
 try:

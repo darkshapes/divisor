@@ -5,8 +5,8 @@
 
 from dataclasses import dataclass
 
-import torch
 from einops import rearrange
+import torch
 from torch import Tensor, nn
 
 

@@ -2,17 +2,17 @@
 # <!-- // /*  d a r k s h a p e s */ -->
 # adapted BFL Flux code from https://github.com/black-forest-labs/flux2
 
-import torch
+from dataclasses import replace
+
 from PIL import Image
 from fire import Fire
 from nnll.console import nfo
-from nnll.init_gpu import device, clear_cache
+from nnll.init_gpu import clear_cache, device
+import torch
 
 from divisor.controller import rng
-from divisor.noise import get_noise
-from divisor.spec import DenoisingState, DenoiseSettings
 from divisor.flux1.prompt import parse_prompt
-from dataclasses import replace
+from divisor.flux2 import precision
 from divisor.flux2.sampling import (
     batched_prc_img,
     batched_prc_txt,
@@ -20,8 +20,14 @@ from divisor.flux2.sampling import (
     encode_image_refs,
     get_schedule,
 )
-from divisor.flux2.util import FLUX2_MODEL_INFO, load_ae, load_flow_model, load_mistral_small_embedder
-from divisor.flux2 import precision
+from divisor.flux2.util import (
+    FLUX2_MODEL_INFO,
+    load_ae,
+    load_flow_model,
+    load_mistral_small_embedder,
+)
+from divisor.noise import get_noise
+from divisor.spec import DenoiseSettings, DenoisingState
 
 
 def main(

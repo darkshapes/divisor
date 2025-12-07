@@ -2,7 +2,8 @@
 # <!-- // /*  d a r k s h a p e s */ -->
 
 
-from typing import Callable, Any
+from typing import Any, Callable
+
 from nnll.console import nfo
 from torch.nn import ModuleList
 

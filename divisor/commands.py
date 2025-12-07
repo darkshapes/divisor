@@ -3,7 +3,7 @@
 
 """Command handlers for interactive denoising state changes."""
 
-from typing import Any, Callable, Optional, List
+from typing import Any, Callable, List, Optional
 
 from nnll.console import nfo
 from nnll.helpers import generate_valid_resolutions
@@ -15,14 +15,10 @@ from divisor.cli_helpers import (
     handle_toggle,
     update_state_and_cache,
 )
-from divisor.controller import (
-    ManualTimestepController,
-    rng,
-    variation_rng,
-)
+from divisor.controller import ManualTimestepController, rng, variation_rng
+from divisor.noise import prepare_noise_for_model
 from divisor.spec import DenoisingState
 from divisor.variant import change_variation
-from divisor.noise import prepare_noise_for_model
 
 
 def process_choice(

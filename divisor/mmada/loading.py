@@ -16,7 +16,7 @@ def _make_load_model_with_cache():
 
     def load_model(
         mir_id: str,
-        target_device: torch.device = device,
+        device: torch.device = device,
         compatibility_key: str | None = None,
         force_reload: bool = False,
     ) -> MMadaModelLM:
@@ -36,8 +36,8 @@ def _make_load_model_with_cache():
             cached_model = _model_cache[cache_key]
             # Ensure model is on the correct device
             cached_device = next(cached_model.parameters()).device
-            if cached_device != target_device:
-                cached_model = cached_model.to(target_device)
+            if cached_device != device:
+                cached_model = cached_model.to(device)
             return cached_model
 
         spec: ModelSpecDiffusers = get_merged_model_spec(mir_id, compatibility_key=compatibility_key)
@@ -48,7 +48,7 @@ def _make_load_model_with_cache():
         model = MMadaModelLM.from_pretrained(spec.repo_id, trust_remote_code=True, torch_dtype=torch_dtype)  # type: ignore
 
         # Move to device and set to eval mode
-        model = model.to(target_device).eval()
+        model = model.to(device).eval()
 
         # Cache the model
         _model_cache[cache_key] = model

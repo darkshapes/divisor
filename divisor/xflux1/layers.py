@@ -2,13 +2,13 @@
 # original XFlux code from https://github.com/TencentARC/FluxKits
 
 # type: ignore
-import torch
 from einops import rearrange
+import torch
 from torch import Tensor, nn
 import torch.nn.functional as F
 
-from divisor.flux1.math import attention
 from divisor.flux1.layers import Modulation, QKNorm
+from divisor.flux1.math import attention
 
 
 class LoRALinearLayer(nn.Module):

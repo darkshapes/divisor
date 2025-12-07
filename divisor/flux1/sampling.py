@@ -6,29 +6,29 @@ import math
 import time
 from typing import Callable, Optional
 
-import torch
 from einops import rearrange, repeat
 from nnll.console import nfo
 from nnll.constants import ExtensionType
 from nnll.init_gpu import sync_torch
 from nnll.save_generation import name_save_file_as, save_with_hyperchain
+import torch
 from torch import Tensor
 
 from divisor.commands import process_choice
-from divisor.controller import (
-    ManualTimestepController,
-    rng,
-    variation_rng,
-)
-from divisor.spec import DenoiseSettings, GetPredictionSettings, GetImagePredictionSettings
+from divisor.controller import ManualTimestepController, rng, variation_rng
 from divisor.denoise_step import (
     create_clear_prediction_cache,
-    create_recompute_text_embeddings,
-    create_get_prediction,
     create_denoise_step_fn,
+    create_get_prediction,
+    create_recompute_text_embeddings,
 )
 from divisor.flux1.model import Flux
 from divisor.flux1.text_embedder import HFEmbedder
+from divisor.spec import (
+    DenoiseSettings,
+    GetImagePredictionSettings,
+    GetPredictionSettings,
+)
 
 
 def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:

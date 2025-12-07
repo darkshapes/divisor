@@ -1,8 +1,8 @@
 # SPDX-License-Identifier:Apache-2.0
 # original BFL Flux code from https://github.com/black-forest-labs/flux
 
-import torch
 from einops import rearrange
+import torch
 from torch import Tensor
 
 
@@ -20,9 +20,7 @@ def rope(pos: Tensor, dim: int, theta: int) -> Tensor:
     scale = torch.arange(0, dim, 2, dtype=pos.dtype, device=pos.device) / dim
     omega = 1.0 / (theta**scale)
     out = torch.einsum("...n,d->...nd", pos, omega)
-    out = torch.stack(
-        [torch.cos(out), -torch.sin(out), torch.sin(out), torch.cos(out)], dim=-1
-    )
+    out = torch.stack([torch.cos(out), -torch.sin(out), torch.sin(out), torch.cos(out)], dim=-1)
     out = rearrange(out, "b n d (i j) -> b n d i j", i=2, j=2)
     return out.float()
 

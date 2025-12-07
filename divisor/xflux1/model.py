@@ -3,8 +3,8 @@
 # type: ignore
 
 from dataclasses import dataclass
-import torch
 
+import torch
 from torch import Tensor, nn
 
 from divisor.flux1.layers import EmbedND, LastLayer, MLPEmbedder, timestep_embedding

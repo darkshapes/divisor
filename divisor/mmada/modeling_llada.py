@@ -2,14 +2,15 @@
 # Adapted from https://github.com/Gen-Verse/MMaDA
 
 from __future__ import annotations
-
-import os
+from abc import abstractmethod
+from contextlib import nullcontext
+from dataclasses import fields
+from functools import partial
 import logging
 import math
 import sys
-from abc import abstractmethod
-from functools import partial
 from typing import (
+    Any,
     Callable,
     Iterable,
     List,
@@ -17,24 +18,32 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    Union,
     cast,
-    Any,
 )
-from dataclasses import fields
-from typing import Union
 
+from huggingface_hub import constants
+from nnll.init_gpu import device
 import torch
+from torch import einsum
 import torch.nn as nn
 import torch.nn.functional as F
-from torch import einsum
 from transformers import PreTrainedModel
+from transformers.cache_utils import Cache
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.models.auto import AutoModel
-from transformers.cache_utils import Cache
-from contextlib import nullcontext
 
-from nnll.init_gpu import device
-from huggingface_hub import constants
+from divisor.mmada.config import create_config_reader, create_show_config
+from divisor.mmada.configuration_llada import (
+    ActivationCheckpointingStrategy,
+    ActivationType,
+    BlockType,
+    InitFnType,
+    LLaDAConfig,
+    LayerNormType,
+    ModelConfig,
+    StrEnum,
+)
 
 if sys.version_info.minor > 8:
     from collections.abc import MutableMapping
@@ -42,18 +51,6 @@ elif sys.version_info.minor == 8:
     from typing import MutableMapping
 else:
     raise SystemExit("This script supports Python 3.8 or higher")
-
-from divisor.mmada.configuration_llada import (
-    LLaDAConfig,
-    StrEnum,
-    InitFnType,
-    ActivationType,
-    BlockType,
-    LayerNormType,
-    ModelConfig,
-    ActivationCheckpointingStrategy,
-)
-from divisor.mmada.config import create_config_reader
 
 
 __all__ = [
@@ -1019,7 +1016,18 @@ class LLaDAModel(nn.Module):
         self.activation_checkpointing_strategy: Optional[ActivationCheckpointingStrategy] = None
         self._activation_checkpoint_fn: Callable = activation_checkpoint_function(self.config)
 
-        if not (0 < self.config.block_group_size <= self.config.n_layers and self.config.n_layers % self.config.block_group_size == 0):
+        # Default block_group_size to 1 if it's None (e.g., when loading from pretrained configs that don't have this field)
+        block_group_size = getattr(self.config, "block_group_size", None)
+        if block_group_size is None:
+            block_group_size = 1
+            self.config.block_group_size = 1
+
+        # Ensure n_layers is set (shouldn't be None, but handle it defensively)
+        n_layers = getattr(self.config, "n_layers", None)
+        if n_layers is None:
+            raise Exception("n_layers must be set in config")
+
+        if not (0 < block_group_size <= n_layers and n_layers % block_group_size == 0):
             raise Exception("n layers must be divisible by block group size")
 
         if self.config.init_device == "cuda" or device.type == "cuda":
@@ -1321,16 +1329,34 @@ def create_model_config_from_pretrained_config(config: LLaDAConfig, repo_id: str
         if repo_id is None:
             raise ValueError("repo_id must be provided either as a parameter or stored in config.repo_id")
 
-    kwargs: dict[str, Any] = {}
+    kwargs: dict[str, Any] = {"n_layers": 32, "block_group_size": 1}
     reader = create_config_reader(model_id=repo_id)
     for field in fields(ModelConfig):
         value = reader(field.name)
         kwargs.setdefault(field.name, value)
-    base_reader = create_config_reader()
-    for kwarg in kwargs:
-        value = base_reader(field.name)
-        kwargs.setdefault(field.name, value)
-
+    base_reader = create_show_config()
+    config_data = base_reader()
+    for key, value in config_data.items():
+        if key not in kwargs and key not in [
+            "_name_or_path",
+            "architectures",
+            "auto_map",
+            "codebook_size",
+            "llm_vocab_size",
+            "model_type",
+            "new_vocab_size",
+            "num_new_special_tokens",
+            "num_vq_tokens",
+            "pretrained_model_path",
+            "tie_word_embeddings",
+            "torch_dtype",
+            "transformers_version",
+            "use_cache",
+            "w_clip_vit",
+        ]:
+            kwargs.setdefault(key, value)
+    #     value = base_reader(field.name)
+    #     kwargs.setdefault(field.name, value)
     model_config = ModelConfig(**kwargs)
     return model_config
 
@@ -1348,12 +1374,9 @@ class LLaDAModelLM(PreTrainedModel):
         super().__init__(config)
 
         if not model:
-            # Get repo_id from config if not provided
-            if repo_id is None:
-                repo_id = getattr(config, "repo_id", None)
-            model_config = create_model_config_from_pretrained_config(config, repo_id=repo_id)
+            model_config = create_model_config_from_pretrained_config(config)
             # Initialize model (always on CPU to start with so we don't run out of GPU memory).
-            model_config.init_device = device.type
+            model_config.init_device = "cpu"
             self.model = LLaDAModel(model_config, init_params=init_params)
         else:
             self.model = model

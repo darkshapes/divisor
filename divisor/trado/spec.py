@@ -42,9 +42,9 @@ class ModelSpecDiffusers:
 
 
 configs = {
-    "model.mldm.mmada": {
+    "model.mldm.trado": {
         "*": ModelSpecDiffusers(
-            repo_id="Gen-Verse/MMaDA-8B-Base",
+            repo_id="Gen-Verse/TraDo-4B-Instruct",
             init=InitialParams(
                 steps=256,
                 gen_length=512,
@@ -65,8 +65,8 @@ configs = {
                 num_new_special_tokens=0,
             ),
         ),
-        "mixcot": CompatibilitySpecDiffusers(
-            repo_id="Gen-Verse/MMaDA-8B-MixCoT",
+        "trado-4b": CompatibilitySpecDiffusers(
+            repo_id="Gen-Verse/TraDo-4B-Instruct",
         ),
     },
 }

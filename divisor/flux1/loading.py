@@ -4,7 +4,6 @@
 
 
 import os
-import torch
 from pathlib import Path
 
 from diffusers.models.autoencoders.autoencoder_tiny import AutoencoderTiny
@@ -12,12 +11,16 @@ from huggingface_hub import snapshot_download
 from nnll.console import nfo
 from nnll.init_gpu import device
 from safetensors.torch import load_file as load_sft
+import torch
 
 from divisor.flux1.autoencoder import AutoEncoder, AutoEncoderParams
-from divisor.flux1.model import FluxLoraWrapper, Flux
-from divisor.flux1.spec import optionally_expand_state_dict, get_merged_model_spec
+from divisor.flux1.model import Flux, FluxLoraWrapper
+from divisor.flux1.spec import get_merged_model_spec, optionally_expand_state_dict
 from divisor.flux1.text_embedder import HFEmbedder
-from divisor.flux2.autoencoder import AutoEncoder as AutoEncoder2, AutoEncoderParams as AutoEncoder2Params
+from divisor.flux2.autoencoder import (
+    AutoEncoder as AutoEncoder2,
+    AutoEncoderParams as AutoEncoder2Params,
+)
 from divisor.flux2.model import Flux2, Flux2Params
 from divisor.xflux1.model import XFlux, XFluxParams
 

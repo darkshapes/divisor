@@ -1,8 +1,12 @@
+# SPDX-License-Identifier: MIT
+# Adapted from https://github.com/Gen-Verse/MMaDA
+
 import gradio as gr
-from divisor.mmada import app
-from divisor.mmada.spec import configs
-from divisor.mmada.loading import load_model
 from nnll.init_gpu import device
+
+from divisor.mmada import app
+from divisor.mmada.loading import load_model
+from divisor.mmada.spec import configs
 
 css_styles = """
 .gradio-container{font-family:'IBM Plex Sans',sans-serif;margin:auto;}
@@ -49,7 +53,7 @@ def toggle_thinking_mode_lm(current_thinking_mode):
 
 def toggle_thinking_mode_mmu(current_thinking_mode):
     new_state = not current_thinking_mode
-    new_label = "Thinking Mode ✅" if new_state else "Thinking Mode ❌"
+    new_label = "Thinking Mode ✓" if new_state else "Thinking Mode ✗"
     return new_state, gr.update(value=new_label)
 
 
@@ -76,7 +80,7 @@ with gr.Blocks(css=css_styles) as demo:
                 lines=3,
                 value="A rectangular prism has a length of 5 units, a width of 4 units, and a height of 3 units. What is the volume of the prism?",
             )
-            think_button_lm = gr.Button("🧠 Enable Thinking Mode", elem_id="think_btn")
+            think_button_lm = gr.Button("Toggle Thinking", elem_id="think_btn")
             with gr.Accordion("Generation Parameters", open=True):
                 with gr.Row():
                     gen_length_slider_lm = gr.Slider(minimum=8, maximum=1024, value=512, step=64, label="Generation Length", info="Number of tokens to generate.")
@@ -150,7 +154,7 @@ with gr.Blocks(css=css_styles) as demo:
     # with gr.Row():
     #     with gr.Column(scale=2):
     #         prompt_input_box_mmu = gr.Textbox(label="Enter your prompt:", lines=3, value="Please describe this image in detail.")
-    #         think_button_mmu = gr.Button("🧠 Enable Thinking Mode", elem_id="think_btn")
+    #         think_button_mmu = gr.Button("Toggle Thinking", elem_id="think_btn")
     #         with gr.Accordion("Generation Parameters", open=True):
     #             with gr.Row():
     #                 gen_length_slider_mmu = gr.Slider(minimum=64, maximum=1024, value=512, step=64, label="Generation Length", info="Number of tokens to generate.")
@@ -209,7 +213,7 @@ with gr.Blocks(css=css_styles) as demo:
     def initialize_model():
         default_model_id = model_choices[0]
         try:
-            load_model(default_model_id, target_device=device)
+            load_model(default_model_id, device=device)
             status = f"Model '{default_model_id}' loaded successfully."
         except Exception as e:
             status = f"Error loading model '{default_model_id}': {str(e)}"

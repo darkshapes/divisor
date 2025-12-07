@@ -3,8 +3,10 @@
 
 """CLI helper functions for interactive input handling and state management."""
 
-from typing import Callable, Optional, Any
+from typing import Any, Callable, Optional
+
 from nnll.console import nfo
+
 from divisor.controller import ManualTimestepController
 from divisor.spec import DenoisingState
 

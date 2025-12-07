@@ -1,14 +1,18 @@
 # SPDX-License-Identifier: MIT
 # Adapted from https://github.com/Gen-Verse/MMaDA
+
+from nnll.init_gpu import device
 import torch
 import torch.nn.functional as F
-from nnll.init_gpu import device
 
-from divisor.mmada.spec import get_merged_model_spec
+from divisor.mmada.live_token import (
+    get_highlighted_text_tuples,
+    get_num_transfer_tokens,
+)
 from divisor.mmada.loading import load_model, torch_dtype
-from divisor.mmada.sampling import prepare, add_gumbel_noise
+from divisor.mmada.sampling import add_gumbel_noise, prepare
+from divisor.mmada.spec import get_merged_model_spec
 from divisor.mmada.text_embedder import HFEmbedder
-from divisor.mmada.live_token import get_highlighted_text_tuples, get_num_transfer_tokens
 
 # VQ_MODEL = MAGVITv2().from_pretrained("showlab/magvitv2").to(DEVICE)
 
@@ -31,7 +35,7 @@ def generate_viz_wrapper_lm(
 ):
     spec = get_merged_model_spec(model_id)
     mask_id = spec.init.mask_id
-    model = load_model(model_id, target_device=device)
+    model = load_model(model_id, device=device)
     hf = HFEmbedder(spec.repo_id, max_length=spec.init.max_position_embeddings)
     if thinking_mode_lm:
         prompt_text = (

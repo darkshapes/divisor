@@ -4,32 +4,28 @@
 import time
 from typing import Callable
 
-import torch
-from torch import Tensor
 from nnll.console import nfo
 from nnll.constants import ExtensionType
 from nnll.init_gpu import device, sync_torch
 from nnll.save_generation import name_save_file_as, save_with_hyperchain
+import torch
+from torch import Tensor
 
-from divisor.xflux1.model import XFlux
 from divisor.commands import process_choice
-from divisor.controller import (
-    ManualTimestepController,
-    rng,
-    variation_rng,
-)
-from divisor.spec import (
-    DenoiseSettings,
-    GetPredictionSettings,
-    GetImagePredictionSettings,
-    AdditionalPredictionSettings,
-)
+from divisor.controller import ManualTimestepController, rng, variation_rng
 from divisor.denoise_step import (
     create_clear_prediction_cache,
-    create_recompute_text_embeddings,
     create_denoise_step_fn,
+    create_recompute_text_embeddings,
 )
-from divisor.flux1.sampling import unpack, prepare
+from divisor.flux1.sampling import prepare, unpack
+from divisor.spec import (
+    AdditionalPredictionSettings,
+    DenoiseSettings,
+    GetImagePredictionSettings,
+    GetPredictionSettings,
+)
+from divisor.xflux1.model import XFlux
 
 
 def create_get_prediction_xflux1(

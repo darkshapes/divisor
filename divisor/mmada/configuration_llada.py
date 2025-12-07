@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: MIT
 # Adapted from https://github.com/Gen-Verse/MMaDA
 
+from dataclasses import dataclass
 from enum import Enum
 from os import PathLike
 from typing import Union
-from dataclasses import dataclass
-from typing import (
-    Optional,
-)
+from typing import Optional
+
 from transformers import AutoConfig, PretrainedConfig
 
 __all__ = [

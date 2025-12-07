@@ -3,8 +3,8 @@
 
 """Divisor class definitions and configuration dataclasses."""
 
-from dataclasses import dataclass, replace, field
-from typing import Any, Tuple, List, Optional, Dict
+from dataclasses import dataclass, field, replace
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from torch import Tensor
