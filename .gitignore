@@ -83,3 +83,4 @@ output/
 preview*
 .output
 .gradio/certificate.pem
+.aider*
