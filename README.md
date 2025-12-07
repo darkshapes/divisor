@@ -1,4 +1,4 @@
-> ## divisor
+## divisor
 
 > Hands-on procedural generation.
 
