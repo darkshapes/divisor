@@ -2,7 +2,7 @@
 
 > Hands-on procedural generation.
 
-> Divisor is a comprehensive framework for flexible, controllable media generation using state‑of‑the‑art diffusion models such as [Flux](https://github.com/black-forest-labs/flux2) and [MMaDA](https://github.com/Gen-Verse/MMaDA). It gives developers, researchers, and artists fine‑grained, programmatic control over the denoising process that underlies modern generative synthesis, enabling both experimental research and production‑grade workflows on consumer hardware.
+> Divisor is a comprehensive framework for flexible, controllable media generation using state‑of‑the‑art diffusion models such as [Flux](https://github.com/black-forest-labs/flux2) and [MMaDA](https://github.com/Gen-Verse/MMaDA). It gives developers, researchers, and artists fine‑grained, programmatic control over the denoising process that underlies modern generative synthesis, enabling both experimental research and production‑grade workflows approaching real-time speed on consumer hardware.
 
 #### Features:
 
@@ -19,7 +19,7 @@
 
 > **Windows/MacOS/Linux device**
 >
-> **8GB+ VRAM Nvidia/MPS/AMD HIP GPU**
+> **Nvidia graphics card or M-series chip with 8GB+ VRAM**. AMD support untested.
 >
 > [UV](https://docs.astral.sh/uv/#installation)
 >
