@@ -3,61 +3,24 @@
 
 from __future__ import annotations
 
-import logging
-import math
-import sys
-from abc import abstractmethod
-from collections import defaultdict
-from functools import partial
-from typing import (
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    NamedTuple,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    cast,
-)
-from dataclasses import fields
-from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from torch import einsum
-from transformers import PreTrainedModel
-from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.models.auto import AutoModel, AutoConfig, AutoModelForCausalLM
-from transformers.cache_utils import Cache
 from PIL import Image
 
 from transformers import PretrainedConfig
 from nnll.init_gpu import device
 
-if device.type == "cuda":
-    import torch.backends.cuda
-
-from divisor.mmada.configuration_llada import (
-    LLaDAConfig,
-    StrEnum,
-    InitFnType,
-    ActivationType,
-    BlockType,
-    LayerNormType,
-    ModelConfig,
-    ActivationCheckpointingStrategy,
-)
-
 from divisor.mmada.modeling_llada import LLaDAModelLM
 from divisor.mmada.sampling import cosine_schedule, mask_by_random_topk
 
+if device.type == "cuda":
+    import torch.backends.cuda
 if device.type == "mps":
-    noise_dtype = torch.float32
+    torch_dtype = torch.float32
 else:
-    noise_dtype = torch.float64
+    torch_dtype = torch.float64
 
 
 def add_gumbel_noise(logits, temperature):
@@ -69,8 +32,8 @@ def add_gumbel_noise(logits, temperature):
     """
     if temperature == 0:
         return logits
-    logits = logits.to(noise_dtype)
-    noise = torch.rand_like(logits, dtype=noise_dtype)
+    logits = logits.to(torch_dtype)
+    noise = torch.rand_like(logits, dtype=torch_dtype)
     gumbel_noise = (-torch.log(noise)) ** temperature
     return logits.exp() / gumbel_noise
 
@@ -121,6 +84,25 @@ class MMadaConfig(PretrainedConfig):
 class MMadaModelLM(LLaDAModelLM):
     config_class = MMadaConfig
     base_model_prefix = "model"
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+        """Override from_pretrained to inject repo_id into config."""
+        repo_id = pretrained_model_name_or_path
+
+        # Load config first and inject repo_id BEFORE calling super().from_pretrained
+        # This ensures repo_id is available during __init__
+        config = cls.config_class.from_pretrained(pretrained_model_name_or_path, **kwargs.get("config_kwargs", {}))
+        setattr(config, "repo_id", repo_id)
+
+        # Update kwargs to pass the modified config
+        kwargs = kwargs.copy()
+        kwargs["config"] = config
+
+        # Now call parent's from_pretrained with the modified config
+        model = super().from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+
+        return model
 
     def __init__(self, config: MMadaConfig, *args, **kwargs):
         print(f"Initializing MMadaModelLM with config: {config}")
@@ -439,7 +421,7 @@ class MMadaModelLM(LLaDAModelLM):
             attention_bias = None
         try:
             device = idx.device
-        except:
+        except Exception:
             device = input_embeddings.device
 
         result = []
@@ -476,7 +458,7 @@ class MMadaModelLM(LLaDAModelLM):
                 logits_with_noise = add_gumbel_noise(logits, temperature=temperature)
                 x0 = torch.argmax(logits_with_noise, dim=-1)  # b, l
                 if remasking == "low_confidence":
-                    p = F.softmax(logits.to(noise_dtype), dim=-1)
+                    p = F.softmax(logits.to(torch_dtype), dim=-1)
                     x0_p = torch.squeeze(torch.gather(p, dim=-1, index=torch.unsqueeze(x0, -1)), -1)  # b, l
                 elif remasking == "random":
                     x0_p = torch.rand((x0.shape[0], x0.shape[1]), device=x0.device)
@@ -545,7 +527,7 @@ class MMadaModelLM(LLaDAModelLM):
             attention_bias = None
         try:
             device = idx.device
-        except:
+        except Exception:
             device = input_embeddings.device
 
         result = []
@@ -578,7 +560,7 @@ class MMadaModelLM(LLaDAModelLM):
                 logits_with_noise = add_gumbel_noise(logits, temperature=temperature)
                 x0 = torch.argmax(logits_with_noise, dim=-1)  # b, l
                 if remasking == "low_confidence":
-                    p = F.softmax(logits.to(noise_dtype), dim=-1)
+                    p = F.softmax(logits.to(torch_dtype), dim=-1)
                     x0_p = torch.squeeze(torch.gather(p, dim=-1, index=torch.unsqueeze(x0, -1)), -1)  # b, l
                 elif remasking == "random":
                     x0_p = torch.rand((x0.shape[0], x0.shape[1]), device=x0.device)

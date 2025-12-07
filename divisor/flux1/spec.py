@@ -235,8 +235,7 @@ def get_merged_model_spec(mir_id: str, compatibility_key: str | None = None) -> 
             params=base_spec.params,
             init=base_spec.init,
         )
-
-    return compat_spec
+    return base_spec
 
 
 def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> dict:
