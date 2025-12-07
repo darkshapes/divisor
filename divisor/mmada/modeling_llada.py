@@ -3,26 +3,25 @@
 
 from __future__ import annotations
 
+import os
 import logging
 import math
 import sys
 from abc import abstractmethod
-from collections import defaultdict
 from functools import partial
 from typing import (
     Callable,
-    Dict,
     Iterable,
     List,
     NamedTuple,
     Optional,
     Sequence,
-    Set,
     Tuple,
     cast,
+    Any,
 )
 from dataclasses import fields
-from typing import List, Optional, Tuple, Union
+from typing import Union
 
 import torch
 import torch.nn as nn
@@ -35,6 +34,7 @@ from transformers.cache_utils import Cache
 from contextlib import nullcontext
 
 from nnll.init_gpu import device
+from huggingface_hub import constants
 
 if sys.version_info.minor > 8:
     from collections.abc import MutableMapping
@@ -53,6 +53,7 @@ from divisor.mmada.configuration_llada import (
     ModelConfig,
     ActivationCheckpointingStrategy,
 )
+from divisor.mmada.config import create_config_reader
 
 
 __all__ = [
@@ -101,7 +102,7 @@ def init_weights(
     :param layer_id: When set, the standard deviation for the "mitchell" method will be adjusted by
         ``1 / sqrt(2 * (layer_id + 1))``.
     """
-    d = d if d is not None else config.d_model
+    d = d if d is not None else config.d_model or 4096
     if config.init_fn == InitFnType.normal:
         std = config.init_std * std_factor
         if config.init_cutoff_factor is not None:
@@ -139,7 +140,7 @@ def init_weights(
             std = config.init_std
         elif type_of_module == ModuleType.final_out:
             # final output (ff_out)
-            std = config.d_model**-0.5
+            std = 4096**-0.5
         else:
             raise RuntimeError(f"Unknown module type '{type_of_module}'")
         nn.init.trunc_normal_(
@@ -214,7 +215,7 @@ class LayerNormBase(nn.Module):
         self,
         config: ModelConfig,
         *,
-        size: Optional[int] = None,
+        size: Optional[int] = 4096,
         elementwise_affine: Optional[bool] = True,
         eps: float = 1e-05,
     ):
@@ -1306,14 +1307,29 @@ class LLaDAModel(nn.Module):
         return LLaDAOutput(logits=logits, attn_key_values=attn_key_values, hidden_states=tuple(all_hidden_states) if output_hidden_states else None)  # type: ignore[arg-type]
 
 
-def create_model_config_from_pretrained_config(config: LLaDAConfig):
+def create_model_config_from_pretrained_config(config: LLaDAConfig, repo_id: str | None = None):
     """
-    Utility function
+    Utility function to create ModelConfig from a pretrained LLaDAConfig.\n
+    :param config: The LLaDAConfig instance
+    :param repo_id: The HuggingFace repository ID (e.g., "Gen-Verse/MMaDA-8B-Base").
+                   If None, will try to get it from config.repo_id if available.
+    :returns: A ModelConfig instance
     """
+    # Try to get repo_id from config if not provided
+    if repo_id is None:
+        repo_id = getattr(config, "repo_id", None)
+        if repo_id is None:
+            raise ValueError("repo_id must be provided either as a parameter or stored in config.repo_id")
 
-    kwargs = {}
+    kwargs: dict[str, Any] = {}
+    reader = create_config_reader(model_id=repo_id)
     for field in fields(ModelConfig):
-        kwargs[field.name] = getattr(config, field.name)
+        value = reader(field.name)
+        kwargs.setdefault(field.name, value)
+    base_reader = create_config_reader()
+    for kwarg in kwargs:
+        value = base_reader(field.name)
+        kwargs.setdefault(field.name, value)
 
     model_config = ModelConfig(**kwargs)
     return model_config
@@ -1328,13 +1344,16 @@ class LLaDAModelLM(PreTrainedModel):
     base_model_prefix = "model"
     _no_split_modules = ["LLaDABlock", "LLaDASequentialBlock", "LLaDALlamaBlock"]
 
-    def __init__(self, config: LLaDAConfig, model: Optional[LLaDAModel] = None, init_params: bool = False):
+    def __init__(self, config: LLaDAConfig, model: Optional[LLaDAModel] = None, init_params: bool = False, repo_id: str | None = None):
         super().__init__(config)
 
         if not model:
-            model_config = create_model_config_from_pretrained_config(config)
+            # Get repo_id from config if not provided
+            if repo_id is None:
+                repo_id = getattr(config, "repo_id", None)
+            model_config = create_model_config_from_pretrained_config(config, repo_id=repo_id)
             # Initialize model (always on CPU to start with so we don't run out of GPU memory).
-            model_config.init_device = "cpu"
+            model_config.init_device = device.type
             self.model = LLaDAModel(model_config, init_params=init_params)
         else:
             self.model = model

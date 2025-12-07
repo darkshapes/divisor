@@ -7,6 +7,8 @@ from functools import partial
 
 import torch
 import torch.nn.functional as F
+from torchvision import transforms
+from nnll.init_gpu import device
 
 
 def log(t, eps=1e-20):
@@ -119,3 +121,53 @@ def top_k_top_p_filtering(
         indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
         logits[indices_to_remove] = filter_value
     return logits
+
+
+def image_transform(image, resolution=256, normalize=True):
+    image = transforms.Resize(resolution, interpolation=transforms.InterpolationMode.BICUBIC)(image)
+    image = transforms.CenterCrop((resolution, resolution))(image)
+    image = transforms.ToTensor()(image)
+    if normalize:
+        image = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)(image)
+    return image
+
+
+def add_gumbel_noise(logits, temperature):
+    """
+    Adds Gumbel noise to logits for stochastic sampling.
+    Equivalent to argmax(logits + temperature * G) where G ~ Gumbel(0,1).
+    This version is more numerically stable than a version involving exp() and division.
+    """
+    if abs(temperature) < 1e-9:  # Effectively zero temperature
+        return logits
+    # Ensure logits are float64 for precision with noise, as suggested by user context
+    if device.type == "mps":
+        logits = logits.to(torch.float32)
+    else:
+        logits = logits.to(torch.float64)
+    # Standard Gumbel noise: -log(-log(U)), U ~ Uniform(0,1)
+    # Add small epsilon for numerical stability inside logs
+    if device.type == "mps":
+        noise = torch.rand_like(logits, dtype=torch.float32)
+    else:
+        noise = torch.rand_like(logits, dtype=torch.float64)
+    standard_gumbel_noise = -torch.log(-torch.log(noise + 1e-20) + 1e-20)
+    return logits + temperature * standard_gumbel_noise
+
+
+def prepare(model, tokenizer, prompt_text):
+    m = [{"role": "user", "content": prompt_text}]
+    processed_prompt_text = tokenizer.apply_chat_template(m, add_generation_prompt=True, tokenize=False)
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id | ValueError("pad_token_id is not set in tokenizer.")
+
+    input_ids = tokenizer(
+        text=processed_prompt_text,
+        return_tensors="pt",
+        padding="longest",
+        padding_side="left",
+        truncation=True,
+        max_length=model.config.max_position_embeddings if hasattr(model.config, "max_position_embeddings") else 2048,
+    )["input_ids"].to(device)
+
+    return input_ids

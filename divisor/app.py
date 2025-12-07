@@ -13,8 +13,7 @@ from fire import Fire
 from divisor.flux2.prompt import main as flux2_main
 from divisor.xflux1.prompt import main as xflux1_main
 from divisor.flux1.prompt import main as flux1_main
-from divisor.mmada.generate import main as mmada_main
-from divisor.mmada.app import main as mmada_app_main
+from divisor.mmada.gradio import main as mmada_main
 
 
 def main():
@@ -42,7 +41,7 @@ def main():
 
     args, remaining_argv = parser.parse_known_args()
     if args.model_type == "llm":
-        main = mmada_app_main
+        main = mmada_main
         model_id = "Gen-Verse/MMaDA-8B-MixCoT"  # Gen-Verse/MMaDA-8B-Base, Gen-Verse/TraDo-4B-Instruct, Gen-Verse/TraDo-8B-Instruct
 
     elif args.model_type == "dev2":
