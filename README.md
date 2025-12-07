@@ -4,7 +4,7 @@
 
 > Divisor is a comprehensive framework for flexible, controllable media generation using state‑of‑the‑art diffusion models such as [Flux](https://github.com/black-forest-labs/flux2) and [MMaDA](https://github.com/Gen-Verse/MMaDA). It gives developers, researchers, and artists fine‑grained, programmatic control over the denoising process that underlies modern generative synthesis, enabling both experimental research and production‑grade workflows on consumer hardware.
 
-#### Features
+#### Features:
 
 > - Manual Timestep Control – Step through diffusion timesteps, enabling acute control via dynamic prompt changes, layer‑wise manipulations, and on‑the‑fly parameter tuning.
 > - Multimodal - Synthesize a wide variety of diffusion content such as text and images
