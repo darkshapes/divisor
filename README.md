@@ -1,8 +1,8 @@
-## divisor
+## Divisor
 
 > Hands-on procedural generation.
 
-> Divisor is a framework enabling flexible media creation using advanced diffusion models like [Flux](https://github.com/black-forest-labs/flux2) and [MMaDA](https://github.com/Gen-Verse/MMaDA). With only off-the-shelf computers, developers, researchers, and artists get fine-grained control over low-level generative processing, making it faster and easier than ever to experiment and develop intuition for the workings of neural networks.
+> Divisor is a framework enabling flexible media creation using advanced diffusion models like [Flux](https://github.com/black-forest-labs/flux2) and [MMaDA](https://github.com/Gen-Verse/MMaDA). Developers, researchers, and artists gain precise control over low-level generative processes using off-the-shelf computers, making experimentation with neural networks faster and easier than ever.
 
 #### Features:<hr>
 
