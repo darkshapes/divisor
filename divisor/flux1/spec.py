@@ -4,14 +4,14 @@
 
 from dataclasses import dataclass
 
-import torch
 from diffusers.models.autoencoders.autoencoder_tiny import AutoencoderTiny
 from nnll.console import nfo
+import torch
 
 from divisor.flux1.autoencoder import AutoEncoderParams
 from divisor.flux1.model import FluxLoraWrapper, FluxParams
-from divisor.flux2.model import Flux2Params
 from divisor.flux2.autoencoder import AutoEncoderParams as AutoEncoder2Params
+from divisor.flux2.model import Flux2Params
 from divisor.xflux1.model import XFluxParams
 
 

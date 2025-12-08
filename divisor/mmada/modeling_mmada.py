@@ -3,14 +3,13 @@
 
 from __future__ import annotations
 
+from PIL import Image
+from nnll.init_gpu import device
 import numpy as np
 import torch
 import torch.nn.functional as F
-from transformers.models.auto import AutoModel, AutoConfig, AutoModelForCausalLM
-from PIL import Image
-
 from transformers import PretrainedConfig
-from nnll.init_gpu import device
+from transformers.models.auto import AutoConfig, AutoModel, AutoModelForCausalLM
 
 from divisor.mmada.modeling_llada import LLaDAModelLM
 from divisor.mmada.sampling import cosine_schedule, mask_by_random_topk

@@ -1,10 +1,11 @@
 # SPDX-License-Identifier:Apache-2.0
 # original XFlux code from https://github.com/TencentARC/FluxKits
 
-from safetensors import safe_open
-from nnll.console import nfo
-import torch
 import os
+
+from nnll.console import nfo
+from safetensors import safe_open
+import torch
 
 from divisor.flux1.loading import retrieve_model
 

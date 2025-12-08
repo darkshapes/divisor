@@ -2,7 +2,13 @@
 # original XFlux code from https://github.com/TencentARC/FluxKits
 
 from torch import Tensor, nn
-from divisor.flux1.autoencoder import AutoEncoderParams, Encoder, Decoder, DiagonalGaussian
+
+from divisor.flux1.autoencoder import (
+    AutoEncoderParams,
+    Decoder,
+    DiagonalGaussian,
+    Encoder,
+)
 
 
 class AutoEncoder(nn.Module):

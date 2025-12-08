@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Adapted from https://github.com/Gen-Verse/MMaDA
+
 import torch
 
 

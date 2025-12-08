@@ -1,6 +1,11 @@
-import torch
+# SPDX-License-Identifier: MIT
+# Adapted from https://github.com/Gen-Verse/MMaDA
+# Adapted from https://github.com/black-forest-labs/flux
+
 from nnll.init_gpu import device
+import torch
 from transformers import AutoTokenizer
+
 from divisor.mmada.prompting_utils import UniversalPrompting, reserved_token_mapping
 
 

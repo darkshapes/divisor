@@ -6,8 +6,6 @@ from dataclasses import dataclass
 import torch
 from torch import Tensor, nn
 
-
-from divisor.layer_dropout import process_blocks_with_dropout
 from divisor.flux1.layers import (
     DoubleStreamBlock,
     EmbedND,
@@ -17,6 +15,7 @@ from divisor.flux1.layers import (
     timestep_embedding,
 )
 from divisor.flux1.lora import LinearLora, replace_linear_with_lora
+from divisor.layer_dropout import process_blocks_with_dropout
 
 
 @dataclass

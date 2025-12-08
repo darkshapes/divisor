@@ -6,36 +6,31 @@ import math
 import time
 from typing import Optional
 
-import torch
-import torchvision
-from einops import rearrange
 from PIL import Image
-from torch import Tensor
+from einops import rearrange
 from nnll.console import nfo
 from nnll.constants import ExtensionType
 from nnll.init_gpu import sync_torch
 from nnll.save_generation import name_save_file_as, save_with_hyperchain
+import torch
+from torch import Tensor
+import torchvision
 
-from divisor.flux2.model import Flux2
-
-from divisor.flux2 import precision
-from divisor.controller import (
-    ManualTimestepController,
-    rng,
-    variation_rng,
-)
-from divisor.spec import (
-    DenoiseSettings,
-    GetPredictionSettings,
-    GetImagePredictionSettings,
-    DenoiseSettingsFlux2,
-)
 from divisor.commands import process_choice
+from divisor.controller import ManualTimestepController, rng, variation_rng
 from divisor.denoise_step import (
     create_clear_prediction_cache,
-    create_recompute_text_embeddings,
-    create_get_prediction,
     create_denoise_step_fn,
+    create_get_prediction,
+    create_recompute_text_embeddings,
+)
+from divisor.flux2 import precision
+from divisor.flux2.model import Flux2
+from divisor.spec import (
+    DenoiseSettings,
+    DenoiseSettingsFlux2,
+    GetImagePredictionSettings,
+    GetPredictionSettings,
 )
 
 

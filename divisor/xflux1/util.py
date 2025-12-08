@@ -1,8 +1,8 @@
 # SPDX-License-Identifier:Apache-2.0
 # original XFlux code from https://github.com/TencentARC/FluxKits
 
-import numpy as np
 import cv2
+import numpy as np
 
 
 def c_crop(image):

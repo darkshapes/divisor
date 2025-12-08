@@ -2,13 +2,13 @@
 # Adapted from https://github.com/Gen-Verse/MMaDA
 # Adapted from https://github.com/lucidrains/muse-maskgit-pytorch
 
-import math
 from functools import partial
+import math
 
+from nnll.init_gpu import device
 import torch
 import torch.nn.functional as F
 from torchvision import transforms
-from nnll.init_gpu import device
 
 
 def log(t, eps=1e-20):

@@ -1,11 +1,11 @@
 # SPDX-License-Identifier:Apache-2.0
 # original BFL Flux code from https://github.com/black-forest-labs/flux2
 
-import math
 from dataclasses import dataclass, field
+import math
 
-import torch
 from einops import rearrange
+import torch
 from torch import Tensor, nn
 
 from divisor.layer_dropout import process_blocks_with_dropout

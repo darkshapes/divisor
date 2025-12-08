@@ -1,20 +1,18 @@
 # SPDX-License-Identifier:Apache-2.0
 # original BFL Flux code from https://github.com/black-forest-labs/flux2
 
-import base64
-import io
 import os
-import torch
-from PIL import Image
-from safetensors.torch import load_file as load_sft
-from nnll.init_gpu import device
+
 from nnll.console import nfo
+from nnll.init_gpu import device
+from safetensors.torch import load_file as load_sft
+import torch
 
 from divisor.flux1.loading import retrieve_model
+from divisor.flux2 import precision
 from divisor.flux2.autoencoder import AutoEncoder, AutoEncoderParams
 from divisor.flux2.model import Flux2, Flux2Params
 from divisor.flux2.text_encoder import Mistral3SmallEmbedder
-from divisor.flux2 import precision
 
 
 FLUX2_MODEL_INFO = {

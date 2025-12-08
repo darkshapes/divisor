@@ -6,13 +6,15 @@ Interactive denoising with manual timestep control.
 Allows users to manually increment through timesteps one at a time.
 """
 
-from typing import Optional, Callable, Any
 from dataclasses import asdict
 import json
-import torch
+from typing import Any, Callable, Optional
+
 from nnll.hyperchain import HyperChain
-from nnll.random import RNGState
 from nnll.init_gpu import device
+from nnll.random import RNGState
+import torch
+
 from divisor.spec import DenoisingState, TimestepState
 
 rng = RNGState(device=device.type)

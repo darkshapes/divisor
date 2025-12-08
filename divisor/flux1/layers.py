@@ -1,13 +1,12 @@
 # SPDX-License-Identifier:Apache-2.0
 # original BFL Flux code from https://github.com/black-forest-labs/flux
 
-import math
 from dataclasses import dataclass
+import math
 
-import torch
 from einops import rearrange
+import torch
 from torch import Tensor, nn
-
 
 from divisor.flux1.math import attention, rope
 

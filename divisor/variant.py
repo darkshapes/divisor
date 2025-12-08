@@ -5,9 +5,11 @@
 
 import math
 from typing import Callable
+
+from nnll.console import nfo
 import torch
 from torch import Tensor
-from nnll.console import nfo
+
 from divisor.controller import ManualTimestepController, variation_rng
 from divisor.spec import DenoisingState
 
@@ -159,4 +161,3 @@ def change_variation(
     except (ValueError, KeyboardInterrupt):
         nfo("Invalid variation value, keeping current value")
     return state
-

@@ -1,12 +1,12 @@
 # SPDX-License-Identifier:Apache-2.0
 # original BFL Flux code from https://github.com/black-forest-labs/flux
 
-import cv2
-import numpy as np
-import torch
-from einops import rearrange, repeat
 from PIL import Image
+import cv2
+from einops import rearrange, repeat
+import numpy as np
 from safetensors.torch import load_file as load_sft
+import torch
 from torch import nn
 from transformers import (
     AutoModelForDepthEstimation,

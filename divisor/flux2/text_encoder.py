@@ -3,10 +3,10 @@
 
 from pathlib import Path
 
+from PIL import Image
+from einops import rearrange
 import torch
 import torch.nn as nn
-from einops import rearrange
-from PIL import Image
 from transformers import AutoProcessor, Mistral3ForConditionalGeneration, pipeline
 
 from divisor.flux2 import precision_name

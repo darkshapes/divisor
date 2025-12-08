@@ -8,12 +8,13 @@ Routes to different inference modes based on flags.
 
 import argparse
 import sys
+
 from fire import Fire
 
-from divisor.flux2.prompt import main as flux2_main
-from divisor.xflux1.prompt import main as xflux1_main
 from divisor.flux1.prompt import main as flux1_main
+from divisor.flux2.prompt import main as flux2_main
 from divisor.mmada.gradio import main as mmada_main
+from divisor.xflux1.prompt import main as xflux1_main
 
 
 def main():
@@ -36,13 +37,16 @@ def main():
         "--model-type",
         choices=["dev", "schnell", "dev2", "mini", "llm"],
         default="dev",
-        help="Model type to use: 'dev' (flux1-dev), 'schnell' (flux1-schnell), or 'dev2' (flux2-dev), 'mini' (flux1-mini). Default: dev",
+        help="""
+        Model type to use: dev2, dev, schnell, mini, llm, Default: dev
+        Flux.1 Dev, Flux.1 Schnell, Flux.1-mini,Flux.2-Dev, MMaDA-8B-Base/MixCoT/TraDo-4B-Instruct/TraDo-8B-Instruct, Default: dev
+        """,
     )
 
     args, remaining_argv = parser.parse_known_args()
     if args.model_type == "llm":
         main = mmada_main
-        model_id = "Gen-Verse/MMaDA-8B-MixCoT"  # Gen-Verse/MMaDA-8B-Base, Gen-Verse/TraDo-4B-Instruct, Gen-Verse/TraDo-8B-Instruct
+        model_id = "Gen-Verse/MMaDA-8B-Base"  # Gen-Verse/MMaDA-8B-Base, Gen-Verse/TraDo-4B-Instruct, Gen-Verse/TraDo-8B-Instruct
 
     elif args.model_type == "dev2":
         main = flux2_main
