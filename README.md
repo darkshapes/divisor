@@ -4,20 +4,21 @@
 
 > Divisor is a framework enabling flexible media creation using advanced diffusion models like [Flux](https://github.com/black-forest-labs/flux2) and [MMaDA](https://github.com/Gen-Verse/MMaDA). With only off-the-shelf computers, developers, researchers, and artists get fine-grained control over low-level generative processing, making it faster and easier than ever to experiment and develop intuition for the workings of neural networks.
 
-#### Features:
+#### Features:<hr>
 
 > - Multimodal Creation - Actively sculpt any content such as text and images.
 > - Robust Versioning – Pause, resume, save, or restore states with exacting reproducibility and reversibility.
-> - Private & Safe - Compartmentalized and local first, so data never leaves your device.
+> - Private & Safe - Compartmentalized and local first, so data never leaves your workspace.
 > - Fine‑Grained Noise & Variation Controls – Branch variations to create diverse and consistent inspiration.
 > - Integration with External Resources – Start quickly with batteries included: models, adapters, and [MIR](https://github.com/darkshapes/mir) specs.
 
-#### Advanced Features:
+#### Tech Specs:
 
 > - Manual Timestep Control – Step-by-step processing of dynamic prompts, layer‑wise manipulations, and on‑the‑fly parameter changes.
 > - Extensible Prompt Engineering – Dedicated multimodal prompting, system messages, and automatic parsing for LLM‑driven results.
 > - Model‑Agnostic Architecture – Unified API abstraction allows interchangeable custom LoRA and autoencoders.
 > - User‑Facing Interfaces – CLI and Gradio interfaces ready to use or attach to other apps.
+> - Sensible Python Engineering - Uses modern tooling with minimal dependences
 
 #### Requires:<hr>
 

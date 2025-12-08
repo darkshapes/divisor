@@ -1,10 +1,11 @@
-# SPDX-License-Identifier: Apache-2.0
-# adapted fromhttps://github.com/Gen-Verse/dLLM-RL
+# SPDX-License-Identifier: MIT
 # adapted from SADR https://github.com/JetAstra/SDAR/blob/main/generate.py
 
 import torch
 from torch.nn import functional as F
 from transformers.cache_utils import DynamicCache
+
+from divisor.trado.spec import SDARParams
 
 
 def top_k_logits(logits, k):
@@ -59,18 +60,19 @@ def get_num_transfer_tokens(block_length, steps):
 def block_diffusion_generate(
     model,
     prompt,
-    mask_id,
-    gen_length=128,
-    block_length=8,
-    denoising_steps=8,
-    temperature=1.0,
-    top_k=0,
-    top_p=1.0,
-    remasking_strategy="low_confidence_dynamic",
-    confidence_threshold=0.85,
-    stopping_criteria_idx=None,
+    params: SDARParams,
 ):
     model.eval()
+    mask_id = params.mask_id
+    gen_length = params.gen_length
+    block_length = params.block_length
+    denoising_steps = params.denoising_steps
+    temperature = params.temperature
+    top_k = params.top_k
+    top_p = params.top_p
+    remasking_strategy = params.remasking_strategy
+    confidence_threshold = params.confidence_threshold
+    stopping_criteria_idx = None
     input_ids = prompt["input_ids"]
     prompt_length = input_ids.shape[1]
     past_key_values = DynamicCache()

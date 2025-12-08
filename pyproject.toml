@@ -9,18 +9,24 @@ description = "fragment / denoise / process"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "fire>=0.7.1",
-    "gradio>=5.23.1",
-    "nnll[full]",
+    # "fire>=0.7.1",
+    # "gradio>=5.23.1",
+    # "nnll[full]",
+    # "transformers",
 ]
 [project.scripts]
 dvzr = "divisor.app:main"
 divisor = "divisor.app:main"
 
 [dependency-groups]
+
 dev = [
   "nnll[dev]",
   "pdoc>=16.0.0",
+]
+[project.optional-dependencies]
+cuda = [
+  "jetengine @ git+https://github.com/Labman42/JetEngine.git ; sys_platform != 'darwin'",
 ]
 [tool.pyright]
 include = ["divisor"]
@@ -42,6 +48,12 @@ local_scheme = "no-local-version"
 package = true
 preview = true
 
+[tool.uv.sources]
+
+nnll = { git = "https://github.com/darkshapes/nnll" }
+transformers = { git = "https://github.com/huggingface/transformers" }
+jetengine = { git = "https://github.com/Labman42/JetEngine.git" }
+
 [tool.ruff]
 line-length    = 160
 include        = ["*.py"]
@@ -54,6 +66,3 @@ ignore = ["E731"]
 max-line-length = 140
 ignore-paths    = ["^tests/.*$", "test_.*$"]
 disable         = ["C0415"]
-
-[tool.uv.sources]
-nnll = { git = "https://github.com/darkshapes/nnll" }

@@ -22,7 +22,7 @@ from typing import Optional, Tuple
 
 import regex as re
 
-from transformers.tokenization_utils import AddedToken, PreTrainedTokenizer
+from transformers import AddedToken, PreTrainedTokenizer
 from transformers.utils import logging
 
 
@@ -45,7 +45,6 @@ def bytes_to_unicode():
     """
     Returns list of utf-8 byte and a mapping to unicode strings. We specifically avoids mapping to whitespace/control
     characters the bpe code barfs on.
-
     The reversible bpe codes work on unicode strings. This means you need a large # of unicode characters in your vocab
     if you want to avoid UNKs. When you're at something like a 10B token dataset you end up needing around 5K for
     decent coverage. This is a significant percentage of your normal, say, 32K bpe vocab. To avoid that, we want lookup
@@ -67,7 +66,6 @@ def bytes_to_unicode():
 def get_pairs(word):
     """
     Return set of symbol pairs in a word.
-
     Word is represented as tuple of symbols (symbols being variable-length strings).
     """
     pairs = set()
@@ -81,27 +79,20 @@ def get_pairs(word):
 class Qwen2Tokenizer(PreTrainedTokenizer):
     """
     Construct a Qwen2 tokenizer. Based on byte-level Byte-Pair-Encoding.
-
     Same with GPT2Tokenizer, this tokenizer has been trained to treat spaces like parts of the tokens so a word will
     be encoded differently whether it is at the beginning of the sentence (without space) or not:
-
     ```python
     >>> from transformers import Qwen2Tokenizer
-
     >>> tokenizer = Qwen2Tokenizer.from_pretrained("Qwen/Qwen-tokenizer")
     >>> tokenizer("Hello world")["input_ids"]
     [9707, 1879]
-
     >>> tokenizer(" Hello world")["input_ids"]
     [21927, 1879]
     ```
     This is expected.
-
     You should not use GPT2Tokenizer instead, because of the different pretokenization rules.
-
     This tokenizer inherits from [`PreTrainedTokenizer`] which contains most of the main methods. Users should refer to
     this superclass for more information regarding those methods.
-
     Args:
         vocab_file (`str`):
             Path to the vocabulary file.
