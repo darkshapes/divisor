@@ -8,7 +8,7 @@ from nnll.init_gpu import device
 import numpy as np
 import torch
 import torch.nn.functional as F
-from transformers import PretrainedConfig
+from transformers import PreTrainedConfig
 from transformers.models.auto import AutoConfig, AutoModel, AutoModelForCausalLM
 
 from divisor.mmada.modeling_llada import LLaDAModelLM
@@ -58,7 +58,7 @@ def get_num_transfer_tokens(mask_index, steps):
     return num_transfer_tokens
 
 
-class MMadaConfig(PretrainedConfig):
+class MMadaConfig(PreTrainedConfig):
     model_type = "mmada"
 
     def __init__(self, **kwargs):

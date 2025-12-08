@@ -582,8 +582,10 @@ class LLaDABlock(nn.Module):
                 from flash_attn import flash_attn_func  # type: ignore
 
                 self.flash_attn_func = flash_attn_func
-            except ModuleNotFoundError:
-                pass
+            except (ModuleNotFoundError, ImportError) as e:
+                # Flash attention not available, fall back to standard attention
+                logging.warning(f"Flash attention requested but not available ({e}). Falling back to standard attention.")
+                self.flash_attn_func = None
 
     def reset_parameters(self):
         if self.k_norm is not None:
@@ -638,9 +640,15 @@ class LLaDABlock(nn.Module):
         attention mask if passed, and applying dropout if a probability greater than 0.0 is specified.
         """
         if self.flash_attn_func is not None and attn_mask is None:
-            r = self.flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), dropout_p=dropout_p, causal=False)
-            return r.transpose(1, 2)
-        else:
+            try:
+                r = self.flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), dropout_p=dropout_p, causal=False)
+                return r.transpose(1, 2)
+            except Exception as e:
+                # Flash attention failed, fall back to standard attention
+                logging.warning(f"Flash attention computation failed ({e}). Falling back to standard attention.")
+                # Continue to fallback implementation below
+
+            # Fallback to standard attention (either flash_attn not available, attn_mask present, or flash_attn failed)
             # torch's sdpa doesn't support GQA, so we're doing this
             assert k.size(1) == v.size(1)
             num_kv_heads = k.size(1)
@@ -998,9 +1006,10 @@ class LLaDAModel(nn.Module):
         self.config = config
         self.__cache = BufferCache()
 
-        # Validate config.
+        # Validate config - disable flash_attention if ALiBi is enabled (not compatible)
         if self.config.alibi and self.config.flash_attention:
-            raise Exception("ALiBi is currently not supported with FlashAttention")
+            logging.warning("ALiBi is not supported with FlashAttention. Disabling flash_attention.")
+            self.config.flash_attention = False
 
         if self.config.alibi and self.config.rope:
             raise Exception("ALiBi and RoPE are mutually exclusive")
@@ -1030,9 +1039,15 @@ class LLaDAModel(nn.Module):
         if not (0 < block_group_size <= n_layers and n_layers % block_group_size == 0):
             raise Exception("n layers must be divisible by block group size")
 
-        if self.config.init_device == "cuda" or device.type == "cuda":
-            torch.backends.cuda.enable_flash_sdp(True)
-            torch.backends.cuda.enable_mem_efficient_sdp(False)  # this is super slow so make sure torch won't use it
+        # Conditionally enable flash SDP only if flash_attention is enabled and available
+        if (self.config.init_device == "cuda" or device.type == "cuda") and self.config.flash_attention:
+            try:
+                # Check if flash SDP is available before enabling
+                if hasattr(torch.backends.cuda, "flash_sdp_enabled"):
+                    torch.backends.cuda.enable_flash_sdp(True)
+                    torch.backends.cuda.enable_mem_efficient_sdp(False)  # this is super slow so make sure torch won't use it
+            except Exception as e:
+                logging.warning(f"Failed to enable flash SDP backend ({e}). Continuing without it.")
 
         self.transformer = nn.ModuleDict(
             dict(

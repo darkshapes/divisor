@@ -14,7 +14,7 @@
 # limitations under the License.
 """SDAR model configuration"""
 
-from transformers.configuration_utils import PretrainedConfig
+from transformers import PreTrainedConfig
 from transformers.modeling_rope_utils import rope_config_validation
 from transformers.utils import logging
 
@@ -22,14 +22,17 @@ from transformers.utils import logging
 logger = logging.get_logger(__name__)
 
 
-class SDARConfig(PretrainedConfig):
+class SDARConfig(PreTrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`SDARModel`]. It is used to instantiate a
     SDAR model according to the specified arguments, defining the model architecture. Instantiating a configuration
     with the defaults will yield a similar configuration to that of
     SDAR-1.7B [DiffuOpen/SDAR-1.7B-Chat](https://huggingface.co/DiffuOpen/SDAR-1.7B-Chat/).
+
     Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
     documentation from [`PretrainedConfig`] for more information.
+
+
     Args:
         vocab_size (`int`, *optional*, defaults to 151936):
             Vocabulary size of the SDAR model. Defines the number of different tokens that can be represented by the
@@ -113,12 +116,16 @@ class SDARConfig(PretrainedConfig):
             The number of layers that use SWA (Sliding Window Attention). The bottom layers use SWA while the top use full attention.
         attention_dropout (`float`, *optional*, defaults to 0.0):
             The dropout ratio for the attention probabilities.
+
     ```python
     >>> from transformers import SDARModel, SDARConfig
+
     >>> # Initializing a SDAR style configuration
     >>> configuration = SDARConfig()
+
     >>> # Initializing a model from the SDAR-8B style configuration
     >>> model = SDARModel(configuration)
+
     >>> # Accessing the model configuration
     >>> configuration = model.config
     ```"""

@@ -7,7 +7,7 @@ from os import PathLike
 from typing import Union
 from typing import Optional
 
-from transformers import AutoConfig, PretrainedConfig
+from transformers import AutoConfig, PreTrainedConfig
 
 __all__ = [
     "ActivationType",
@@ -415,7 +415,7 @@ class ActivationCheckpointingStrategy(StrEnum):
     """
 
 
-class LLaDAConfig(PretrainedConfig):
+class LLaDAConfig(PreTrainedConfig):
     model_type = "llada"
     keys_to_ignore_at_inference = ["past_key_values"]  # TODO: confirm
 
