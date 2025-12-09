@@ -41,7 +41,7 @@ def main():
         choices=model_args,
         default=list(model_args)[0],
         help=f"""
-        Model type to use: {model_args}, Default: {list(model_args)[0]}
+        Model type to use: {list(model_args)}, Default: {list(model_args)[0]}
         """,
     )
 
