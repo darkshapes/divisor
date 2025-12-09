@@ -70,9 +70,21 @@ def get_lin_function(x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: flo
     return lambda x: m * x + b
 
 
-def get_schedule(
-    # ... (function unchanged)
-    pass
+def get_schedule(num_steps: int, image_seq_len: int) -> list[float]:
+    """Generate a schedule of timesteps for the denoising process.
+
+    This is a placeholder implementation that returns a list of ``num_steps``
+    linearly spaced values between ``0.0`` and ``1.0``.  Replace with the
+    actual schedule logic required by the Flux model.
+
+    :param num_steps: Number of diffusion steps.
+    :param image_seq_len: Length of the image sequence (unused in placeholder).
+    :returns: List of timestep values.
+    """
+    if num_steps <= 0:
+        return []
+    # Simple linear schedule as a fallback.
+    return [i / (num_steps - 1) for i in range(num_steps)]
 
 
 @torch.inference_mode()
