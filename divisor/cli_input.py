@@ -3,34 +3,12 @@
 
 """CLI helper functions for interactive input handling and state management."""
 
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from nnll.console import nfo
 
 from divisor.controller import ManualTimestepController
 from divisor.state import DenoisingState
-
-
-def update_state_and_cache(
-    controller: ManualTimestepController,
-    setter_func: Callable,
-    value: Any,
-    clear_prediction_cache: Callable[[], None],
-    success_message: str,
-) -> DenoisingState:
-    """Generic state update helper that sets value, clears cache, and refreshes state.\n
-    :param controller: ManualTimestepController instance
-    :param setter_func: Controller setter method to call
-    :param value: Value to set
-    :param clear_prediction_cache: Function to clear prediction cache
-    :param success_message: Message to display on success
-    :returns: Updated DenoisingState
-    """
-    setter_func(value)
-    clear_prediction_cache()
-    state = controller.current_state
-    nfo(success_message)
-    return state
 
 
 def get_float_input(
@@ -143,25 +121,3 @@ def handle_float_setting(
     except ValueError:
         nfo(f"Invalid {value_name}, keeping current value")
     return state
-
-
-def build_model_arguments(configs: dict[str, Any]) -> dict[str, str]:
-    """Build model arguments from configs.\n
-    :param configs: Configuration mapping containing model specs
-    :returns: List of model arguments
-    """
-    from divisor.spec import populate_model_choices
-
-    model_choices = populate_model_choices(configs)
-    model_args: dict = {}
-    filters = ["fp8-", ".vae."]
-    for model in model_choices:
-        if not any(filter in model for filter in filters):
-            if ":" in model:
-                key = model.split(":")[-1]
-            else:
-                key = model.split(".")[-1]
-            if key not in model_args:
-                model_args[key] = model
-
-    return model_args

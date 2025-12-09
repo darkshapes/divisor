@@ -4,6 +4,7 @@
 """
 Main entry point for divisor CLI.
 Routes to different inference modes based on flags.
+Exclusive import location of submodules to avoid circular imports.
 """
 
 import argparse
@@ -11,12 +12,12 @@ import sys
 
 from fire import Fire
 
-from divisor.cli_helpers import build_model_arguments
+from divisor.contents import build_available_models
 from divisor.flux1.spec import configs as flux1_configs
 from divisor.mmada.spec import configs as mmada_configs
 
-flux_args = build_model_arguments(flux1_configs)
-mmada_args = build_model_arguments(mmada_configs)
+flux_args = build_available_models(flux1_configs)
+mmada_args = build_available_models(mmada_configs)
 model_args = flux_args | mmada_args
 
 
@@ -46,11 +47,9 @@ def main():
     )
 
     args, remaining_argv = parser.parse_known_args()
+    model_id = args.model_type
     if args.model_type in mmada_args:
         from divisor.mmada.gradio import main
-
-        model_id = "Gen-Verse/MMaDA-8B-Base"  # Gen-Verse/MMaDA-8B-Base, Gen-Verse/TraDo-4B-Instruct, Gen-Verse/TraDo-8B-Instruct
-
     else:
         model_id = args.model_type
         if args.model_type == "flux2-dev":
@@ -62,8 +61,8 @@ def main():
                 model_id = f"flux1-dev:{args.model_type}"
             else:
                 from divisor.flux1.prompt import main
+    remaining_argv = ["--model-id", model_id] + remaining_argv  # change to     model_args[model_id]
 
-    remaining_argv = ["--model-id", model_id] + remaining_argv
     sys.argv = [sys.argv[0]] + remaining_argv
     Fire(main)
 

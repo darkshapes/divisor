@@ -1,131 +1,75 @@
 # SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
 # <!-- // /*  d a r k s h a p e s */ -->
 
-"""Command handlers for interactive denoising state changes."""
-
-from typing import Any, Callable, List, Optional
+from collections import OrderedDict
+from typing import Any, Callable, Dict, Optional
 
 from nnll.console import nfo
 from nnll.helpers import generate_valid_resolutions
 
-from divisor.cli_helpers import (
+from divisor.cli_input import (
     get_float_input,
     get_int_input,
     handle_float_setting,
     handle_toggle,
+)
+from divisor.controller import (
+    ManualTimestepController,
     update_state_and_cache,
 )
-from divisor.controller import ManualTimestepController, rng, variation_rng
 from divisor.noise import prepare_noise_for_model
 from divisor.state import DenoisingState
-from divisor.variant import change_variation
+from divisor.interaction_context import InteractionContext
 
 
-def process_choice(
+def choice(key: str, description: str) -> Callable[[Callable], Callable]:
+    """Decorator that registers a function as a menu choice.\n
+    :param key: Single-character option the user will type
+    (e.g. ``"g"``).Use ``""`` for the *Enter* (advance) option.
+    :param description: Short human-readable description that will be shown in the prompt and self-document the registry
+
+    @# key → {"fn": callable, "desc": description}
+    def example_function(controller: ManualTimestepController, state: DenoisingState, clear_prediction_cache: Callable[[], None]) -> DenoisingState:
+        `Example function.\n
+        :param controller: ManualTimestepController instance
+        :param state: Current DenoisingState
+        :param clear_prediction_cache: Function to clear prediction cache
+        :returns: Updated DenoisingState
+        `
+        return state
+    """
+
+    def wrapper(fn: Callable) -> Callable:
+        # Normalise to lower‑case – the UI works case‑insensitively.
+        _CHOICE_REGISTRY[key.lower()] = {"fn": fn, "desc": description}
+        return fn
+
+    return wrapper
+
+
+_CHOICE_REGISTRY: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+
+
+@choice("", "Advance (Enter)")
+def _advance(
     controller: ManualTimestepController,
     state: DenoisingState,
-    clear_prediction_cache: Callable[[], None],
-    current_layer_dropout: list[Optional[list[int]]],
-    rng,
-    variation_rng,
-    ae: Optional[Any] = None,
-    t5: Optional[Any] = None,
-    clip: Optional[Any] = None,
-    recompute_text_embeddings: Optional[Callable[[str], None]] = None,
-    neg_pred_enabled: bool = False,
-    neg_txt: List | None = None,
-    neg_txt_ids: List | None = None,
-    neg_vec: List | None = None,
-    true_gs=1,
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
-    """Process user choice input and return updated state.\n
-    :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
-    :param clear_prediction_cache: Function to clear prediction cache
-    :param current_layer_dropout: Mutable list containing current layer dropout
-    :param rng: Random number generator instance
-    :param variation_rng: Variation random number generator instance
-    :param ae: Optional AutoEncoder instance
-    :param t5: Optional T5 embedder instance
-    :param clip: Optional CLIP embedder instance
-    :param recompute_text_embeddings: Optional function to recompute text embeddings
-    :returns: Updated DenoisingState
-    """
-    # Display status
-    step = state.timestep_index
-    nfo(f"Step {step}/{state.total_timesteps - 1} @ noise level {state.current_timestep:.4f}")
-    nfo(f"[G]uidance: {state.guidance:.2f}")
-    nfo(f"[S]eed: {state.seed}")
-    if state.width is not None and state.height is not None:
-        nfo(f"[R]esolution: {state.width}x{state.height}")
-    if state.layer_dropout:
-        nfo(f"[L]ayer dropout: {state.layer_dropout}")
-    else:
-        nfo("[L]ayer dropout: None")
-    nfo(f"[B]uffer mask: {'ON' if state.use_previous_as_mask else 'OFF'}")
-    if ae is not None:
-        nfo(f"[A]utoencoder shift offset: {state.vae_shift_offset:.4f}")
-        nfo(f"[A]utoencoder scale offset: {state.vae_scale_offset:.4f}")
-    if state.variation_seed is not None:
-        nfo(f"[V]Variation seed: {state.variation_seed}, strength: {state.variation_strength:.3f}")
-    else:
-        nfo("[V]Variation: OFF")
-    nfo(f"[D]eterministic: {'ON' if state.deterministic else 'OFF'}")
-    nfo("[E]dit Mode (REPL) ")
-    nfo("[ / ] Rerender")
-    if state.prompt is not None:
-        prompt_display = state.prompt
-        nfo(f"[P]rompt: {prompt_display}")
-
-    choice_handlers = {
-        "": lambda: (
-            nfo("Advancing..."),
-            clear_prediction_cache(),
-            controller.step(),
-            controller.current_state,
-        ),
-        "g": lambda: change_guidance(controller, state, clear_prediction_cache),
-        "s": lambda: change_seed(controller, state, rng, clear_prediction_cache, t5, clip),
-        "r": lambda: change_resolution(controller, state, clear_prediction_cache),
-        "l": lambda: change_layer_dropout(controller, state, current_layer_dropout, clear_prediction_cache),
-        "b": lambda: toggle_buffer_mask(controller, state),
-        "a": lambda: change_vae_offset(controller, state, ae, clear_prediction_cache),
-        "v": lambda: change_variation(controller, state, variation_rng, clear_prediction_cache),
-        "d": lambda: toggle_deterministic(controller, state, clear_prediction_cache),
-        "e": lambda: edit_mode(clear_prediction_cache),
-        "p": lambda: change_prompt(controller, state, clear_prediction_cache, recompute_text_embeddings),
-        "/": lambda: nfo("Rerendering..."),
-    }
-    prompt = "".join(key.upper() for key in choice_handlers if key)
-    choice = input(f": [{prompt}] or advance with Enter: ").lower().strip()
-
-    if choice == "/":
-        return controller.current_state
-    elif choice == "q":
-        import sys
-
-        nfo("Quitting...")
-        sys.exit(0)
-    elif choice in choice_handlers:
-        result = choice_handlers[choice]()
-        state = result if isinstance(result, type(state)) else state
-    else:
-        nfo("Invalid choice, please try again")
-
+    """Advance one step (default action when the user presses Enter)."""
+    nfo("Advancing...")
+    interaction_context.clear_prediction_cache()
+    controller.step()
     return controller.current_state
 
 
+@choice("g", "Guidance")
 def change_guidance(
     controller: ManualTimestepController,
     state: DenoisingState,
-    clear_prediction_cache: Callable[[], None],
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
-    """Handle guidance value change.\n
-    :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
-    :param clear_prediction_cache: Function to clear prediction cache
-    :returns: Updated DenoisingState
-    """
+    """Handle guidance value change.\n"""
     new_guidance = get_float_input(
         f"Enter new guidance value (current: {state.guidance:.2f}): ",
         state.guidance,
@@ -136,24 +80,23 @@ def change_guidance(
             controller,
             controller.set_guidance,
             new_guidance,
-            clear_prediction_cache,
-            f"Guidance set to {new_guidance:.2f}",
+            interaction_context,
+            f"Guidance set to {new_guidance}",
         )
     nfo("Invalid guidance value, keeping current value")
     return state
 
 
+@choice("l", "Layer Dropout")
 def change_layer_dropout(
     controller: ManualTimestepController,
     state: DenoisingState,
-    current_layer_dropout: list[Optional[list[int]]],
-    clear_prediction_cache: Callable[[], None],
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Handle layer dropout change.\n
     :param controller: ManualTimestepController instance
     :param state: Current DenoisingState
-    :param current_layer_dropout: Mutable list containing current layer dropout
-    :param clear_prediction_cache: Function to clear prediction cache
+    :param interaction_context: InteractionContext arguments
     :returns: Updated DenoisingState
     """
     try:
@@ -165,9 +108,7 @@ def change_layer_dropout(
 
         # Update controller first
         controller.set_layer_dropout(layer_indices)
-        # Keep current_layer_dropout in sync (for backward compatibility)
-        current_layer_dropout[0] = layer_indices
-        clear_prediction_cache()
+        interaction_context.clear_prediction_cache()
         state = controller.current_state
         nfo(f"Layer dropout set to: {layer_indices}")
         return state
@@ -176,10 +117,11 @@ def change_layer_dropout(
     return controller.current_state
 
 
+@choice("r", "Resolution")
 def change_resolution(
     controller: ManualTimestepController,
     state: DenoisingState,
-    clear_prediction_cache: Callable[[], None],
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Handle resolution change.\n
     :param controller: ManualTimestepController instance
@@ -213,7 +155,7 @@ def change_resolution(
                     return state
             if new_width is not None and new_height is not None:
                 controller.set_resolution(new_width, new_height)
-                clear_prediction_cache()
+                interaction_context.clear_prediction_cache()
                 state = controller.current_state
                 nfo(f"Resolution set to: {new_width}x{new_height}")
                 return state
@@ -222,13 +164,11 @@ def change_resolution(
     return state
 
 
+@choice("s", "Seed")
 def change_seed(
     controller: ManualTimestepController,
     state: DenoisingState,
-    rng,
-    clear_prediction_cache: Callable[[], None],
-    t5: Optional[Any] = None,
-    clip: Optional[Any] = None,
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Handle seed change.\n
     :param controller: ManualTimestepController instance
@@ -243,22 +183,22 @@ def change_seed(
     if new_seed := get_int_input(
         f"Enter new seed number (current: {current_seed}, or press Enter for random): ",
         current_seed,
-        generate_random=lambda: rng.next_seed(),
+        generate_random=lambda: interaction_context.rng.next_seed(),
     ):
         controller.set_seed(new_seed)
         new_sample = prepare_noise_for_model(
             height=state.height,  # type: ignore
             width=state.width,  # type: ignore
             seed=new_seed,
-            t5=t5,
-            clip=clip,
+            t5=interaction_context.t5,
+            clip=interaction_context.clip,
             prompt=state.prompt,
         )
 
         # Update controller's current_sample
         controller.current_sample = new_sample
         # Get updated state from controller (it will use the updated current_sample)
-        clear_prediction_cache()
+        interaction_context.clear_prediction_cache()
         updated_state = controller.current_state
         nfo(f"Seed set to: {new_seed}")
         return updated_state
@@ -266,6 +206,7 @@ def change_seed(
     return state
 
 
+@choice("b", "Buffer Mask")
 def toggle_buffer_mask(
     controller: ManualTimestepController,
     state: DenoisingState,
@@ -285,11 +226,11 @@ def toggle_buffer_mask(
     )
 
 
+@choice("a", "Autoencoder Offset")
 def change_vae_offset(
     controller: ManualTimestepController,
     state: DenoisingState,
-    ae: Optional[Any],
-    clear_prediction_cache: Callable[[], None],
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Handle VAE shift/scale offset change.\n
     :param controller: ManualTimestepController instance
@@ -298,7 +239,7 @@ def change_vae_offset(
     :param clear_prediction_cache: Function to clear prediction cache
     :returns: Updated DenoisingState
     """
-    if ae is None:
+    if interaction_context.ae is None:
         nfo("AutoEncoder not available, cannot set VAE offset")
         return state
 
@@ -310,7 +251,7 @@ def change_vae_offset(
             f"Enter VAE scale offset (current: {state.vae_scale_offset:.4f}, or press Enter to reset to 0.0): ",
             state.vae_scale_offset,
             controller.set_vae_scale_offset,
-            clear_prediction_cache,
+            interaction_context.clear_prediction_cache,
             default_value=0.0,
             value_name="VAE scale offset",
         )
@@ -321,17 +262,18 @@ def change_vae_offset(
             f"Enter VAE shift offset (current: {state.vae_shift_offset:.4f}, or press Enter to reset to 0.0): ",
             state.vae_shift_offset,
             controller.set_vae_shift_offset,
-            clear_prediction_cache,
+            interaction_context.clear_prediction_cache,
             default_value=0.0,
             value_name="VAE shift offset",
         )
     return state
 
 
+@choice("d", "Deterministic")
 def toggle_deterministic(
     controller: ManualTimestepController,
     state: DenoisingState,
-    clear_prediction_cache: Callable[[], None],
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Handle deterministic mode toggle.\n
     :param controller: ManualTimestepController instance
@@ -341,24 +283,25 @@ def toggle_deterministic(
     """
 
     deterministic = not state.deterministic
-    rng.random_mode(reproducible=deterministic)
-    variation_rng.random_mode(reproducible=deterministic)
+    interaction_context.rng.random_mode(reproducible=deterministic)
+    interaction_context.variation_rng.random_mode(reproducible=deterministic)
 
     return handle_toggle(
         controller,
         state,
         state.deterministic,
         controller.set_deterministic,
-        clear_prediction_cache,
+        interaction_context.clear_prediction_cache,
         enabled_msg="Deterministic mode: ENABLED",
         disabled_msg="Deterministic mode: DISABLED",
     )
 
 
+@choice("p", "Prompt")
 def change_prompt(
     controller: ManualTimestepController,
     state: DenoisingState,
-    clear_prediction_cache: Callable[[], None],
+    interaction_context: InteractionContext,
     recompute_text_embeddings: Optional[Callable[[str], None]],
 ) -> DenoisingState:
     """Handle prompt change.\n
@@ -376,7 +319,7 @@ def change_prompt(
         if recompute_text_embeddings is not None:
             recompute_text_embeddings(new_prompt)
         else:
-            clear_prediction_cache()
+            interaction_context.clear_prediction_cache()
         state = controller.current_state
         nfo(f"Prompt set to: {new_prompt}")
     else:
@@ -385,12 +328,105 @@ def change_prompt(
     return state
 
 
+@choice("e", "Edit Mode")
 def edit_mode(
-    clear_prediction_cache: Callable[[], None],
+    interaction_context: InteractionContext,
 ) -> None:
     """Handle edit mode (debugger breakpoint).\n
     :param clear_prediction_cache: Function to clear prediction cache
     """
     nfo("Entering edit mode (use c/cont to exit)...")
     breakpoint()
-    clear_prediction_cache()
+    interaction_context.clear_prediction_cache()
+
+
+@choice("j", "Jump to Step")
+def jump_to_step(
+    controller: ManualTimestepController,
+    state: DenoisingState,
+    interaction_context: InteractionContext,
+) -> DenoisingState:
+    """Run the controller forward until a user‑specified step index.\n
+    The user enters the *target* step number (0‑based, inclusive).  The
+    function repeatedly calls ``controller.step()`` until the controller
+    reaches that index or the process finishes.
+
+    :param controller: ManualTimestepController instance
+    :param state: Current DenoisingState (unused – we return the
+                  controller’s final state)
+    :param clear_prediction_cache: Called once before the jump so any
+                                   cached predictions are invalidated.
+    :returns: The DenoisingState after the jump (or the current state if
+              the target is out of range).
+    """
+    # Ask the user for the target step
+    target_str = input(f"Jump to step (0‑{controller.current_index} …{len(controller.timesteps) - 1}): ").strip()
+    if not target_str.isdigit():
+        nfo("Invalid step number – aborting jump.")
+        return controller.current_state
+
+    target = int(target_str)
+
+    if target <= controller.current_index:
+        nfo("Target step is before or equal to the current step – nothing to do.")
+        return controller.current_state
+    if target >= len(controller.timesteps):
+        nfo("Target step exceeds the schedule – jumping to the end.")
+        target = len(controller.timesteps) - 1
+
+    interaction_context.clear_prediction_cache()
+    while controller.current_index < target and not controller.is_complete:
+        controller.step()
+
+    nfo(f"Jumped to step {controller.current_index}/{len(controller.timesteps) - 1}")
+    return controller.current_state
+
+
+@choice("v", "Variation")
+def change_variation(
+    controller: ManualTimestepController,
+    state: DenoisingState,
+    interaction_context: InteractionContext,
+) -> DenoisingState:
+    """Handle variation seed/strength change.\n
+    :param controller: ManualTimestepController instance
+    :param state: Current DenoisingState
+    :param variation_rng: Variation random number generator instance
+    :param clear_prediction_cache: Function to clear prediction cache
+    :returns: Updated DenoisingState
+    """
+    try:
+        var_input = input(
+            f"Variation (current integer seed: {state.variation_seed}, float strength: {state.variation_strength:.3f}. type a number, leave empty for random, or use 0.0 to disable): "
+        ).strip()
+
+        if not var_input or "." not in var_input:
+            # Try to parse as integer (seed)
+            try:
+                if var_input != "":
+                    variation_seed = interaction_context.variation_rng.next_seed(int(var_input))
+                else:
+                    variation_seed = interaction_context.variation_rng.next_seed()
+                controller.set_variation_seed(variation_seed)
+                interaction_context.clear_prediction_cache()
+                state = controller.current_state
+                nfo(f"Variation seed set to: {state.variation_seed}")
+            except ValueError:
+                nfo("Invalid integer seed value, keeping current value")
+        else:
+            # Try to parse as float (strength)
+            try:
+                strength_value = float(var_input)
+                if strength_value < 0.0 or strength_value > 1.0:
+                    state = controller.current_state
+                    nfo("Variation strength must be between 0.0 and 1.0, keeping current value")
+                else:
+                    controller.set_variation_strength(strength_value)
+                    interaction_context.clear_prediction_cache()
+                    state = controller.current_state
+                    nfo(f"Variation strength set to: {strength_value:.3f}")
+            except ValueError:
+                nfo("Invalid float strength value, keeping current value")
+    except (ValueError, KeyboardInterrupt):
+        nfo("Invalid variation value, keeping current value")
+    return state

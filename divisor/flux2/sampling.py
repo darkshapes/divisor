@@ -16,7 +16,7 @@ import torch
 from torch import Tensor
 import torchvision
 
-from divisor.commands import process_choice
+from divisor.cli_menu import route_choices
 from divisor.controller import ManualTimestepController, rng, variation_rng
 from divisor.denoise_step import (
     create_clear_prediction_cache,
@@ -32,6 +32,7 @@ from divisor.state import (
     GetImagePredictionSettings,
     GetPredictionSettings,
 )
+from divisor.interaction_context import InteractionContext
 
 
 def compress_time(t_ids: Tensor) -> Tensor:
@@ -454,17 +455,17 @@ def denoise_interactive(
                 # If embedder not available, update current_prompt to avoid repeated checks
                 current_prompt[0] = state.prompt
 
-        state = process_choice(
+        interaction_context = InteractionContext(
+            clear_prediction_cache=clear_prediction_cache,
+            rng=rng,
+            variation_rng=variation_rng,
+            ae=ae,
+            recompute_text_embeddings=recompute_text_embeddings,
+        )
+        state = route_choices(
             controller,
             state,
-            clear_prediction_cache,
-            current_layer_dropout,
-            rng,
-            variation_rng,
-            ae,
-            None,  # t5 not used for Flux2
-            None,  # clip not used for Flux2
-            recompute_text_embeddings,
+            interaction_context,
         )
 
         # Generate preview

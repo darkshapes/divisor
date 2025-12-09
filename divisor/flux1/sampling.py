@@ -14,7 +14,7 @@ from nnll.save_generation import name_save_file_as, save_with_hyperchain
 import torch
 from torch import Tensor
 
-from divisor.commands import process_choice
+from divisor.cli_menu import route_choices
 from divisor.controller import ManualTimestepController, rng, variation_rng
 from divisor.denoise_step import (
     create_clear_prediction_cache,
@@ -29,6 +29,7 @@ from divisor.state import (
     GetImagePredictionSettings,
     GetPredictionSettings,
 )
+from divisor.interaction_context import InteractionContext
 
 
 def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:
@@ -249,17 +250,19 @@ def denoise(
                 # If embedders not available, update current_prompt to avoid repeated checks
                 current_prompt[0] = state.prompt
 
-        state = process_choice(
+        interaction_context = InteractionContext(
+            clear_prediction_cache=clear_prediction_cache,
+            rng=rng,
+            variation_rng=variation_rng,
+            ae=ae,
+            t5=t5,
+            clip=clip,
+            recompute_text_embeddings=recompute_text_embeddings,
+        )
+        state = route_choices(
             controller,
             state,
-            clear_prediction_cache,
-            current_layer_dropout,
-            rng,
-            variation_rng,
-            ae,
-            t5,
-            clip,
-            recompute_text_embeddings,
+            interaction_context,
         )
 
         # Generate preview
