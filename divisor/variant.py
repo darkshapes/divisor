@@ -11,7 +11,7 @@ import torch
 from torch import Tensor
 
 from divisor.controller import ManualTimestepController, variation_rng
-from divisor.spec import DenoisingState
+from divisor.state import DenoisingState
 
 
 def mix_noise(from_noise: Tensor, to_noise: Tensor, strength: float, variation_method: str = "linear") -> Tensor:

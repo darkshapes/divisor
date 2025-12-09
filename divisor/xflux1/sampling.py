@@ -19,7 +19,7 @@ from divisor.denoise_step import (
     create_recompute_text_embeddings,
 )
 from divisor.flux1.sampling import prepare, unpack
-from divisor.spec import (
+from divisor.state import (
     AdditionalPredictionSettings,
     DenoiseSettings,
     GetImagePredictionSettings,

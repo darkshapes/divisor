@@ -15,7 +15,8 @@ from divisor.flux1.prompt import parse_prompt
 from divisor.flux1.sampling import get_schedule, prepare
 from divisor.flux1.spec import InitialParams, configs, get_model_spec
 from divisor.noise import get_noise
-from divisor.spec import DenoisingState, find_mir_spec
+from divisor.state import DenoisingState
+from divisor.spec import find_mir_spec
 from divisor.xflux1.sampling import denoise
 
 
@@ -169,7 +170,7 @@ def main(
                 is_compiled = True
 
         # denoise initial noise
-        from divisor.spec import DenoiseSettings
+        from divisor.state import DenoiseSettings
 
         settings = DenoiseSettings(
             img=inp["img"],

@@ -8,7 +8,7 @@ from typing import Any, Callable, Optional
 from nnll.console import nfo
 
 from divisor.controller import ManualTimestepController
-from divisor.spec import DenoisingState
+from divisor.state import DenoisingState
 
 
 def update_state_and_cache(
@@ -143,3 +143,25 @@ def handle_float_setting(
     except ValueError:
         nfo(f"Invalid {value_name}, keeping current value")
     return state
+
+
+def build_model_arguments(configs: dict[str, Any]) -> dict[str, str]:
+    """Build model arguments from configs.\n
+    :param configs: Configuration mapping containing model specs
+    :returns: List of model arguments
+    """
+    from divisor.spec import populate_model_choices
+
+    model_choices = populate_model_choices(configs)
+    model_args: dict = {}
+    filters = ["fp8-", ".vae."]
+    for model in model_choices:
+        if not any(filter in model for filter in filters):
+            if ":" in model:
+                key = model.split(":")[-1]
+            else:
+                key = model.split(".")[-1]
+            if key not in model_args:
+                model_args[key] = model
+
+    return model_args

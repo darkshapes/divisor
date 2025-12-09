@@ -17,7 +17,7 @@ from divisor.commands import (
     change_prompt,
 )
 from divisor.controller import ManualTimestepController
-from divisor.spec import DenoisingState, DenoiseSettings, TimestepState
+from divisor.state import DenoisingState, DenoiseSettings, TimestepState
 from divisor.flux1.sampling import denoise
 from divisor.flux1.autoencoder import AutoEncoder
 
@@ -283,7 +283,8 @@ class TestCommandsSamplingIntegration:
         txt_ids = torch.zeros(1, 77, 3)
         vec = torch.randn(1, 77, 768)
 
-        from divisor.spec import TimestepState
+        from divisor.state import TimestepState
+
         timestep = TimestepState(
             current_timestep=0.0,
             previous_timestep=None,

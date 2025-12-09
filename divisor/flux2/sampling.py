@@ -26,7 +26,7 @@ from divisor.denoise_step import (
 )
 from divisor.flux2 import precision
 from divisor.flux2.model import Flux2
-from divisor.spec import (
+from divisor.state import (
     DenoiseSettings,
     DenoiseSettingsFlux2,
     GetImagePredictionSettings,

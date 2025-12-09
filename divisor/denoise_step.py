@@ -10,7 +10,7 @@ from nnll.init_gpu import device
 import torch
 from torch import Tensor
 
-from divisor.spec import GetImagePredictionSettings, GetPredictionSettings
+from divisor.state import GetImagePredictionSettings, GetPredictionSettings
 from divisor.variant import apply_variation_noise
 
 # Try to import model types for type checking

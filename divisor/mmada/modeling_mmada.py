@@ -3,19 +3,21 @@
 
 from __future__ import annotations
 
-from PIL import Image
-from nnll.init_gpu import device
 import numpy as np
 import torch
 import torch.nn.functional as F
-from transformers import PreTrainedConfig
-from transformers.models.auto import AutoConfig, AutoModel, AutoModelForCausalLM
+from transformers.models.auto import AutoModel, AutoConfig, AutoModelForCausalLM
+from PIL import Image
+
+from transformers import PretrainedConfig
+from nnll.init_gpu import device
+
+if device.type == "cuda":
+    import torch.backends.cuda
 
 from divisor.mmada.modeling_llada import LLaDAModelLM
 from divisor.mmada.sampling import cosine_schedule, mask_by_random_topk
 
-if device.type == "cuda":
-    import torch.backends.cuda
 if device.type == "mps":
     torch_dtype = torch.float32
 else:
@@ -58,7 +60,7 @@ def get_num_transfer_tokens(mask_index, steps):
     return num_transfer_tokens
 
 
-class MMadaConfig(PreTrainedConfig):
+class MMadaConfig(PretrainedConfig):
     model_type = "mmada"
 
     def __init__(self, **kwargs):
@@ -83,25 +85,6 @@ class MMadaConfig(PreTrainedConfig):
 class MMadaModelLM(LLaDAModelLM):
     config_class = MMadaConfig
     base_model_prefix = "model"
-
-    @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
-        """Override from_pretrained to inject repo_id into config."""
-        repo_id = pretrained_model_name_or_path
-
-        # Load config first and inject repo_id BEFORE calling super().from_pretrained
-        # This ensures repo_id is available during __init__
-        config = cls.config_class.from_pretrained(pretrained_model_name_or_path, **kwargs.get("config_kwargs", {}))
-        setattr(config, "repo_id", repo_id)
-
-        # Update kwargs to pass the modified config
-        kwargs = kwargs.copy()
-        kwargs["config"] = config
-
-        # Now call parent's from_pretrained with the modified config
-        model = super().from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
-
-        return model
 
     def __init__(self, config: MMadaConfig, *args, **kwargs):
         print(f"Initializing MMadaModelLM with config: {config}")
@@ -420,7 +403,7 @@ class MMadaModelLM(LLaDAModelLM):
             attention_bias = None
         try:
             device = idx.device
-        except Exception:
+        except:
             device = input_embeddings.device
 
         result = []
@@ -526,7 +509,7 @@ class MMadaModelLM(LLaDAModelLM):
             attention_bias = None
         try:
             device = idx.device
-        except Exception:
+        except:
             device = input_embeddings.device
 
         result = []
