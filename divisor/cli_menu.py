@@ -10,7 +10,7 @@ from nnll.console import nfo
 
 from divisor.controller import ManualTimestepController
 from divisor.keybinds import _CHOICE_REGISTRY
-from divisor.state import DenoisingState, RouteProcesses
+from divisor.state import DenoisingState, InteractionContext
 
 
 def _format_menu_line(
@@ -47,7 +47,7 @@ def _format_menu_line(
 def route_choices(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: RouteProcesses,
+    route_processes: InteractionContext,
 ) -> DenoisingState:
     """Process user choice input and return updated state.\n
     :param controller: ManualTimestepController instance

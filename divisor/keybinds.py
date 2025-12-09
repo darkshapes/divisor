@@ -18,7 +18,7 @@ from divisor.controller import (
     update_state_and_cache,
 )
 from divisor.noise import prepare_noise_for_model
-from divisor.state import DenoisingState, RouteProcesses
+from divisor.state import DenoisingState, InteractionContext
 
 
 def choice(key: str, description: str) -> Callable[[Callable], Callable]:
@@ -53,7 +53,7 @@ _CHOICE_REGISTRY: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 def _advance(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: RouteProcesses,
+    route_processes: InteractionContext,
 ) -> DenoisingState:
     """Advance one step (default action when the user presses Enter)."""
     nfo("Advancing...")
@@ -66,7 +66,7 @@ def _advance(
 def change_guidance(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: RouteProcesses,
+    route_processes: InteractionContext,
 ) -> DenoisingState:
     """Handle guidance value change.\n"""
     new_guidance = get_float_input(
@@ -90,7 +90,7 @@ def change_guidance(
 def change_layer_dropout(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: RouteProcesses,
+    route_processes: InteractionContext,
 ) -> DenoisingState:
     """Handle layer dropout change.\n
     :param controller: ManualTimestepController instance
@@ -120,7 +120,7 @@ def change_layer_dropout(
 def change_resolution(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: RouteProcesses,
+    route_processes: InteractionContext,
 ) -> DenoisingState:
     """Handle resolution change.\n
     :param controller: ManualTimestepController instance
@@ -168,7 +168,7 @@ def change_seed(
     controller: ManualTimestepController,
     state: DenoisingState,
     rng,
-    route_processes: RouteProcesses,
+    route_processes: InteractionContext,
     t5: Optional[Any] = None,
     clip: Optional[Any] = None,
 ) -> DenoisingState:
@@ -233,7 +233,7 @@ def change_vae_offset(
     controller: ManualTimestepController,
     state: DenoisingState,
     ae: Optional[Any],
-    route_processes: RouteProcesses,
+    route_processes: InteractionContext,
 ) -> DenoisingState:
     """Handle VAE shift/scale offset change.\n
     :param controller: ManualTimestepController instance
@@ -276,7 +276,7 @@ def change_vae_offset(
 def toggle_deterministic(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: RouteProcesses,
+    route_processes: InteractionContext,
 ) -> DenoisingState:
     """Handle deterministic mode toggle.\n
     :param controller: ManualTimestepController instance
@@ -304,7 +304,7 @@ def toggle_deterministic(
 def change_prompt(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: RouteProcesses,
+    route_processes: InteractionContext,
     recompute_text_embeddings: Optional[Callable[[str], None]],
 ) -> DenoisingState:
     """Handle prompt change.\n
@@ -333,7 +333,7 @@ def change_prompt(
 
 @choice("e", "Edit Mode")
 def edit_mode(
-    route_processes: RouteProcesses,
+    route_processes: InteractionContext,
 ) -> None:
     """Handle edit mode (debugger breakpoint).\n
     :param clear_prediction_cache: Function to clear prediction cache
@@ -347,7 +347,7 @@ def edit_mode(
 def jump_to_step(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: RouteProcesses,
+    route_processes: InteractionContext,
 ) -> DenoisingState:
     """Run the controller forward until a user‑specified step index.\n
     The user enters the *target* step number (0‑based, inclusive).  The
@@ -389,7 +389,7 @@ def jump_to_step(
 def change_variation(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: RouteProcesses,
+    route_processes: InteractionContext,
 ) -> DenoisingState:
     """Handle variation seed/strength change.\n
     :param controller: ManualTimestepController instance
