@@ -11,10 +11,13 @@ import sys
 
 from fire import Fire
 
-from divisor.flux1.prompt import main as flux1_main
-from divisor.flux2.prompt import main as flux2_main
-from divisor.mmada.gradio import main as mmada_main
-from divisor.xflux1.prompt import main as xflux1_main
+from divisor.cli_helpers import build_model_arguments
+from divisor.flux1.spec import configs as flux1_configs
+from divisor.mmada.spec import configs as mmada_configs
+
+flux_args = build_model_arguments(flux1_configs)
+mmada_args = build_model_arguments(mmada_configs)
+model_args = flux_args | mmada_args
 
 
 def main():
@@ -35,31 +38,31 @@ def main():
     parser.add_argument(
         "-m",
         "--model-type",
-        choices=["dev", "schnell", "dev2", "mini", "llm"],
-        default="dev",
-        help="""
-        Model type to use: dev2, dev, schnell, mini, llm, Default: dev
-        Flux.1 Dev, Flux.1 Schnell, Flux.1-mini,Flux.2-Dev, MMaDA-8B-Base/MixCoT/TraDo-4B-Instruct/TraDo-8B-Instruct, Default: dev
+        choices=model_args,
+        default=list(model_args)[0],
+        help=f"""
+        Model type to use: {list(model_args)}, Default: {list(model_args)[0]}
         """,
     )
 
     args, remaining_argv = parser.parse_known_args()
-    if args.model_type == "llm":
-        main = mmada_main
+    if args.model_type in mmada_args:
+        from divisor.mmada.gradio import main
+
         model_id = "Gen-Verse/MMaDA-8B-Base"  # Gen-Verse/MMaDA-8B-Base, Gen-Verse/TraDo-4B-Instruct, Gen-Verse/TraDo-8B-Instruct
 
-    elif args.model_type == "dev2":
-        main = flux2_main
-
-        model_id = f"flux2-{args.model_type.strip('2')}"
-
     else:
-        if args.model_type == "mini":
-            main = xflux1_main
-            model_id = f"flux1-dev:{args.model_type}"
+        model_id = args.model_type
+        if args.model_type == "flux2-dev":
+            from divisor.flux2.prompt import main
         else:
-            main = flux1_main
-            model_id = f"flux1-{args.model_type}"
+            if args.model_type == "mini":
+                from divisor.xflux1.prompt import main
+
+                model_id = f"flux1-dev:{args.model_type}"
+            else:
+                from divisor.flux1.prompt import main
+
     remaining_argv = ["--model-id", model_id] + remaining_argv
     sys.argv = [sys.argv[0]] + remaining_argv
     Fire(main)

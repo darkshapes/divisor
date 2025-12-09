@@ -27,7 +27,7 @@ from divisor.flux2.util import (
     load_mistral_small_embedder,
 )
 from divisor.noise import get_noise
-from divisor.spec import DenoiseSettings, DenoisingState
+from divisor.state import DenoiseSettings, DenoisingState
 
 
 def main(

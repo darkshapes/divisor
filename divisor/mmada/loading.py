@@ -45,7 +45,7 @@ def _make_load_model_with_cache():
 
         # Load the model using from_pretrained
         # The from_pretrained method will automatically store repo_id in the config
-        model = MMadaModelLM.from_pretrained(spec.repo_id, trust_remote_code=True, torch_dtype=torch_dtype)  # type: ignore
+        model = MMadaModelLM.from_pretrained(spec.repo_id, torch_dtype=torch_dtype)  # type: ignore
 
         # Move to device and set to eval mode
         model = model.to(device).eval()

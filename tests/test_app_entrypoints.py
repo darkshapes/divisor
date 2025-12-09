@@ -26,21 +26,21 @@ def mock_fire():
 @pytest.fixture
 def mock_flux1_main():
     """Fixture to mock flux1.prompt.main."""
-    with patch("divisor.app.flux1_main") as mock:
+    with patch("divisor.app.main") as mock:
         yield mock
 
 
 @pytest.fixture
 def mock_flux2_main():
     """Fixture to mock flux2.prompt.main."""
-    with patch("divisor.app.flux2_main") as mock:
+    with patch("divisor.app.main") as mock:
         yield mock
 
 
 @pytest.fixture
 def mock_xflux1_main():
     """Fixture to mock xflux1.prompt.main."""
-    with patch("divisor.app.xflux1_main") as mock:
+    with patch("divisor.app.main") as mock:
         yield mock
 
 
@@ -49,7 +49,7 @@ class TestAppEntryPoints:
 
     def test_routes_to_flux1_for_dev(self, mock_fire, mock_flux1_main, preserve_argv):
         """Test that --model-type dev routes to flux1_main."""
-        sys.argv = ["dvzr", "--model-type", "dev"]
+        sys.argv = ["dvzr", "--model-type", "flux1-dev"]
         main()
         # Verify Fire was called with flux1_main function (not the result of calling it)
         # Note: app.py has Fire(main()) which calls main(), but we test the actual behavior
@@ -60,7 +60,7 @@ class TestAppEntryPoints:
 
     def test_routes_to_flux1_for_schnell(self, mock_fire, mock_flux1_main, preserve_argv):
         """Test that --model-type schnell routes to flux1_main."""
-        sys.argv = ["dvzr", "--model-type", "schnell"]
+        sys.argv = ["dvzr", "--model-type", "flux1-schnell"]
         main()
         # Verify Fire was called
         mock_fire.assert_called_once()
@@ -70,7 +70,7 @@ class TestAppEntryPoints:
 
     def test_routes_to_flux2_for_dev2(self, mock_fire, mock_flux2_main, preserve_argv):
         """Test that --model-type dev2 routes to flux2_main."""
-        sys.argv = ["dvzr", "--model-type", "dev2"]
+        sys.argv = ["dvzr", "--model-type", "flux2-dev"]
         main()
         # Verify Fire was called
         mock_fire.assert_called_once()
@@ -100,7 +100,7 @@ class TestAppEntryPoints:
 
     def test_preserves_additional_arguments(self, mock_fire, mock_flux1_main, preserve_argv):
         """Test that additional arguments are preserved after model-id insertion."""
-        sys.argv = ["dvzr", "--model-type", "dev", "--width", "1024", "--height", "768"]
+        sys.argv = ["dvzr", "--model-type", "flux1-dev", "--width", "1024", "--height", "768"]
         main()
         # Verify Fire was called
         mock_fire.assert_called_once()
@@ -112,7 +112,7 @@ class TestAppEntryPoints:
 
     def test_preserves_quantization_flag(self, mock_fire, mock_flux1_main, preserve_argv):
         """Test that --quantization flag is preserved."""
-        sys.argv = ["dvzr", "--model-type", "dev", "--quantization"]
+        sys.argv = ["dvzr", "--model-type", "flux1-dev", "--quantization"]
         main()
         # Verify Fire was called
         mock_fire.assert_called_once()
