@@ -26,21 +26,21 @@ def mock_fire():
 @pytest.fixture
 def mock_flux1_main():
     """Fixture to mock flux1.prompt.main."""
-    with patch("divisor.app.flux1_main") as mock:
+    with patch("divisor.app.main") as mock:
         yield mock
 
 
 @pytest.fixture
 def mock_flux2_main():
     """Fixture to mock flux2.prompt.main."""
-    with patch("divisor.app.flux2_main") as mock:
+    with patch("divisor.app.main") as mock:
         yield mock
 
 
 @pytest.fixture
 def mock_xflux1_main():
     """Fixture to mock xflux1.prompt.main."""
-    with patch("divisor.app.xflux1_main") as mock:
+    with patch("divisor.app.main") as mock:
         yield mock
 
 
