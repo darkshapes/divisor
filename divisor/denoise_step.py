@@ -13,14 +13,6 @@ from torch import Tensor
 from divisor.state import GetImagePredictionSettings, GetPredictionSettings
 from divisor.variant import apply_variation_noise
 
-# Try to import model types for type checking
-try:
-    from divisor.flux1.model import Flux
-    from divisor.flux2.model import Flux2
-except ImportError:
-    Flux = Any
-    Flux2 = Any
-
 
 def create_clear_prediction_cache(
     cached_prediction: list[Optional[Tensor]],

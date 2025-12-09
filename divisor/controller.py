@@ -10,12 +10,13 @@ from dataclasses import asdict
 import json
 from typing import Any, Callable, Optional
 
+from nnll.console import nfo
 from nnll.hyperchain import HyperChain
 from nnll.init_gpu import device
 from nnll.random import RNGState
 import torch
 
-from divisor.state import DenoisingState, TimestepState
+from divisor.state import DenoisingState, TimestepState, RouteProcesses
 
 rng = RNGState(device=device.type)
 variation_rng = RNGState(device=device.type)
@@ -77,7 +78,7 @@ def reconstruct_state_from_dict(state_dict: dict, current_sample: torch.Tensor) 
     :param current_sample: The current sample tensor to include in the state
     :returns: Reconstructed DenoisingState object
     """
-    timestep = TimestepState(
+    timestep_state = TimestepState(
         current_timestep=state_dict["current_timestep"],
         previous_timestep=state_dict.get("previous_timestep"),
         current_sample=current_sample,
@@ -85,7 +86,7 @@ def reconstruct_state_from_dict(state_dict: dict, current_sample: torch.Tensor) 
         total_timesteps=state_dict["total_timesteps"],
     )
     return DenoisingState(
-        timestep=timestep,
+        timestep_state=timestep_state,
         guidance=state_dict["guidance"],
         layer_dropout=state_dict.get("layer_dropout"),
         width=state_dict.get("width"),
@@ -167,7 +168,7 @@ class ManualTimestepController:
         t_curr = self.timesteps[self.current_index]
         t_prev = self.timesteps[self.current_index + 1] if self.current_index + 1 < len(self.timesteps) else None
 
-        timestep = TimestepState(
+        timestep_state = TimestepState(
             current_timestep=t_curr,
             previous_timestep=t_prev,
             current_sample=self.current_sample,
@@ -176,7 +177,7 @@ class ManualTimestepController:
         )
 
         return DenoisingState(
-            timestep=timestep,
+            timestep_state=timestep_state,
             guidance=self.guidance,
             layer_dropout=self.layer_dropout,
             width=self.width,
@@ -452,3 +453,25 @@ class ManualTimestepController:
             serialized = serialize_state_for_chain(state, current_seed)
 
         return self.hyperchain.add_block(serialized)
+
+
+def update_state_and_cache(
+    controller: ManualTimestepController,
+    setter_func: Callable,
+    value: Any,
+    route_processes: RouteProcesses,
+    success_message: str,
+) -> DenoisingState:
+    """Generic state update helper that sets value, clears cache, and refreshes state.\n
+    :param controller: ManualTimestepController instance
+    :param setter_func: Controller setter method to call
+    :param value: Value to set
+    :param clear_prediction_cache: Function to clear prediction cache
+    :param success_message: Message to display on success
+    :returns: Updated DenoisingState
+    """
+    setter_func(value)
+    route_processes.clear_prediction_cache()
+    state = controller.current_state
+    nfo(success_message)
+    return state

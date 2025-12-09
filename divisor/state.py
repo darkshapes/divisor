@@ -4,10 +4,12 @@
 """Divisor class definitions and configuration dataclasses."""
 
 from dataclasses import dataclass, field, replace
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
+from nnll.random import RNGState
 import torch
 from torch import Tensor
+from torch import nn
 
 
 @dataclass
@@ -57,7 +59,7 @@ class DenoisingState:
     """
 
     # Runtime state (changes every step)
-    timestep: TimestepState
+    timestep_state: TimestepState
 
     # Configuration (set at start, may change via controller)
     guidance: float
@@ -79,27 +81,27 @@ class DenoisingState:
     @property
     def current_timestep(self) -> float:
         """Current timestep value."""
-        return self.timestep.current_timestep
+        return self.timestep_state.current_timestep
 
     @property
     def current_sample(self) -> torch.Tensor:
         """Current sample tensor."""
-        return self.timestep.current_sample
+        return self.timestep_state.current_sample
 
     @property
     def timestep_index(self) -> int:
         """Current timestep index."""
-        return self.timestep.timestep_index
+        return self.timestep_state.timestep_index
 
     @property
     def total_timesteps(self) -> int:
         """Total number of timesteps."""
-        return self.timestep.total_timesteps
+        return self.timestep_state.total_timesteps
 
     @property
     def previous_timestep(self) -> float | None:
         """Previous timestep value."""
-        return self.timestep.previous_timestep
+        return self.timestep_state.previous_timestep
 
     @classmethod
     def from_cli_args(
@@ -140,7 +142,7 @@ class DenoisingState:
         )
 
         return cls(
-            timestep=timestep_state,
+            timestep_state=timestep_state,
             guidance=guidance,
             width=width,
             height=height,
@@ -171,14 +173,14 @@ class DenoisingState:
         :param previous_timestep: Previous timestep value
         :returns: New DenoisingState with updated runtime fields
         """
-        new_timestep = self.timestep.with_runtime_state(
+        new_timestep = self.timestep_state.with_runtime_state(
             current_timestep=current_timestep,
             current_sample=current_sample,
             timestep_index=timestep_index,
             total_timesteps=total_timesteps,
             previous_timestep=previous_timestep,
         )
-        return replace(self, timestep=new_timestep)
+        return replace(self, timestep_state=new_timestep)
 
 
 @dataclass
@@ -271,3 +273,16 @@ class DenoiseSettingsFlux2:
     guidance: float = 4.0
     img_cond_seq: Tensor | None = None
     img_cond_seq_ids: Tensor | None = None
+
+
+@dataclass
+class RouteProcesses:
+    """Functions to call for each choice."""
+
+    clear_prediction_cache: Callable[[], None]
+    rng: RNGState | None = None
+    variation_rng: RNGState | None = None
+    ae: Optional[nn.Module] | None = None
+    t5: Optional[nn.Module] | None = None
+    clip: Optional[nn.Module] | None = None
+    recompute_text_embeddings: Optional[Callable[[str], None]] | None = None

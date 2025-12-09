@@ -1,25 +1,26 @@
 """Tests for command routines integration with sampling pipeline."""
 
+from unittest.mock import MagicMock, Mock, PropertyMock, call, patch
+
+from einops import rearrange
 import pytest
 import torch
-from einops import rearrange
-from unittest.mock import Mock, patch, MagicMock, call, PropertyMock
 
-from divisor.commands import (
-    process_choice,
+from divisor.cli_menu import route_choices
+from divisor.controller import ManualTimestepController
+from divisor.flux1.autoencoder import AutoEncoder
+from divisor.flux1.sampling import denoise
+from divisor.keybinds import (
     change_guidance,
     change_layer_dropout,
+    change_prompt,
     change_resolution,
     change_seed,
-    toggle_buffer_mask,
     change_vae_offset,
+    toggle_buffer_mask,
     toggle_deterministic,
-    change_prompt,
 )
-from divisor.controller import ManualTimestepController
-from divisor.state import DenoisingState, DenoiseSettings, TimestepState
-from divisor.flux1.sampling import denoise
-from divisor.flux1.autoencoder import AutoEncoder
+from divisor.state import DenoiseSettings, DenoisingState, RouteProcesses, TimestepState
 
 
 class TestCommandsSamplingIntegration:
@@ -30,7 +31,7 @@ class TestCommandsSamplingIntegration:
         """Create a mock controller for testing."""
         controller = Mock(spec=ManualTimestepController)
         controller.is_complete = False
-        timestep = TimestepState(
+        timestep_state = TimestepState(
             current_timestep=0.5,
             previous_timestep=0.6,
             current_sample=torch.randn(1, 16, 8, 8),
@@ -38,7 +39,7 @@ class TestCommandsSamplingIntegration:
             total_timesteps=10,
         )
         controller.current_state = DenoisingState(
-            timestep=timestep,
+            timestep_state=timestep_state,
             guidance=4.0,
             layer_dropout=None,
             width=512,
@@ -82,7 +83,7 @@ class TestCommandsSamplingIntegration:
         """Test that change_guidance correctly updates the controller."""
         initial_state = mock_controller.current_state
 
-        with patch("divisor.commands.get_float_input", return_value=7.5):
+        with patch("divisor.keybinds.get_float_input", return_value=7.5):
             result = change_guidance(mock_controller, initial_state, mock_clear_cache)
 
             # Verify set_guidance was called with correct value
@@ -111,7 +112,7 @@ class TestCommandsSamplingIntegration:
         """Test that change_resolution correctly updates the controller."""
         initial_state = mock_controller.current_state
 
-        with patch("divisor.commands.generate_valid_resolutions", return_value=[(512, 512), (768, 512)]), patch("builtins.input", return_value="0"):
+        with patch("divisor.keybinds.generate_valid_resolutions", return_value=[(512, 512), (768, 512)]), patch("builtins.input", return_value="0"):
             result = change_resolution(mock_controller, initial_state, mock_clear_cache)
 
             # Verify set_resolution was called with correct values
@@ -125,7 +126,7 @@ class TestCommandsSamplingIntegration:
         """Test that change_seed correctly updates the controller."""
         initial_state = mock_controller.current_state
 
-        with patch("divisor.commands.get_int_input", return_value=999):
+        with patch("divisor.keybinds.get_int_input", return_value=999):
             result = change_seed(mock_controller, initial_state, mock_rng, mock_clear_cache)
 
             # Verify set_seed was called with correct value
@@ -153,7 +154,7 @@ class TestCommandsSamplingIntegration:
         mock_ae = Mock(spec=AutoEncoder)
 
         with patch("builtins.input", side_effect=["s", "0.1"]):
-            with patch("divisor.commands.handle_float_setting") as mock_handle:
+            with patch("divisor.keybinds.handle_float_setting") as mock_handle:
                 mock_handle.return_value = mock_controller.current_state
                 result = change_vae_offset(mock_controller, initial_state, mock_ae, mock_clear_cache)
 
@@ -172,7 +173,7 @@ class TestCommandsSamplingIntegration:
         mock_ae = Mock(spec=AutoEncoder)
 
         with patch("builtins.input", side_effect=["c", "0.05"]):
-            with patch("divisor.commands.handle_float_setting") as mock_handle:
+            with patch("divisor.keybinds.handle_float_setting") as mock_handle:
                 mock_handle.return_value = mock_controller.current_state
                 result = change_vae_offset(mock_controller, initial_state, mock_ae, mock_clear_cache)
 
@@ -186,7 +187,7 @@ class TestCommandsSamplingIntegration:
         initial_state = mock_controller.current_state
         initial_state.deterministic = False
 
-        with patch("divisor.commands.rng") as mock_rng, patch("divisor.commands.variation_rng") as mock_var_rng:
+        with patch("divisor.keybinds.rng") as mock_rng, patch("divisor.keybinds.variation_rng") as mock_var_rng:
             mock_rng.random_mode = Mock()
             mock_var_rng.random_mode = Mock()
 
@@ -215,41 +216,45 @@ class TestCommandsSamplingIntegration:
             # Verify state was updated
             assert result == mock_controller.current_state
 
-    def test_process_choice_calls_correct_handler(self, mock_controller, mock_clear_cache, mock_rng):
-        """Test that process_choice routes to correct command handler."""
+    def test_route_choices_calls_correct_handler(self, mock_controller, mock_clear_cache, mock_rng):
+        """Test that route_choices routes to correct command handler."""
         initial_state = mock_controller.current_state
-        current_layer_dropout = [None]
+        mock_controller.current_layer_dropout = [None]
         mock_var_rng = Mock()
 
-        with patch("builtins.input", return_value="g"), patch("divisor.commands.change_guidance") as mock_change_guidance:
-            mock_change_guidance.return_value = initial_state
-            with patch("divisor.commands.get_float_input", return_value=7.5):
-                result = process_choice(
+        with patch("builtins.input", side_effect=["g", "7.5"]):
+            with patch("divisor.keybinds.get_float_input") as mock_handle:
+                route_processes = RouteProcesses(
+                    clear_prediction_cache=mock_clear_cache,
+                    rng=mock_rng,
+                    variation_rng=mock_var_rng,
+                )
+                mock_handle.return_value = mock_controller.current_state
+                result = route_choices(
                     mock_controller,
                     initial_state,
-                    mock_clear_cache,
-                    current_layer_dropout,
-                    mock_rng,
-                    mock_var_rng,
+                    route_processes,
                 )
 
                 # Verify change_guidance was called
-                assert mock_change_guidance.called
+                assert mock_handle.called
 
-    def test_process_choice_advances_on_empty_input(self, mock_controller, mock_clear_cache, mock_rng):
-        """Test that process_choice advances step on empty input."""
+    def test_route_choices_advances_on_empty_input(self, mock_controller, mock_clear_cache, mock_rng):
+        """Test that route_choices advances step on empty input."""
         initial_state = mock_controller.current_state
         current_layer_dropout = [None]
         mock_var_rng = Mock()
 
         with patch("builtins.input", return_value=""):
-            result = process_choice(
+            route_processes = RouteProcesses(
+                clear_prediction_cache=mock_clear_cache,
+                rng=mock_rng,
+                variation_rng=mock_var_rng,
+            )
+            result = route_choices(
                 mock_controller,
                 initial_state,
-                mock_clear_cache,
-                current_layer_dropout,
-                mock_rng,
-                mock_var_rng,
+                route_processes,
             )
 
             # Verify step was called
@@ -285,7 +290,7 @@ class TestCommandsSamplingIntegration:
 
         from divisor.state import TimestepState
 
-        timestep = TimestepState(
+        timestep_state = TimestepState(
             current_timestep=0.0,
             previous_timestep=None,
             current_sample=img,
@@ -293,7 +298,7 @@ class TestCommandsSamplingIntegration:
             total_timesteps=10,
         )
         state = DenoisingState(
-            timestep=timestep,
+            timestep_state=timestep_state,
             guidance=4.0,
             layer_dropout=[1, 2],
             width=512,
@@ -372,7 +377,7 @@ class TestCommandsSamplingIntegration:
         txt_ids = torch.zeros(1, 77, 3)
         vec = torch.randn(1, 77, 768)
 
-        timestep = TimestepState(
+        timestep_state = TimestepState(
             current_timestep=0.0,
             previous_timestep=None,
             current_sample=img,
@@ -380,7 +385,7 @@ class TestCommandsSamplingIntegration:
             total_timesteps=2,
         )
         state = DenoisingState(
-            timestep=timestep,
+            timestep_state=timestep_state,
             guidance=5.0,
             layer_dropout=None,
             width=512,
@@ -427,7 +432,7 @@ class TestCommandsSamplingIntegration:
                 patch("divisor.flux1.sampling.save_with_hyperchain"),
                 patch("divisor.flux1.sampling.sync_torch"),
                 patch("divisor.flux1.sampling.nfo"),
-                patch("divisor.flux1.sampling.process_choice", return_value=state),
+                patch("divisor.flux1.sampling.route_choices", return_value=state),
             ):
                 # This test verifies that the denoise_step_fn closure captures
                 # the controller's current guidance value
@@ -441,7 +446,7 @@ class TestCommandsSamplingIntegration:
         initial_state = mock_controller.current_state
 
         # Test guidance change
-        with patch("divisor.commands.get_float_input", return_value=7.5):
+        with patch("divisor.keybinds.get_float_input", return_value=7.5):
             change_guidance(mock_controller, initial_state, mock_clear_cache)
             assert mock_clear_cache.call_count == 1
 
@@ -454,9 +459,9 @@ class TestCommandsSamplingIntegration:
             change_layer_dropout(mock_controller, initial_state, current_layer_dropout, mock_clear_cache)
             assert mock_clear_cache.call_count == 1
 
-    def test_process_choice_integration_with_denoise_loop(self):
-        """Test that process_choice integrates correctly with denoise loop."""
-        # This test verifies that process_choice can be called from within
+    def test_route_choices_integration_with_denoise_loop(self):
+        """Test that route_choices integrates correctly with denoise loop."""
+        # This test verifies that route_choices can be called from within
         # the denoise loop and correctly updates the controller state
         mock_ae = Mock(spec=AutoEncoder)
         mock_ae.scale_factor = 0.3611
@@ -492,7 +497,7 @@ class TestCommandsSamplingIntegration:
         mock_ae.encoder = Mock()
         mock_ae.encoder.parameters.return_value = iter([mock_encoder_param])
 
-        timestep = TimestepState(
+        timestep_state = TimestepState(
             current_timestep=0.5,
             previous_timestep=0.6,
             current_sample=img,
@@ -500,7 +505,7 @@ class TestCommandsSamplingIntegration:
             total_timesteps=10,
         )
         state = DenoisingState(
-            timestep=timestep,
+            timestep_state=timestep_state,
             guidance=4.0,
             layer_dropout=None,
             width=512,
@@ -529,8 +534,8 @@ class TestCommandsSamplingIntegration:
             mock_controller_instance.guidance = 4.0
             mock_controller_instance.hyperchain = Mock()
             MockController.return_value = mock_controller_instance
-            # Mock process_choice at the usage site (where it's imported)
-            with patch("divisor.flux1.sampling.process_choice") as mock_process:
+            # Mock route_choices at the usage site (where it's imported)
+            with patch("divisor.flux1.sampling.route_choices") as mock_process:
                 mock_process.return_value = state
 
                 with (
@@ -554,5 +559,5 @@ class TestCommandsSamplingIntegration:
                         settings=settings,
                     )
 
-                    # Verify process_choice was called (from the denoise loop)
+                    # Verify route_choices was called (from the denoise loop)
                     assert mock_process.called

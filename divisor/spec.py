@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
 # <!-- // /*  d a r k s h a p e s */ -->
 
-import torch
-from nnll.init_gpu import device
 from dataclasses import replace
 from typing import Any, List, Tuple
+
+from nnll.init_gpu import device
+import torch
 
 
 def get_dtype(device: torch.device = device) -> torch.dtype:
@@ -132,13 +133,3 @@ def get_model_spec(mir_id: str, configs: list[dict[str, Any]]) -> Any | None:
             if spec_entry := config_entry.get(mir_id, None):
                 return spec_entry["*"]
             raise ValueError(f"{mir_id} has no defined model spec")
-
-
-def populate_model_choices(configs: dict[str, Any]) -> list[str]:
-    """Generate model choices from all entries in configs\n
-    :returns: List of model choices"""
-    model_choices = []
-    for model_id, model_config in configs.items():
-        model_choices.append(model_id)
-        model_choices.extend([f"{model_id}:{n}" for n in model_config.keys() if n != "*"])
-    return model_choices

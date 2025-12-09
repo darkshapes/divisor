@@ -4,14 +4,11 @@
 """Variation noise functions for denoising process."""
 
 import math
-from typing import Callable
 
-from nnll.console import nfo
 import torch
 from torch import Tensor
 
-from divisor.controller import ManualTimestepController, variation_rng
-from divisor.state import DenoisingState
+from divisor.controller import variation_rng
 
 
 def mix_noise(from_noise: Tensor, to_noise: Tensor, strength: float, variation_method: str = "linear") -> Tensor:
@@ -111,53 +108,3 @@ def apply_variation_noise(
         result = (mask == 1).float() * mixed_noise_result + (mask == 0).float() * latent_sample
 
     return result
-
-
-def change_variation(
-    controller: ManualTimestepController,
-    state: DenoisingState,
-    variation_rng,
-    clear_prediction_cache: Callable[[], None],
-) -> DenoisingState:
-    """Handle variation seed/strength change.\n
-    :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
-    :param variation_rng: Variation random number generator instance
-    :param clear_prediction_cache: Function to clear prediction cache
-    :returns: Updated DenoisingState
-    """
-    try:
-        var_input = input(
-            f"Variation (current integer seed: {state.variation_seed}, float strength: {state.variation_strength:.3f}. type a number, leave empty for random, or use 0.0 to disable): "
-        ).strip()
-
-        if not var_input or "." not in var_input:
-            # Try to parse as integer (seed)
-            try:
-                if var_input != "":
-                    variation_seed = variation_rng.next_seed(int(var_input))
-                else:
-                    variation_seed = variation_rng.next_seed()
-                controller.set_variation_seed(variation_seed)
-                clear_prediction_cache()
-                state = controller.current_state
-                nfo(f"Variation seed set to: {state.variation_seed}")
-            except ValueError:
-                nfo("Invalid integer seed value, keeping current value")
-        else:
-            # Try to parse as float (strength)
-            try:
-                strength_value = float(var_input)
-                if strength_value < 0.0 or strength_value > 1.0:
-                    state = controller.current_state
-                    nfo("Variation strength must be between 0.0 and 1.0, keeping current value")
-                else:
-                    controller.set_variation_strength(strength_value)
-                    clear_prediction_cache()
-                    state = controller.current_state
-                    nfo(f"Variation strength set to: {strength_value:.3f}")
-            except ValueError:
-                nfo("Invalid float strength value, keeping current value")
-    except (ValueError, KeyboardInterrupt):
-        nfo("Invalid variation value, keeping current value")
-    return state
