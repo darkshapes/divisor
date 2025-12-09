@@ -31,8 +31,8 @@ from divisor.state import (
     DenoiseSettingsFlux2,
     GetImagePredictionSettings,
     GetPredictionSettings,
-    RouteProcesses,
 )
+from divisor.interaction_context import InteractionContext
 
 
 def compress_time(t_ids: Tensor) -> Tensor:
@@ -455,7 +455,7 @@ def denoise_interactive(
                 # If embedder not available, update current_prompt to avoid repeated checks
                 current_prompt[0] = state.prompt
 
-        route_processes = RouteProcesses(
+        interaction_context = InteractionContext(
             clear_prediction_cache=clear_prediction_cache,
             rng=rng,
             variation_rng=variation_rng,
@@ -465,7 +465,7 @@ def denoise_interactive(
         state = route_choices(
             controller,
             state,
-            route_processes,
+            interaction_context,
         )
 
         # Generate preview

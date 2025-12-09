@@ -16,7 +16,8 @@ from nnll.init_gpu import device
 from nnll.random import RNGState
 import torch
 
-from divisor.state import DenoisingState, TimestepState, RouteProcesses
+from divisor.state import DenoisingState, TimestepState
+from divisor.interaction_context import InteractionContext
 
 rng = RNGState(device=device.type)
 variation_rng = RNGState(device=device.type)
@@ -459,7 +460,7 @@ def update_state_and_cache(
     controller: ManualTimestepController,
     setter_func: Callable,
     value: Any,
-    route_processes: RouteProcesses,
+    interaction_context: InteractionContext,
     success_message: str,
 ) -> DenoisingState:
     """Generic state update helper that sets value, clears cache, and refreshes state.\n
@@ -471,7 +472,7 @@ def update_state_and_cache(
     :returns: Updated DenoisingState
     """
     setter_func(value)
-    route_processes.clear_prediction_cache()
+    interaction_context.clear_prediction_cache()
     state = controller.current_state
     nfo(success_message)
     return state

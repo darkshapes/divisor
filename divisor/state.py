@@ -273,16 +273,3 @@ class DenoiseSettingsFlux2:
     guidance: float = 4.0
     img_cond_seq: Tensor | None = None
     img_cond_seq_ids: Tensor | None = None
-
-
-@dataclass
-class RouteProcesses:
-    """Functions to call for each choice."""
-
-    clear_prediction_cache: Callable[[], None]
-    rng: RNGState | None = None
-    variation_rng: RNGState | None = None
-    ae: Optional[nn.Module] | None = None
-    t5: Optional[nn.Module] | None = None
-    clip: Optional[nn.Module] | None = None
-    recompute_text_embeddings: Optional[Callable[[str], None]] | None = None

@@ -24,9 +24,9 @@ from divisor.state import (
     DenoiseSettings,
     GetImagePredictionSettings,
     GetPredictionSettings,
-    RouteProcesses,
 )
 from divisor.xflux1.model import XFlux
+from divisor.interaction_context import InteractionContext
 
 
 def create_get_prediction_xflux1(
@@ -312,7 +312,7 @@ def denoise(
                 # If embedders not available, update current_prompt to avoid repeated checks
                 current_prompt[0] = state.prompt
 
-        route_processes = RouteProcesses(
+        interaction_context = InteractionContext(
             clear_prediction_cache=clear_prediction_cache,
             rng=rng,
             variation_rng=variation_rng,
@@ -324,7 +324,7 @@ def denoise(
         state = route_choices(
             controller,
             state,
-            route_processes,
+            interaction_context,
         )
 
         # Generate preview

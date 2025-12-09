@@ -28,63 +28,89 @@ from divisor.state import (
     DenoiseSettings,
     GetImagePredictionSettings,
     GetPredictionSettings,
-    InteractionContext,
 )
+from divisor.interaction_context import InteractionContext
 
 
 def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:
     """Prepare the text embeddings for the model.\n
-    :param t5: T1 embedder
+    :param t5: T5 embedder
     :param clip: CLIP embedder
     :param img: Image tensor
     :param prompt: Prompt
     :returns: Dictionary of input tensors"""
     bs, c, h, w = img.shape
-    if bs == 1 and not isinstance(prompt, False):
+    if bs == 1 and not isinstance(prompt, str):
         bs = len(prompt)
 
     img = rearrange(img, "b c (h ph) (w pw) -> b (h w) (c ph pw)", ph=2, pw=2)
     if img.shape[0] == 1 and bs > 1:
-        # ... (rest of function unchanged)
-        pass
+        img = repeat(img, "1 ... -> bs ...", bs=bs)
 
-    # ... (rest of function unchanged)
-    return {}
+    img_ids = torch.zeros(h // 2, w // 2, 3)
+    img_ids[..., 1] = img_ids[..., 1] + torch.arange(h // 2)[:, None]
+    img_ids[..., 2] = img_ids[..., 2] + torch.arange(w // 2)[None, :]
+    img_ids = repeat(img_ids, "h w c -> b (h w) c", b=bs)
+
+    if isinstance(prompt, str):
+        prompt = [prompt]
+    txt = t5(prompt)
+    if txt.shape[0] == 1 and bs > 1:
+        txt = repeat(txt, "1 ... -> bs ...", bs=bs)
+    txt_ids = torch.zeros(bs, txt.shape[1], 3)
+
+    vec = clip(prompt)
+    if vec.shape[0] == 1 and bs > 1:
+        vec = repeat(vec, "1 ... -> bs ...", bs=bs)
+
+    return {
+        "img": img,
+        "img_ids": img_ids.to(img.device),
+        "txt": txt.to(img.device),
+        "txt_ids": txt_ids.to(img.device),
+        "vec": vec.to(img.device),
+    }
 
 
 def time_shift(mu: float, sigma: float, t: Tensor) -> Tensor:
     """Adjustable noise schedule. Compress or stretch any schedule to match a dynamic step sequence length.\n
     :param mu: Original schedule parameter.
     :param sigma: Original schedule parameter.
+    :param t: Tensor of original timesteps in [0,1].
     :returns: Adjusted timestep tensor."""
     return math.exp(mu) / (math.exp(mu) + (1 / t - 1) ** sigma)
 
 
 def get_lin_function(x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: float = 1.15) -> Callable[[float], float]:
-    """Linear function for schedule interpolation.\n
-    :param x1: ...
-    :return: ...
-    """
     m = (y2 - y1) / (x2 - x1)
     b = y1 - m * x1
     return lambda x: m * x + b
 
 
-def get_schedule(num_steps: int, image_seq_len: int) -> list[float]:
-    """Generate a schedule of timesteps for the denoising process.
+def get_schedule(
+    num_steps: int,
+    image_seq_len: int,
+    base_shift: float = 0.5,
+    max_shift: float = 1.15,
+    shift: bool = True,
+) -> list[float]:
+    """Generate a schedule of timesteps.\n
+    :param num_steps: Number of steps to generate
+    :param image_seq_len: Length of the image sequence
+    :param base_shift: Base shift value
+    :param max_shift: Maximum shift value
+    :param shift: Whether to shift the schedule
+    :returns: List of timesteps"""
+    # extra step for zero
+    timesteps = torch.linspace(1, 0, num_steps + 1)
 
-    This is a placeholder implementation that returns a list of ``num_steps``
-    linearly spaced values between ``0.0`` and ``1.0``.  Replace with the
-    actual schedule logic required by the Flux model.
+    # shifting the schedule to favor high timesteps for higher signal images
+    if shift:
+        # estimate mu based on linear estimation between two points
+        mu = get_lin_function(y1=base_shift, y2=max_shift)(image_seq_len)
+        timesteps = time_shift(mu, 1.0, timesteps)
 
-    :param num_steps: Number of diffusion steps.
-    :param image_seq_len: Length of the image sequence (unused in placeholder).
-    :returns: List of timestep values.
-    """
-    if num_steps <= 0:
-        return []
-    # Simple linear schedule as a fallback.
-    return [i / (num_steps - 1) for i in range(num_steps)]
+    return timesteps.tolist()
 
 
 @torch.inference_mode()
@@ -96,48 +122,218 @@ def denoise(
     :param model: Flux model instance
     :param settings: DenoiseSettings containing all denoising configuration parameters"""
 
-    # ----------------------------------------------------------------------
-    # Extract required objects from the provided settings.  The exact attribute
-    # names are inferred from the rest of the code base; if a particular
-    # attribute is missing we fall back to a sensible default (e.g. a no‑op
-    # clear‑cache function).  This keeps the function import‑safe and fixes the
-    # undefined‑name errors reported by flake8.
-    # ----------------------------------------------------------------------
-    controller: ManualTimestepController = getattr(settings, "controller", None)  # type: ignore[assignment]
-    state = getattr(settings, "state", None)
-    clear_prediction_cache: Callable[[], None] = getattr(settings, "clear_prediction_cache", lambda: None)
-    ae = getattr(settings, "ae", None)
-    t5 = getattr(settings, "t5", None)
-    clip = getattr(settings, "clip", None)
-    recompute_text_embeddings = getattr(settings, "recompute_text_embeddings", None)
+    # Extract settings for easier access
+    img = settings.img
+    img_ids = settings.img_ids
+    txt = settings.txt
+    txt_ids = settings.txt_ids
+    vec = settings.vec
+    state = settings.state
+    ae = settings.ae
+    timesteps = settings.timesteps
+    img_cond = settings.img_cond
+    img_cond_seq = settings.img_cond_seq
+    img_cond_seq_ids = settings.img_cond_seq_ids
+    from nnll.init_gpu import device as default_device
 
-    if controller is None:
-        raise ValueError("DenoiseSettings must provide a ManualTimestepController via 'controller'")
-    if state is None:
-        raise ValueError("DenoiseSettings must provide a DenoisingState via 'state'")
+    denoise_device = settings.device if settings.device is not None else default_device
+    initial_layer_dropout = settings.initial_layer_dropout
+    t5 = settings.t5
+    clip = settings.clip
+    neg_pred_enabled = settings.neg_pred_enabled
+    neg_txt = settings.neg_txt
+    neg_txt_ids = settings.neg_txt_ids
+    neg_vec = settings.neg_vec
+    true_gs = settings.true_gs
 
-    # ----------------------------------------------------------------------
-    # The rest of the original setup code (model preparation, prediction
-    # functions, etc.) would go here.  For the purpose of fixing the static
-    # analysis errors we only need the InteractionContext and the call to
-    # route_choices.
-    # ----------------------------------------------------------------------
-    route_processes = InteractionContext(
-        clear_prediction_cache=clear_prediction_cache,
-        rng=rng,
-        variation_rng=variation_rng,
-        ae=ae,
-        t5=t5,
-        clip=clip,
-        recompute_text_embeddings=recompute_text_embeddings,
+    # this is ignored for schnell
+    current_layer_dropout = [initial_layer_dropout]
+    previous_step_tensor: list[Optional[Tensor]] = [None]  # Store previous step's tensor for masking
+    cached_prediction: list[Optional[Tensor]] = [None]  # Cache prediction to avoid duplicate model calls
+    cached_prediction_state: list[Optional[dict]] = [None]  # Cache state when prediction was generated
+    controller_ref: list[Optional["ManualTimestepController"]] = [None]  # Reference to controller for closure access
+
+    model_ref: list[Flux] = [model]
+    # Ensure model is on the correct device (fixes meta device issue)
+    target_device = img.device
+    # Safely get model device, handling Mock objects in tests
+    try:
+        model_device = next(model.parameters()).device
+    except (TypeError, StopIteration, AttributeError):
+        # Fallback for Mock objects or models without parameters
+        # Assume model is already on correct device if we can't determine it
+        model_device = target_device
+    if model_device != target_device:
+        model_ref[0] = model.to_empty(device=target_device)
+
+    # Store embeddings in mutable containers so they can be updated when prompt changes
+    current_txt: list[Tensor] = [txt]
+    current_txt_ids: list[Tensor] = [txt_ids]
+    assert vec is not None, "vec (CLIP embeddings) is required for Flux1"
+    current_vec: list[Tensor] = [vec]
+    if neg_pred_enabled and all([neg_txt, neg_txt_ids, neg_vec]):
+        current_neg_txt: list[Tensor] = [neg_txt]  # type: ignore
+        current_neg_txt_ids: list[Tensor] = [neg_txt_ids]  # type: ignore
+        current_neg_vec: list[Tensor] = [neg_vec]  # type: ignore
+        true_gs = true_gs
+    else:
+        current_neg_txt: list[Tensor] | None = None
+        current_neg_txt_ids: list[Tensor] | None = None
+        current_neg_vec: list[Tensor] | None = None
+        true_gs = 1
+    current_prompt: list[Optional[str]] = [state.prompt]  # Track current prompt to detect changes
+
+    clear_prediction_cache = create_clear_prediction_cache(cached_prediction, cached_prediction_state)
+
+    recompute_text_embeddings = create_recompute_text_embeddings(  # formatting
+        img, t5, clip, current_txt, current_txt_ids, current_vec, current_prompt, clear_prediction_cache, is_flux2=False
     )
 
-    # Present the interactive menu and allow the user to modify the state.
-    state = route_choices(
-        controller,
-        state,
-        route_processes,
+    pred_set = GetPredictionSettings(
+        model_ref=model_ref,
+        state=state,
+        current_txt=current_txt,
+        current_txt_ids=current_txt_ids,
+        current_vec=current_vec,
+        cached_prediction=cached_prediction,
+        cached_prediction_state=cached_prediction_state,
+        neg_pred_enabled=neg_pred_enabled,
+        current_neg_txt=current_neg_txt,  # pyright: ignore[reportArgumentType]
+        current_neg_txt_ids=current_neg_txt_ids,  # pyright: ignore[reportArgumentType]
+        current_neg_vec=current_neg_vec,  # pyright: ignore[reportArgumentType]
+        true_gs=int(true_gs) if true_gs is not None else None,
+    )
+    img_set = GetImagePredictionSettings(
+        img_ids=img_ids,
+        img=img,
+        img_cond=img_cond,
+        img_cond_seq=img_cond_seq,
+        img_cond_seq_ids=img_cond_seq_ids,
+    )
+    get_prediction = create_get_prediction(pred_set, img_set)
+
+    denoise_step_fn = create_denoise_step_fn(  # formatting
+        controller_ref, current_layer_dropout, previous_step_tensor, get_prediction
     )
 
-    # Return the final sample produced by the controller.
+    controller = ManualTimestepController(  # formatting
+        timesteps=timesteps, initial_sample=img, denoise_step_fn=denoise_step_fn, initial_guidance=state.guidance
+    )
+    controller_ref[0] = controller  # Store reference for closure access
+
+    # Use state.layer_dropout if available, otherwise fall back to initial_layer_dropout
+    layer_dropout_to_set = state.layer_dropout if state.layer_dropout is not None else initial_layer_dropout
+    controller.set_layer_dropout(layer_dropout_to_set)
+
+    if state.width is not None and state.height is not None:
+        controller.set_resolution(state.width, state.height)
+    if state.seed is not None:
+        controller.set_seed(state.seed)
+    if state.prompt is not None:
+        controller.set_prompt(state.prompt)
+    if state.num_steps is not None:
+        controller.set_num_steps(state.num_steps)
+    controller.set_vae_shift_offset(state.vae_shift_offset)
+    controller.set_vae_scale_offset(state.vae_scale_offset)
+    controller.set_use_previous_as_mask(state.use_previous_as_mask)
+
+    # Interactive loop
+    while not controller.is_complete:
+        file_path_named = name_save_file_as(ExtensionType.WEBP)
+        state = controller.current_state
+
+        # Check if prompt changed and recompute embeddings if needed
+        if state.prompt is not None and state.prompt != current_prompt[0]:
+            if t5 is not None and clip is not None:
+                recompute_text_embeddings(state.prompt)
+            else:
+                # If embedders not available, update current_prompt to avoid repeated checks
+                current_prompt[0] = state.prompt
+
+        interaction_context = InteractionContext(
+            clear_prediction_cache=clear_prediction_cache,
+            rng=rng,
+            variation_rng=variation_rng,
+            ae=ae,
+            t5=t5,
+            clip=clip,
+            recompute_text_embeddings=recompute_text_embeddings,
+        )
+        state = route_choices(
+            controller,
+            state,
+            interaction_context,
+        )
+
+        # Generate preview
+        t0 = time.perf_counter()
+        if state.seed is not None:
+            rng.next_seed(state.seed)
+        else:
+            state.seed = rng.next_seed()
+        if ae is not None and state.width is not None and state.height is not None:
+            # Reuse cached prediction if available, otherwise generate it
+            # This will be cached and reused in denoise_step_fn when advancing
+            # Always use state.layer_dropout from controller to ensure consistency
+            pred_preview = get_prediction(
+                state.current_sample,
+                state.current_timestep,
+                state.guidance,
+                state.layer_dropout,
+            )
+
+            intermediate = state.current_sample - state.current_timestep * pred_preview
+            # Unpack requires float32, but we'll convert back to correct dtype after
+            intermediate = unpack(intermediate.float(), state.height, state.width)
+
+            sync_torch(denoise_device)
+            t1 = time.perf_counter()
+
+            nfo(f"Step time: {t1 - t0:.1f}s")
+
+            if denoise_device.type == "cuda":
+                context = torch.autocast(device_type=denoise_device.type, dtype=torch.bfloat16)
+            else:
+                from contextlib import nullcontext
+
+                context = nullcontext()
+            with context:
+                # When autocast is disabled (MPS), ensure intermediate is in correct dtype for VAE
+                if denoise_device.type != "cuda":
+                    # Get VAE encoder dtype to ensure intermediate matches (bfloat16)
+                    # Safely get encoder dtype, handling Mock objects in tests
+                    try:
+                        ae_dtype = next(ae.encoder.parameters()).dtype
+                    except (TypeError, StopIteration, AttributeError):
+                        # Fallback: use intermediate dtype if we can't get encoder dtype (for Mock objects in tests)
+                        ae_dtype = intermediate.dtype
+                    intermediate = intermediate.to(dtype=ae_dtype)
+
+                # Apply VAE shift/scale offset by manually adjusting the decode operation
+                if state.vae_shift_offset != 0.0 or state.vae_scale_offset != 0.0:
+                    # Decode with offset: z = z / (scale_factor + scale_offset) + (shift_factor + shift_offset)
+                    z_adjusted = intermediate / (ae.scale_factor + state.vae_scale_offset) + (ae.shift_factor + state.vae_shift_offset)
+                    intermediate_image = ae.decoder(z_adjusted)
+                else:
+                    intermediate_image = ae.decode(intermediate)
+                if state.seed is not None:
+                    controller.store_state_in_chain(current_seed=state.seed)
+                save_with_hyperchain(
+                    file_path_named,
+                    intermediate_image,
+                    controller.hyperchain,
+                    ExtensionType.WEBP,
+                )
+
     return controller.current_sample
+
+
+def unpack(x: Tensor, height: int, width: int) -> Tensor:
+    return rearrange(
+        x,
+        "b (h w) (c ph pw) -> b c (h ph) (w pw)",
+        h=math.ceil(height / 16),
+        w=math.ceil(width / 16),
+        ph=2,
+        pw=2,
+    )

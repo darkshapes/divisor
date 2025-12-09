@@ -20,7 +20,8 @@ from divisor.keybinds import (
     toggle_buffer_mask,
     toggle_deterministic,
 )
-from divisor.state import DenoiseSettings, DenoisingState, RouteProcesses, TimestepState
+from divisor.state import DenoiseSettings, DenoisingState, TimestepState
+from divisor.interaction_context import InteractionContext
 
 
 class TestCommandsSamplingIntegration:
@@ -224,7 +225,7 @@ class TestCommandsSamplingIntegration:
 
         with patch("builtins.input", side_effect=["g", "7.5"]):
             with patch("divisor.keybinds.get_float_input") as mock_handle:
-                route_processes = RouteProcesses(
+                interaction_context = InteractionContext(
                     clear_prediction_cache=mock_clear_cache,
                     rng=mock_rng,
                     variation_rng=mock_var_rng,
@@ -233,7 +234,7 @@ class TestCommandsSamplingIntegration:
                 result = route_choices(
                     mock_controller,
                     initial_state,
-                    route_processes,
+                    interaction_context,
                 )
 
                 # Verify change_guidance was called
@@ -246,7 +247,7 @@ class TestCommandsSamplingIntegration:
         mock_var_rng = Mock()
 
         with patch("builtins.input", return_value=""):
-            route_processes = RouteProcesses(
+            interaction_context = InteractionContext(
                 clear_prediction_cache=mock_clear_cache,
                 rng=mock_rng,
                 variation_rng=mock_var_rng,
@@ -254,7 +255,7 @@ class TestCommandsSamplingIntegration:
             result = route_choices(
                 mock_controller,
                 initial_state,
-                route_processes,
+                interaction_context,
             )
 
             # Verify step was called

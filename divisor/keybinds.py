@@ -18,7 +18,8 @@ from divisor.controller import (
     update_state_and_cache,
 )
 from divisor.noise import prepare_noise_for_model
-from divisor.state import DenoisingState, InteractionContext
+from divisor.state import DenoisingState
+from divisor.interaction_context import InteractionContext
 
 
 def choice(key: str, description: str) -> Callable[[Callable], Callable]:
@@ -53,11 +54,11 @@ _CHOICE_REGISTRY: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 def _advance(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: InteractionContext,
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Advance one step (default action when the user presses Enter)."""
     nfo("Advancing...")
-    route_processes.clear_prediction_cache()
+    interaction_context.clear_prediction_cache()
     controller.step()
     return controller.current_state
 
@@ -66,7 +67,7 @@ def _advance(
 def change_guidance(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: InteractionContext,
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Handle guidance value change.\n"""
     new_guidance = get_float_input(
@@ -79,7 +80,7 @@ def change_guidance(
             controller,
             controller.set_guidance,
             new_guidance,
-            route_processes.clear_prediction_cache,
+            interaction_context,
             f"Guidance set to {new_guidance}",
         )
     nfo("Invalid guidance value, keeping current value")
@@ -90,12 +91,12 @@ def change_guidance(
 def change_layer_dropout(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: InteractionContext,
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Handle layer dropout change.\n
     :param controller: ManualTimestepController instance
     :param state: Current DenoisingState
-    :param route_processes: RouteProcesses arguments
+    :param interaction_context: InteractionContext arguments
     :returns: Updated DenoisingState
     """
     try:
@@ -107,7 +108,7 @@ def change_layer_dropout(
 
         # Update controller first
         controller.set_layer_dropout(layer_indices)
-        route_processes.clear_prediction_cache()
+        interaction_context.clear_prediction_cache()
         state = controller.current_state
         nfo(f"Layer dropout set to: {layer_indices}")
         return state
@@ -120,7 +121,7 @@ def change_layer_dropout(
 def change_resolution(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: InteractionContext,
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Handle resolution change.\n
     :param controller: ManualTimestepController instance
@@ -154,7 +155,7 @@ def change_resolution(
                     return state
             if new_width is not None and new_height is not None:
                 controller.set_resolution(new_width, new_height)
-                route_processes.clear_prediction_cache()
+                interaction_context.clear_prediction_cache()
                 state = controller.current_state
                 nfo(f"Resolution set to: {new_width}x{new_height}")
                 return state
@@ -168,7 +169,7 @@ def change_seed(
     controller: ManualTimestepController,
     state: DenoisingState,
     rng,
-    route_processes: InteractionContext,
+    interaction_context: InteractionContext,
     t5: Optional[Any] = None,
     clip: Optional[Any] = None,
 ) -> DenoisingState:
@@ -200,7 +201,7 @@ def change_seed(
         # Update controller's current_sample
         controller.current_sample = new_sample
         # Get updated state from controller (it will use the updated current_sample)
-        route_processes.clear_prediction_cache()
+        interaction_context.clear_prediction_cache()
         updated_state = controller.current_state
         nfo(f"Seed set to: {new_seed}")
         return updated_state
@@ -233,7 +234,7 @@ def change_vae_offset(
     controller: ManualTimestepController,
     state: DenoisingState,
     ae: Optional[Any],
-    route_processes: InteractionContext,
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Handle VAE shift/scale offset change.\n
     :param controller: ManualTimestepController instance
@@ -254,7 +255,7 @@ def change_vae_offset(
             f"Enter VAE scale offset (current: {state.vae_scale_offset:.4f}, or press Enter to reset to 0.0): ",
             state.vae_scale_offset,
             controller.set_vae_scale_offset,
-            route_processes.clear_prediction_cache,
+            interaction_context.clear_prediction_cache,
             default_value=0.0,
             value_name="VAE scale offset",
         )
@@ -265,7 +266,7 @@ def change_vae_offset(
             f"Enter VAE shift offset (current: {state.vae_shift_offset:.4f}, or press Enter to reset to 0.0): ",
             state.vae_shift_offset,
             controller.set_vae_shift_offset,
-            route_processes.clear_prediction_cache,
+            interaction_context.clear_prediction_cache,
             default_value=0.0,
             value_name="VAE shift offset",
         )
@@ -276,7 +277,7 @@ def change_vae_offset(
 def toggle_deterministic(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: InteractionContext,
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Handle deterministic mode toggle.\n
     :param controller: ManualTimestepController instance
@@ -286,15 +287,15 @@ def toggle_deterministic(
     """
 
     deterministic = not state.deterministic
-    route_processes.rng.random_mode(reproducible=deterministic)
-    route_processes.variation_rng.random_mode(reproducible=deterministic)
+    interaction_context.rng.random_mode(reproducible=deterministic)
+    interaction_context.variation_rng.random_mode(reproducible=deterministic)
 
     return handle_toggle(
         controller,
         state,
         state.deterministic,
         controller.set_deterministic,
-        route_processes.clear_prediction_cache,
+        interaction_context.clear_prediction_cache,
         enabled_msg="Deterministic mode: ENABLED",
         disabled_msg="Deterministic mode: DISABLED",
     )
@@ -304,7 +305,7 @@ def toggle_deterministic(
 def change_prompt(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: InteractionContext,
+    interaction_context: InteractionContext,
     recompute_text_embeddings: Optional[Callable[[str], None]],
 ) -> DenoisingState:
     """Handle prompt change.\n
@@ -322,7 +323,7 @@ def change_prompt(
         if recompute_text_embeddings is not None:
             recompute_text_embeddings(new_prompt)
         else:
-            route_processes.clear_prediction_cache()
+            interaction_context.clear_prediction_cache()
         state = controller.current_state
         nfo(f"Prompt set to: {new_prompt}")
     else:
@@ -333,21 +334,21 @@ def change_prompt(
 
 @choice("e", "Edit Mode")
 def edit_mode(
-    route_processes: InteractionContext,
+    interaction_context: InteractionContext,
 ) -> None:
     """Handle edit mode (debugger breakpoint).\n
     :param clear_prediction_cache: Function to clear prediction cache
     """
     nfo("Entering edit mode (use c/cont to exit)...")
     breakpoint()
-    route_processes.clear_prediction_cache()
+    interaction_context.clear_prediction_cache()
 
 
 @choice("j", "Jump to Step")
 def jump_to_step(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: InteractionContext,
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Run the controller forward until a user‑specified step index.\n
     The user enters the *target* step number (0‑based, inclusive).  The
@@ -377,7 +378,7 @@ def jump_to_step(
         nfo("Target step exceeds the schedule – jumping to the end.")
         target = len(controller.timesteps) - 1
 
-    route_processes.clear_prediction_cache()
+    interaction_context.clear_prediction_cache()
     while controller.current_index < target and not controller.is_complete:
         controller.step()
 
@@ -389,7 +390,7 @@ def jump_to_step(
 def change_variation(
     controller: ManualTimestepController,
     state: DenoisingState,
-    route_processes: InteractionContext,
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Handle variation seed/strength change.\n
     :param controller: ManualTimestepController instance
@@ -407,11 +408,11 @@ def change_variation(
             # Try to parse as integer (seed)
             try:
                 if var_input != "":
-                    variation_seed = route_processes.variation_rng.next_seed(int(var_input))
+                    variation_seed = interaction_context.variation_rng.next_seed(int(var_input))
                 else:
-                    variation_seed = route_processes.variation_rng.next_seed()
+                    variation_seed = interaction_context.variation_rng.next_seed()
                 controller.set_variation_seed(variation_seed)
-                route_processes.clear_prediction_cache()
+                interaction_context.clear_prediction_cache()
                 state = controller.current_state
                 nfo(f"Variation seed set to: {state.variation_seed}")
             except ValueError:
@@ -425,7 +426,7 @@ def change_variation(
                     nfo("Variation strength must be between 0.0 and 1.0, keeping current value")
                 else:
                     controller.set_variation_strength(strength_value)
-                    route_processes.clear_prediction_cache()
+                    interaction_context.clear_prediction_cache()
                     state = controller.current_state
                     nfo(f"Variation strength set to: {strength_value:.3f}")
             except ValueError:
