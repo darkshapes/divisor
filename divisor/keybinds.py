@@ -168,10 +168,7 @@ def change_resolution(
 def change_seed(
     controller: ManualTimestepController,
     state: DenoisingState,
-    rng,
     interaction_context: InteractionContext,
-    t5: Optional[Any] = None,
-    clip: Optional[Any] = None,
 ) -> DenoisingState:
     """Handle seed change.\n
     :param controller: ManualTimestepController instance
@@ -186,15 +183,15 @@ def change_seed(
     if new_seed := get_int_input(
         f"Enter new seed number (current: {current_seed}, or press Enter for random): ",
         current_seed,
-        generate_random=lambda: rng.next_seed(),
+        generate_random=lambda: interaction_context.rng.next_seed(),
     ):
         controller.set_seed(new_seed)
         new_sample = prepare_noise_for_model(
             height=state.height,  # type: ignore
             width=state.width,  # type: ignore
             seed=new_seed,
-            t5=t5,
-            clip=clip,
+            t5=interaction_context.t5,
+            clip=interaction_context.clip,
             prompt=state.prompt,
         )
 
@@ -233,7 +230,6 @@ def toggle_buffer_mask(
 def change_vae_offset(
     controller: ManualTimestepController,
     state: DenoisingState,
-    ae: Optional[Any],
     interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Handle VAE shift/scale offset change.\n
@@ -243,7 +239,7 @@ def change_vae_offset(
     :param clear_prediction_cache: Function to clear prediction cache
     :returns: Updated DenoisingState
     """
-    if ae is None:
+    if interaction_context.ae is None:
         nfo("AutoEncoder not available, cannot set VAE offset")
         return state
 

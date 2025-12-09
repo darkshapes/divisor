@@ -90,22 +90,21 @@ class TestCommandsSamplingIntegration:
             # Verify set_guidance was called with correct value
             mock_controller.set_guidance.assert_called_once_with(7.5)
             # Verify cache was cleared
-            mock_clear_cache.assert_called_once()
+            mock_clear_cache.clear_prediction_cache.assert_called_once()
             # Verify state was updated
             assert result == mock_controller.current_state
 
     def test_change_layer_dropout_updates_controller(self, mock_controller, mock_clear_cache):
         """Test that change_layer_dropout correctly updates the controller."""
         initial_state = mock_controller.current_state
-        current_layer_dropout = [None]
 
         with patch("builtins.input", return_value="1,2,3"):
-            result = change_layer_dropout(mock_controller, initial_state, current_layer_dropout, mock_clear_cache)
+            result = change_layer_dropout(mock_controller, initial_state, mock_clear_cache)
 
             # Verify set_layer_dropout was called with correct value
             mock_controller.set_layer_dropout.assert_called_once_with([1, 2, 3])
             # Verify cache was cleared
-            mock_clear_cache.assert_called_once()
+            mock_clear_cache.clear_prediction_cache.assert_called_once()
             # Verify state was updated
             assert result == mock_controller.current_state
 
@@ -119,23 +118,24 @@ class TestCommandsSamplingIntegration:
             # Verify set_resolution was called with correct values
             mock_controller.set_resolution.assert_called_once_with(512, 512)
             # Verify cache was cleared
-            mock_clear_cache.assert_called_once()
+            mock_clear_cache.clear_prediction_cache.assert_called_once()
             # Verify state was updated
             assert result == mock_controller.current_state
 
-    def test_change_seed_updates_controller(self, mock_controller, mock_clear_cache, mock_rng):
+    def test_change_seed_updates_controller(self, mock_controller, mock_clear_cache):
         """Test that change_seed correctly updates the controller."""
         initial_state = mock_controller.current_state
 
         with patch("divisor.keybinds.get_int_input", return_value=999):
-            result = change_seed(mock_controller, initial_state, mock_rng, mock_clear_cache)
+            with patch("divisor.keybinds.prepare_noise_for_model", return_value=torch.randn(1, 16, 32, 32)):
+                result = change_seed(mock_controller, initial_state, mock_clear_cache)
 
-            # Verify set_seed was called with correct value
-            mock_controller.set_seed.assert_called_once_with(999)
-            # Verify cache was cleared
-            mock_clear_cache.assert_called_once()
-            # Verify state was updated
-            assert result == mock_controller.current_state
+                # Verify set_seed was called with correct value
+                mock_controller.set_seed.assert_called_once_with(999)
+                # Verify cache was cleared
+                mock_clear_cache.clear_prediction_cache.assert_called_once()
+                # Verify state was updated
+                assert result == mock_controller.current_state
 
     def test_toggle_buffer_mask_updates_controller(self, mock_controller):
         """Test that toggle_buffer_mask correctly updates the controller."""
@@ -157,7 +157,7 @@ class TestCommandsSamplingIntegration:
         with patch("builtins.input", side_effect=["s", "0.1"]):
             with patch("divisor.keybinds.handle_float_setting") as mock_handle:
                 mock_handle.return_value = mock_controller.current_state
-                result = change_vae_offset(mock_controller, initial_state, mock_ae, mock_clear_cache)
+                result = change_vae_offset(mock_controller, initial_state, mock_clear_cache)
 
                 # Verify handle_float_setting was called with correct parameters
                 assert mock_handle.called
@@ -166,7 +166,7 @@ class TestCommandsSamplingIntegration:
                 assert call_args[0][1] == initial_state  # state
                 assert "shift offset" in call_args[0][2].lower()  # prompt
                 assert call_args[0][4] == mock_controller.set_vae_shift_offset  # setter
-                assert call_args[0][5] == mock_clear_cache  # clear_cache
+                assert call_args[0][5] == mock_clear_cache.clear_prediction_cache  # clear_cache
 
     def test_change_vae_scale_offset_updates_controller(self, mock_controller, mock_clear_cache):
         """Test that change_vae_offset correctly updates scale offset."""
@@ -176,7 +176,7 @@ class TestCommandsSamplingIntegration:
         with patch("builtins.input", side_effect=["c", "0.05"]):
             with patch("divisor.keybinds.handle_float_setting") as mock_handle:
                 mock_handle.return_value = mock_controller.current_state
-                result = change_vae_offset(mock_controller, initial_state, mock_ae, mock_clear_cache)
+                result = change_vae_offset(mock_controller, initial_state, mock_clear_cache)
 
                 # Verify handle_float_setting was called with correct parameters
                 assert mock_handle.called
@@ -188,7 +188,7 @@ class TestCommandsSamplingIntegration:
         initial_state = mock_controller.current_state
         initial_state.deterministic = False
 
-        with patch("divisor.keybinds.rng") as mock_rng, patch("divisor.keybinds.variation_rng") as mock_var_rng:
+        with patch("divisor.controller.rng") as mock_rng, patch("divisor.controller.variation_rng") as mock_var_rng:
             mock_rng.random_mode = Mock()
             mock_var_rng.random_mode = Mock()
 
@@ -197,10 +197,10 @@ class TestCommandsSamplingIntegration:
             # Verify set_deterministic was called with True (toggled)
             mock_controller.set_deterministic.assert_called_once_with(True)
             # Verify RNG modes were updated
-            mock_rng.random_mode.assert_called_once_with(reproducible=True)
-            mock_var_rng.random_mode.assert_called_once_with(reproducible=True)
+            mock_clear_cache.rng.random_mode.assert_called_once_with(reproducible=True)
+            mock_clear_cache.variation_rng.random_mode.assert_called_once_with(reproducible=True)
             # Verify cache was cleared
-            mock_clear_cache.assert_called_once()
+            mock_clear_cache.clear_prediction_cache.assert_called_once()
 
     def test_change_prompt_updates_controller(self, mock_controller, mock_clear_cache):
         """Test that change_prompt correctly updates the controller."""
@@ -449,16 +449,15 @@ class TestCommandsSamplingIntegration:
         # Test guidance change
         with patch("divisor.keybinds.get_float_input", return_value=7.5):
             change_guidance(mock_controller, initial_state, mock_clear_cache)
-            assert mock_clear_cache.call_count == 1
+            assert mock_clear_cache.clear_prediction_cache.call_count == 1
 
         # Reset mock
         mock_clear_cache.reset_mock()
 
         # Test layer dropout change
-        current_layer_dropout = [None]
         with patch("builtins.input", return_value="1,2"):
-            change_layer_dropout(mock_controller, initial_state, current_layer_dropout, mock_clear_cache)
-            assert mock_clear_cache.call_count == 1
+            change_layer_dropout(mock_controller, initial_state, mock_clear_cache)
+            assert mock_clear_cache.clear_prediction_cache.call_count == 1
 
     def test_route_choices_integration_with_denoise_loop(self):
         """Test that route_choices integrates correctly with denoise loop."""
