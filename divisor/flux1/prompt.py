@@ -12,9 +12,10 @@ import torch
 from divisor.controller import rng
 from divisor.flux1.loading import load_ae, load_clip, load_flow_model, load_t5
 from divisor.flux1.sampling import denoise, get_schedule, prepare
-from divisor.flux1.spec import InitialParams, configs, get_model_spec
+from divisor.flux1.spec import InitialParams, configs as flux_configs
 from divisor.noise import prepare_noise_for_model
-from divisor.spec import DenoisingState, find_mir_spec
+from divisor.spec import get_model_spec
+from divisor.state import DenoisingState
 
 
 def parse_prompt(state: DenoisingState) -> DenoisingState | None:
@@ -87,7 +88,7 @@ def parse_prompt(state: DenoisingState) -> DenoisingState | None:
 
 @torch.inference_mode()
 def main(
-    model_id: str = "flux1-dev",
+    model_id: str,
     ae_id: str = "flux1-dev",
     width: int = 1360,
     height: int = 768,
@@ -117,9 +118,7 @@ def main(
     :param loop: start an interactive session and sample multiple times
     :param guidance: guidance value used for guidance distillation
     """
-    model_id, subkey, ae_id = find_mir_spec(model_id, ae_id, configs, tiny=tiny)
-
-    spec = get_model_spec(model_id)
+    spec = get_model_spec(model_id, flux_configs)
     init = getattr(spec, "init", None)
 
     if init is None:
@@ -136,7 +135,7 @@ def main(
     assert not ((additional_prompts is not None) and loop), "Do not provide additional prompts and set loop to True"
 
     compatibility_key = "fp8-sai" if quantization else None
-    spec = get_model_spec(model_id)
+    spec = get_model_spec(model_id, flux_configs)
     init = getattr(
         spec,
         "init",
@@ -255,7 +254,7 @@ def main(
                 is_compiled = True
 
         # denoise initial noise
-        from divisor.spec import DenoiseSettings
+        from divisor.state import DenoiseSettings
 
         settings = DenoiseSettings(
             img=inp["img"],

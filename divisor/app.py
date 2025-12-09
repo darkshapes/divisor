@@ -11,10 +11,14 @@ import sys
 
 from fire import Fire
 
+# XD: The ONLY place in root folder that should import from submodules is here.
 from divisor.flux1.prompt import main as flux1_main
 from divisor.flux2.prompt import main as flux2_main
 from divisor.mmada.gradio import main as mmada_main
 from divisor.xflux1.prompt import main as xflux1_main
+from divisor.flux1.spec import configs as flux_configs
+from divisor.mmada.spec import configs as mmada_configs
+from divisor.spec import populate_model_choices
 
 
 def main():
@@ -26,41 +30,49 @@ def main():
     --tiny, --device, --num_steps, --loop,
     --offload, --compile, --verbose
     """
-    parser.add_argument(
-        "--quantization",
-        action="store_true",
-        help="Enable quantization (fp8, e5m2, e4m3fn) for the model",
-    )
+    flux_models = populate_model_choices(flux_configs)
+    mmada_models = populate_model_choices(mmada_configs)
+    all_models = flux_models + mmada_models
+    model_args = []
+    model_args_map = {}
+    for model in all_models:
+        if ":" in model:
+            key = model.split(":")[-1]
+        else:
+            key = model.split(".")[-1]
+
+        # Only add to map if key doesn't exist, or if this is a model.dit.* model (prioritize it)
+        if key not in model_args_map or "model.dit." in model:
+            model_args_map[key] = model
+            if key not in model_args:
+                model_args.append(key)
+
+    # Fix 2: Set default to first model or "flux1-dev" if it exists
+    default_model = "flux1-dev" if "flux1-dev" in model_args else model_args[0] if model_args else "dev"
 
     parser.add_argument(
         "-m",
         "--model-type",
-        choices=["dev", "schnell", "dev2", "mini", "llm"],
-        default="dev",
-        help="""
-        Model type to use: dev2, dev, schnell, mini, llm, Default: dev
-        Flux.1 Dev, Flux.1 Schnell, Flux.1-mini,Flux.2-Dev, MMaDA-8B-Base/MixCoT/TraDo-4B-Instruct/TraDo-8B-Instruct, Default: dev
+        choices=model_args,
+        default=default_model,  # Use the computed default
+        help=f"""
+        Model type to use: {model_args}, Default: {default_model}
         """,
     )
 
     args, remaining_argv = parser.parse_known_args()
-    if args.model_type == "llm":
-        main = mmada_main
-        model_id = "Gen-Verse/MMaDA-8B-Base"  # Gen-Verse/MMaDA-8B-Base, Gen-Verse/TraDo-4B-Instruct, Gen-Verse/TraDo-8B-Instruct
+    if args.model_type in mmada_models:
+        main = mmada_main  # Gen-Verse/MMaDA-8B-Base, Gen-Verse/TraDo-4B-Instruct, Gen-Verse/TraDo-8B-Instruct
 
-    elif args.model_type == "dev2":
+    elif "flux2" in args.model_type:
         main = flux2_main
-
-        model_id = f"flux2-{args.model_type.strip('2')}"
-
+    elif "mini" in args.model_type:
+        main = xflux1_main
     else:
-        if args.model_type == "mini":
-            main = xflux1_main
-            model_id = f"flux1-dev:{args.model_type}"
-        else:
-            main = flux1_main
-            model_id = f"flux1-{args.model_type}"
-    remaining_argv = ["--model-id", model_id] + remaining_argv
+        main = flux1_main
+
+    remaining_argv = ["--model-id", model_args_map[args.model_type]] + remaining_argv
+    print(model_args_map[args.model_type])
     sys.argv = [sys.argv[0]] + remaining_argv
     Fire(main)
 

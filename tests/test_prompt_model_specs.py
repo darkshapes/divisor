@@ -6,11 +6,11 @@ from unittest.mock import patch, MagicMock
 
 from divisor.flux1.prompt import main
 from divisor.flux1.spec import (
-    configs,
-    get_model_spec,
+    configs as flux_configs,
     ModelSpec,
     CompatibilitySpec,
 )
+from divisor.spec import get_model_spec
 
 
 class TestPromptModelSpecs:
@@ -25,11 +25,12 @@ class TestPromptModelSpecs:
         ae_id = "model.vae.flux1-dev"
 
         # Verify these IDs exist in configs
-        assert model_id in configs, f"Model ID {model_id} not found in configs"
-        assert ae_id in configs, f"AE ID {ae_id} not found in configs"
+        for configs in flux_configs:
+            assert model_id in configs, f"Model ID {model_id} not found in configs"
+            assert ae_id in configs, f"AE ID {ae_id} not found in configs"
 
         # Verify we can get the specs
-        spec = get_model_spec(model_id)
+        spec = get_model_spec(model_id, flux_configs)
         assert isinstance(spec, ModelSpec)
         assert spec.init is not None
         assert spec.params is not None
@@ -65,7 +66,7 @@ class TestPromptModelSpecs:
         model_id = "model.dit.flux1-dev"
 
         # Verify the spec has init params
-        spec = get_model_spec(model_id)
+        spec = get_model_spec(model_id, flux_configs)
         assert spec.init is not None
         assert hasattr(spec.init, "num_steps")
         assert hasattr(spec.init, "max_length")
@@ -186,20 +187,22 @@ class TestPromptModelSpecs:
 
     def test_all_models_in_configs_have_valid_structure(self):
         """Test that all models in configs have the expected structure."""
-        for model_id in configs.keys():
-            # Each model should have a "*" key with ModelSpec
-            assert "*" in configs[model_id]
-            base_spec = configs[model_id]["*"]
-            assert isinstance(base_spec, ModelSpec)
-            assert hasattr(base_spec, "repo_id")
-            assert hasattr(base_spec, "file_name")
-            assert hasattr(base_spec, "params")
+        for config in flux_configs:
+            for model_id in config.keys():
+                # Each model should have a "*" key with ModelSpec
+                assert "*" in flux_configs[model_id]
+                base_spec = flux_configs[model_id]["*"]
+                assert isinstance(base_spec, ModelSpec)
+                assert hasattr(base_spec, "repo_id")
+                assert hasattr(base_spec, "file_name")
+                assert hasattr(base_spec, "params")
 
     def test_model_specs_can_be_retrieved(self):
         """Test that get_model_spec() can retrieve all model specs."""
-        for model_id in configs.keys():
-            spec = get_model_spec(model_id)
-            assert isinstance(spec, ModelSpec)
-            assert spec.repo_id is not None
-            assert spec.file_name is not None
-            assert spec.params is not None
+        for config in flux_configs:
+            for model_id in config.keys():
+                spec = get_model_spec(model_id, config)
+                assert isinstance(spec, ModelSpec)
+                assert spec.repo_id is not None
+                assert spec.file_name is not None
+                assert spec.params is not None

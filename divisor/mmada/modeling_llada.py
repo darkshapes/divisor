@@ -2,15 +2,13 @@
 # Adapted from https://github.com/Gen-Verse/MMaDA
 
 from __future__ import annotations
-from abc import abstractmethod
-from contextlib import nullcontext
-from dataclasses import fields
-from functools import partial
+
 import logging
 import math
 import sys
+from abc import abstractmethod
+from functools import partial
 from typing import (
-    Any,
     Callable,
     Iterable,
     List,
@@ -18,32 +16,22 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
-    Union,
     cast,
 )
+from dataclasses import fields
+from typing import Union
 
-from huggingface_hub import constants
-from nnll.init_gpu import device
 import torch
-from torch import einsum
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import einsum
 from transformers import PreTrainedModel
-from transformers.cache_utils import Cache
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.models.auto import AutoModel
+from transformers.cache_utils import Cache
+from contextlib import nullcontext
 
-from divisor.mmada.config import create_config_reader, create_show_config
-from divisor.mmada.configuration_llada import (
-    ActivationCheckpointingStrategy,
-    ActivationType,
-    BlockType,
-    InitFnType,
-    LLaDAConfig,
-    LayerNormType,
-    ModelConfig,
-    StrEnum,
-)
+from nnll.init_gpu import device
 
 if sys.version_info.minor > 8:
     from collections.abc import MutableMapping
@@ -51,6 +39,17 @@ elif sys.version_info.minor == 8:
     from typing import MutableMapping
 else:
     raise SystemExit("This script supports Python 3.8 or higher")
+
+from divisor.mmada.configuration_llada import (
+    LLaDAConfig,
+    StrEnum,
+    InitFnType,
+    ActivationType,
+    BlockType,
+    LayerNormType,
+    ModelConfig,
+    ActivationCheckpointingStrategy,
+)
 
 
 __all__ = [
@@ -99,7 +98,7 @@ def init_weights(
     :param layer_id: When set, the standard deviation for the "mitchell" method will be adjusted by
         ``1 / sqrt(2 * (layer_id + 1))``.
     """
-    d = d if d is not None else config.d_model or 4096
+    d = d if d is not None else config.d_model
     if config.init_fn == InitFnType.normal:
         std = config.init_std * std_factor
         if config.init_cutoff_factor is not None:
@@ -137,7 +136,7 @@ def init_weights(
             std = config.init_std
         elif type_of_module == ModuleType.final_out:
             # final output (ff_out)
-            std = 4096**-0.5
+            std = config.d_model**-0.5
         else:
             raise RuntimeError(f"Unknown module type '{type_of_module}'")
         nn.init.trunc_normal_(
@@ -212,7 +211,7 @@ class LayerNormBase(nn.Module):
         self,
         config: ModelConfig,
         *,
-        size: Optional[int] = 4096,
+        size: Optional[int] = None,
         elementwise_affine: Optional[bool] = True,
         eps: float = 1e-05,
     ):
@@ -582,10 +581,8 @@ class LLaDABlock(nn.Module):
                 from flash_attn import flash_attn_func  # type: ignore
 
                 self.flash_attn_func = flash_attn_func
-            except (ModuleNotFoundError, ImportError) as e:
-                # Flash attention not available, fall back to standard attention
-                logging.warning(f"Flash attention requested but not available ({e}). Falling back to standard attention.")
-                self.flash_attn_func = None
+            except ModuleNotFoundError:
+                pass
 
     def reset_parameters(self):
         if self.k_norm is not None:
@@ -640,15 +637,9 @@ class LLaDABlock(nn.Module):
         attention mask if passed, and applying dropout if a probability greater than 0.0 is specified.
         """
         if self.flash_attn_func is not None and attn_mask is None:
-            try:
-                r = self.flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), dropout_p=dropout_p, causal=False)
-                return r.transpose(1, 2)
-            except Exception as e:
-                # Flash attention failed, fall back to standard attention
-                logging.warning(f"Flash attention computation failed ({e}). Falling back to standard attention.")
-                # Continue to fallback implementation below
-
-            # Fallback to standard attention (either flash_attn not available, attn_mask present, or flash_attn failed)
+            r = self.flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), dropout_p=dropout_p, causal=False)
+            return r.transpose(1, 2)
+        else:
             # torch's sdpa doesn't support GQA, so we're doing this
             assert k.size(1) == v.size(1)
             num_kv_heads = k.size(1)
@@ -1006,10 +997,9 @@ class LLaDAModel(nn.Module):
         self.config = config
         self.__cache = BufferCache()
 
-        # Validate config - disable flash_attention if ALiBi is enabled (not compatible)
+        # Validate config.
         if self.config.alibi and self.config.flash_attention:
-            logging.warning("ALiBi is not supported with FlashAttention. Disabling flash_attention.")
-            self.config.flash_attention = False
+            raise Exception("ALiBi is currently not supported with FlashAttention")
 
         if self.config.alibi and self.config.rope:
             raise Exception("ALiBi and RoPE are mutually exclusive")
@@ -1025,29 +1015,12 @@ class LLaDAModel(nn.Module):
         self.activation_checkpointing_strategy: Optional[ActivationCheckpointingStrategy] = None
         self._activation_checkpoint_fn: Callable = activation_checkpoint_function(self.config)
 
-        # Default block_group_size to 1 if it's None (e.g., when loading from pretrained configs that don't have this field)
-        block_group_size = getattr(self.config, "block_group_size", None)
-        if block_group_size is None:
-            block_group_size = 1
-            self.config.block_group_size = 1
-
-        # Ensure n_layers is set (shouldn't be None, but handle it defensively)
-        n_layers = getattr(self.config, "n_layers", None)
-        if n_layers is None:
-            raise Exception("n_layers must be set in config")
-
-        if not (0 < block_group_size <= n_layers and n_layers % block_group_size == 0):
+        if not (0 < self.config.block_group_size <= self.config.n_layers and self.config.n_layers % self.config.block_group_size == 0):
             raise Exception("n layers must be divisible by block group size")
 
-        # Conditionally enable flash SDP only if flash_attention is enabled and available
-        if (self.config.init_device == "cuda" or device.type == "cuda") and self.config.flash_attention:
-            try:
-                # Check if flash SDP is available before enabling
-                if hasattr(torch.backends.cuda, "flash_sdp_enabled"):
-                    torch.backends.cuda.enable_flash_sdp(True)
-                    torch.backends.cuda.enable_mem_efficient_sdp(False)  # this is super slow so make sure torch won't use it
-            except Exception as e:
-                logging.warning(f"Failed to enable flash SDP backend ({e}). Continuing without it.")
+        if self.config.init_device == "cuda" or device.type == "cuda":
+            torch.backends.cuda.enable_flash_sdp(True)
+            torch.backends.cuda.enable_mem_efficient_sdp(False)  # this is super slow so make sure torch won't use it
 
         self.transformer = nn.ModuleDict(
             dict(
@@ -1330,48 +1303,15 @@ class LLaDAModel(nn.Module):
         return LLaDAOutput(logits=logits, attn_key_values=attn_key_values, hidden_states=tuple(all_hidden_states) if output_hidden_states else None)  # type: ignore[arg-type]
 
 
-def create_model_config_from_pretrained_config(config: LLaDAConfig, repo_id: str | None = None):
+def create_model_config_from_pretrained_config(config: LLaDAConfig):
     """
-    Utility function to create ModelConfig from a pretrained LLaDAConfig.\n
-    :param config: The LLaDAConfig instance
-    :param repo_id: The HuggingFace repository ID (e.g., "Gen-Verse/MMaDA-8B-Base").
-                   If None, will try to get it from config.repo_id if available.
-    :returns: A ModelConfig instance
+    Utility function
     """
-    # Try to get repo_id from config if not provided
-    if repo_id is None:
-        repo_id = getattr(config, "repo_id", None)
-        if repo_id is None:
-            raise ValueError("repo_id must be provided either as a parameter or stored in config.repo_id")
 
-    kwargs: dict[str, Any] = {"n_layers": 32, "block_group_size": 1}
-    reader = create_config_reader(model_id=repo_id)
+    kwargs = {}
     for field in fields(ModelConfig):
-        value = reader(field.name)
-        kwargs.setdefault(field.name, value)
-    base_reader = create_show_config()
-    config_data = base_reader()
-    for key, value in config_data.items():
-        if key not in kwargs and key not in [
-            "_name_or_path",
-            "architectures",
-            "auto_map",
-            "codebook_size",
-            "llm_vocab_size",
-            "model_type",
-            "new_vocab_size",
-            "num_new_special_tokens",
-            "num_vq_tokens",
-            "pretrained_model_path",
-            "tie_word_embeddings",
-            "torch_dtype",
-            "transformers_version",
-            "use_cache",
-            "w_clip_vit",
-        ]:
-            kwargs.setdefault(key, value)
-    #     value = base_reader(field.name)
-    #     kwargs.setdefault(field.name, value)
+        kwargs[field.name] = getattr(config, field.name)
+
     model_config = ModelConfig(**kwargs)
     return model_config
 
@@ -1385,7 +1325,7 @@ class LLaDAModelLM(PreTrainedModel):
     base_model_prefix = "model"
     _no_split_modules = ["LLaDABlock", "LLaDASequentialBlock", "LLaDALlamaBlock"]
 
-    def __init__(self, config: LLaDAConfig, model: Optional[LLaDAModel] = None, init_params: bool = False, repo_id: str | None = None):
+    def __init__(self, config: LLaDAConfig, model: Optional[LLaDAModel] = None, init_params: bool = False):
         super().__init__(config)
 
         if not model:

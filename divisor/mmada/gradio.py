@@ -7,6 +7,7 @@ from nnll.init_gpu import device
 from divisor.mmada import app
 from divisor.mmada.loading import load_model
 from divisor.mmada.spec import configs
+from divisor.spec import populate_model_choices
 
 css_styles = """
 .gradio-container{font-family:'IBM Plex Sans',sans-serif;margin:auto;}
@@ -47,7 +48,7 @@ footer{display:none !important}
 
 def toggle_thinking_mode_lm(current_thinking_mode):
     new_state = not current_thinking_mode
-    new_label = "Thinking Mode ✅" if new_state else "Thinking Mode ❌"
+    new_label = "Thinking Mode ✓" if new_state else "Thinking Mode ✗"
     return new_state, gr.update(value=new_label)
 
 
@@ -62,10 +63,10 @@ color_map_config = {
     "GEN": "#DCABFA",
 }
 
-model_choices = ["model.mldm.mmada"] + ["model.mldm.mmada:" + n for n in configs["model.mldm.mmada"] if n != "*"]
 with gr.Blocks(css=css_styles) as demo:
     thinking_mode_lm = gr.State(False)
     thinking_mode_mmu = gr.State(False)
+    model_choices = populate_model_choices(configs)
 
     gr.Markdown("### Select Model")
     with gr.Row():
@@ -217,6 +218,7 @@ with gr.Blocks(css=css_styles) as demo:
             status = f"Model '{default_model_id}' loaded successfully."
         except Exception as e:
             status = f"Error loading model '{default_model_id}': {str(e)}"
+            print(e)
         return default_model_id, status
 
     demo.load(fn=initialize_model, inputs=None, outputs=[model_select_radio, model_load_status_box], queue=True)

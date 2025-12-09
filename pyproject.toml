@@ -25,6 +25,8 @@ dev = [
 ]
 [project.optional-dependencies]
 cuda = [
+  "triton-windows ; sys_platform == 'win32'",
+  "triton ; sys_platform == 'Linux'",
   "jetengine @ git+https://github.com/Labman42/JetEngine.git ; sys_platform != 'darwin'",
 ]
 [tool.pyright]
@@ -50,7 +52,7 @@ preview = true
 [tool.uv.sources]
 
 nnll = { git = "https://github.com/darkshapes/nnll" }
-transformers = { git = "https://github.com/huggingface/transformers" }
+# transformers = { git = "https://github.com/huggingface/transformers" }
 jetengine = { git = "https://github.com/Labman42/JetEngine.git" }
 
 [tool.ruff]

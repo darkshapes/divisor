@@ -38,7 +38,7 @@ from transformers.modeling_outputs import (
     CausalLMOutputWithPast,
 )
 from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
-from transformers.modeling_utils import PreTrainedModel
+from transformers import PreTrainedModel
 from transformers.utils import logging
 from transformers.utils.import_utils import is_torch_flex_attn_available
 from transformers.utils.generic import can_return_tuple
@@ -46,24 +46,26 @@ from transformers.utils.generic import can_return_tuple
 from divisor.trado.configuration_sdar import SDARConfig
 from divisor.trado.sampling import compute_default_rope_parameters
 
-flash_attention_available = False
 try:
     from flash_attn.ops.triton.layer_norm import rms_norm_fn as flash_rms_norm
     from transformers.processing_utils import Unpack
     from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
     from flash_attn import flash_attn_func, flash_attn_varlen_func
     from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
-
-    flash_attention_available = True
 except (NameError, ImportError, ModuleNotFoundError):
-    pass
+    flash_attention_available = False
+    from divisor.trado.rms_norm import rms_norm_fn
+else:
+    flash_attention_available = True
+
 
 try:
     from liger_kernel.ops.swiglu import LigerSiLUMulFunction  # noqa: F401
 
-    liger_kernel_is_available = True
 except ImportError:
     liger_kernel_is_available = False
+else:
+    liger_kernel_is_available = True
 
 
 if is_torch_flex_attn_available():
@@ -355,13 +357,7 @@ class SDARRMSNorm(nn.Module):
             except (NameError, ImportError, ModuleNotFoundError) as error_log:
                 logger.warning(f"Flash RMS norm failed ({error_log}). Falling back to standard implementation.")
                 # Fall through to standard implementation below
-
-        # Standard RMS norm implementation (fallback for MPS, CPU, or when flash_rms_norm fails)
-        input_dtype = hidden_states.dtype
-        hidden_states = hidden_states.to(torch.float32)
-        variance = hidden_states.pow(2).mean(-1, keepdim=True)
-        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-        return self.weight * hidden_states.to(input_dtype)
+        return rms_norm_fn(hidden_states, weight=self.weight, bias=None, eps=self.variance_epsilon)
 
     def extra_repr(self):
         return f"{tuple(self.weight.shape)}, eps={self.variance_epsilon}"

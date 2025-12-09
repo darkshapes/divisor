@@ -9,10 +9,11 @@ from divisor.mmada.live_token import (
     get_highlighted_text_tuples,
     get_num_transfer_tokens,
 )
-from divisor.mmada.loading import load_model, torch_dtype
+from divisor.mmada.loading import load_model, device_dtype
 from divisor.mmada.sampling import add_gumbel_noise, prepare
-from divisor.mmada.spec import get_merged_model_spec
+from divisor.spec import get_model_spec
 from divisor.mmada.text_embedder import HFEmbedder
+from divisor.mmada.spec import configs as mmada_configs
 
 # VQ_MODEL = MAGVITv2().from_pretrained("showlab/magvitv2").to(DEVICE)
 
@@ -33,7 +34,7 @@ def generate_viz_wrapper_lm(
     remasking_strategy,
     thinking_mode_lm,
 ):
-    spec = get_merged_model_spec(model_id)
+    spec = get_model_spec(model_id, mmada_configs)
     mask_id = spec.init.mask_id
     model = load_model(model_id, device=device)
     hf = HFEmbedder(spec.repo_id, max_length=spec.init.max_position_embeddings)
@@ -116,10 +117,10 @@ def generate_viz_wrapper_lm(
             x0_predicted_tokens = torch.argmax(logits_with_noise, dim=-1)
 
             if remasking_strategy == "low_confidence":
-                probs = F.softmax(logits.to(torch_dtype), dim=-1)
+                probs = F.softmax(logits.to(device_dtype), dim=-1)
                 x0_probs = torch.gather(probs, dim=-1, index=x0_predicted_tokens.unsqueeze(-1)).squeeze(-1)
             elif remasking_strategy == "random":
-                x0_probs = torch.rand(x.shape, device=x.device, dtype=torch_dtype)
+                x0_probs = torch.rand(x.shape, device=x.device, dtype=device_dtype)
             else:
                 yield (
                     get_highlighted_text_tuples(x, input_ids, prompt_len, hf.tokenizer, mask_id, raw_prompt_attention_mask),

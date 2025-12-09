@@ -8,7 +8,7 @@ from typing import Any, Callable, Optional
 from nnll.console import nfo
 
 from divisor.controller import ManualTimestepController
-from divisor.spec import DenoisingState
+from divisor.state import DenoisingState
 
 
 def update_state_and_cache(

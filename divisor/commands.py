@@ -17,7 +17,7 @@ from divisor.cli_helpers import (
 )
 from divisor.controller import ManualTimestepController, rng, variation_rng
 from divisor.noise import prepare_noise_for_model
-from divisor.spec import DenoisingState
+from divisor.state import DenoisingState
 from divisor.variant import change_variation
 
 

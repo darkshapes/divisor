@@ -15,7 +15,8 @@ import torch
 
 from divisor.flux1.autoencoder import AutoEncoder, AutoEncoderParams
 from divisor.flux1.model import Flux, FluxLoraWrapper
-from divisor.flux1.spec import get_merged_model_spec, optionally_expand_state_dict
+from divisor.flux1.spec import optionally_expand_state_dict, configs as flux_configs
+from divisor.spec import get_model_spec
 from divisor.flux1.text_embedder import HFEmbedder
 from divisor.flux2.autoencoder import (
     AutoEncoder as AutoEncoder2,
@@ -133,7 +134,7 @@ def load_flow_model(
     lora_repo_id: str | None = None,
     lora_filename: str | None = None,
     compatibility_key: str | None = None,
-) -> Flux:
+) -> Flux | FluxLoraWrapper | XFlux | Flux2:  # type: ignore
     """Load a flow model (DiT model).\n
     :param mir_id: Model ID (e.g., "model.dit.flux1-dev")
     :param device: Device to load the model on
@@ -143,19 +144,20 @@ def load_flow_model(
     :param compatibility_key: Optional compatibility key (e.g., "fp8-sai") to override repo_id and file_name
     :returns: Loaded Flux model"""
 
-    config = get_merged_model_spec(mir_id, compatibility_key=compatibility_key)
+    # type: ignore
+    config = get_model_spec(mir_id, flux_configs)
 
     with torch.device("meta"):
-        if config.params is Flux2Params:
-            model = Flux2(config.params).to(torch.bfloat16)
+        if config.params is Flux2Params:  # type: ignore
+            model = Flux2(config.params).to(torch.bfloat16)  # type: ignore
         elif lora_repo_id and lora_filename:
-            model = FluxLoraWrapper(params=config.params).to(torch.bfloat16)
-        elif config.params is XFluxParams:
-            model = XFlux(config.params).to(torch.bfloat16)
+            model = FluxLoraWrapper(params=config.params).to(torch.bfloat16)  # type: ignore
+        elif config.params is XFluxParams:  # type: ignore
+            model = XFlux(config.params).to(torch.bfloat16)  # type: ignore
         else:
             model = Flux(config.params).to(torch.bfloat16)  # type: ignore
 
-    ckpt_path = str(retrieve_model(config.repo_id, config.file_name))
+    ckpt_path = str(retrieve_model(config.repo_id, config.file_name))  # type: ignore
     nfo(f": {os.path.basename(ckpt_path)}")
     sd = load_sft(ckpt_path, device=device.type)
     load_state_dict_into_model(model, sd, verbose=verbose)  # type: ignore
@@ -177,25 +179,25 @@ def load_clip(device: str | torch.device = device) -> HFEmbedder:
     return HFEmbedder("openai/clip-vit-large-patch14", max_length=77, dtype=torch.bfloat16).to(device)
 
 
-def load_ae(mir_id: str, device: torch.device = device) -> AutoEncoder:
+def load_ae(mir_id: str, device: torch.device = device) -> AutoEncoder | AutoEncoder2 | AutoencoderTiny:  # type: ignore
     """Load the autoencoder model.\n
     :param mir_id: Model ID (e.g., "model.vae.flux1-dev" or "model.taesd.flux1-dev")
     :param device: Device to load the model on
     :returns: Loaded AutoEncoder instance
     """
-    config = get_merged_model_spec(mir_id)
+    config = get_model_spec(mir_id, flux_configs)
 
-    ckpt_path = str(retrieve_model(config.repo_id, config.file_name))
+    ckpt_path = str(retrieve_model(config.repo_id, config.file_name))  # type: ignore
 
     with torch.device("meta"):
-        if isinstance(config.params, AutoEncoderParams):
-            ae = AutoEncoder(config.params)
-        elif isinstance(config.params, AutoEncoder2Params):
-            ae = AutoEncoder2(config.params)
-        elif config.params is AutoencoderTiny:
+        if isinstance(config.params, AutoEncoderParams):  # type: ignore
+            ae = AutoEncoder(config.params)  # type: ignore
+        elif isinstance(config.params, AutoEncoder2Params):  # type: ignore
+            ae = AutoEncoder2(config.params)  # type: ignore
+        elif config.params is AutoencoderTiny:  # type: ignore
             raise NotImplementedError("AutoencoderTiny loading not yet implemented. Use model.vae.flux1-dev instead.")
         else:
-            raise ValueError(f"Config {mir_id} is not an autoencoder (expected AutoEncoderParams or AutoEncoder2Params, got {type(config.params).__name__})")
+            raise ValueError(f"Config {mir_id} is not an autoencoder (expected AutoEncoderParams or AutoEncoder2Params, got {type(config.params).__name__})")  # type: ignore
 
     nfo(f": {os.path.basename(ckpt_path)}")
     sd = load_sft(ckpt_path, device=device.type)

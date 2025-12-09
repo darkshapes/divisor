@@ -15,7 +15,7 @@ from nnll.init_gpu import device
 from nnll.random import RNGState
 import torch
 
-from divisor.spec import DenoisingState, TimestepState
+from divisor.state import DenoisingState, TimestepState
 
 rng = RNGState(device=device.type)
 variation_rng = RNGState(device=device.type)

@@ -32,7 +32,7 @@ def generate_cuda(model_spec: ModelSpec):
     outputs = llm.generate_streaming([prompt], sampling_params)
 
 
-def generate_mps(model_spec: ModelSpec):
+def generate(model_spec: ModelSpec):
     from divisor.trado.modeling_sdar import SDARForCausalLM
     from divisor.trado.tokenization_qwen2_fast import Qwen2TokenizerFast
     from divisor.trado.generate import block_diffusion_generate
@@ -40,7 +40,7 @@ def generate_mps(model_spec: ModelSpec):
     model = SDARForCausalLM.from_pretrained(model_spec.repo_id, trust_remote_code=True, torch_dtype="bfloat16")
     tokenizer = Qwen2TokenizerFast.from_pretrained(model_spec.repo_id, trust_remote_code=True)
 
-    prompt = "What's the solution of x^2 - 2x + 1 = 0\nPlease reason step by step, and put your final answer within \\boxed{}.\n"
+    prompt = "Word\n"
     messages = [{"role": "user", "content": prompt}]
     text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
@@ -61,6 +61,11 @@ def generate_mps(model_spec: ModelSpec):
 def main(model_id: str):
     model_spec = configs[model_id]["*"]
     if device.type == "cuda":
-        generate_cuda(model_spec)
+        try:
+            import jetengine
+
+            generate_cuda(model_spec)
+        except (ModuleNotFoundError, ImportError, NameError):
+            generate(model_spec)
     else:
-        generate_mps(model_id)
+        generate(model_spec)

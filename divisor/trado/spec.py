@@ -26,7 +26,7 @@ class ModelSpec:
 
 
 configs = {
-    "model.trado": {
+    "model.mldm.trado": {
         "*": ModelSpec(
             repo_id="exdysa/TraDo-4B-Instruct",
             file_name="model-00001-of-00002.safetensors",
@@ -43,7 +43,7 @@ configs = {
             ),
         )
     },
-    "model.sdar": {
+    "model.mldm.sdar": {
         "*": ModelSpec(
             repo_id="exdysa/SDAR-1.7B-Chat",
             file_name="model.safetensors",

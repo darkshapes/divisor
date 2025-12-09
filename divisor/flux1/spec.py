@@ -39,203 +39,153 @@ class ModelSpec:
     init: InitialParams | None = None
 
 
-configs = {
-    "model.dit.flux1-dev": {
-        "*": ModelSpec(
-            repo_id="black-forest-labs/FLUX.1-dev",
-            file_name="flux1-dev.safetensors",
-            init=InitialParams(
-                num_steps=28,
-                max_length=512,
-                guidance=4.0,
-                shift=True,
+configs = [
+    {
+        "model.dit.flux1-dev": {
+            "*": ModelSpec(
+                repo_id="black-forest-labs/FLUX.1-dev",
+                file_name="flux1-dev.safetensors",
+                init=InitialParams(
+                    num_steps=28,
+                    max_length=512,
+                    guidance=4.0,
+                    shift=True,
+                ),
+                params=FluxParams(
+                    in_channels=64,
+                    vec_in_dim=768,
+                    context_in_dim=4096,
+                    hidden_size=3072,
+                    mlp_ratio=4.0,
+                    num_heads=24,
+                    depth=19,
+                    depth_single_blocks=38,
+                    axes_dim=[16, 56, 56],
+                    theta=10_000,
+                    qkv_bias=True,
+                    guidance_embed=True,
+                ),
             ),
-            params=FluxParams(
-                in_channels=64,
-                vec_in_dim=768,
-                context_in_dim=4096,
-                hidden_size=3072,
-                mlp_ratio=4.0,
-                num_heads=24,
-                depth=19,
-                depth_single_blocks=38,
-                axes_dim=[16, 56, 56],
-                theta=10_000,
-                qkv_bias=True,
-                guidance_embed=True,
+            "fp8-e5m2-sai": CompatibilitySpec(
+                repo_id="Kijai/flux-fp8",
+                file_name="flux1-dev-fp8-e5m2.safetensors",
             ),
-        ),
-        "fp8-e5m2-sai": CompatibilitySpec(
-            repo_id="Kijai/flux-fp8",
-            file_name="flux1-dev-fp8-e5m2.safetensors",
-        ),
-        "fp8-e4m3fn-sai": CompatibilitySpec(
-            repo_id="Kijai/flux-fp8",
-            file_name="flux1-dev-fp8-e4m3fn.safetensors",
-        ),
-        "fp8-sai": CompatibilitySpec(
-            repo_id="XLabs-AI/flux-dev-fp8",
-            file_name="flux-dev-fp8.safetensors",
-        ),
-        "mini": ModelSpec(
-            repo_id="TencentARC/flux-mini",
-            file_name="flux-mini.safetensors",
-            init=InitialParams(
-                num_steps=25,
-                max_length=512,
-                guidance=3.5,
-                shift=True,
+            "fp8-e4m3fn-sai": CompatibilitySpec(
+                repo_id="Kijai/flux-fp8",
+                file_name="flux1-dev-fp8-e4m3fn.safetensors",
             ),
-            params=XFluxParams(
-                in_channels=64,
-                vec_in_dim=768,
-                context_in_dim=4096,
-                hidden_size=3072,
-                mlp_ratio=4.0,
-                num_heads=24,
-                depth=5,
-                depth_single_blocks=10,
-                axes_dim=[16, 56, 56],
-                theta=10_000,
-                qkv_bias=True,
-                guidance_embed=True,
+            "fp8-sai": CompatibilitySpec(
+                repo_id="XLabs-AI/flux-dev-fp8",
+                file_name="flux-dev-fp8.safetensors",
             ),
-        ),
-    },
-    "model.vae.flux1-dev": {
-        "*": ModelSpec(
-            repo_id="black-forest-labs/FLUX.1-dev",
-            file_name="ae.safetensors",
-            params=AutoEncoderParams(
-                resolution=256,
-                in_channels=3,
-                ch=128,
-                out_ch=3,
-                ch_mult=[1, 2, 4, 4],
-                num_res_blocks=2,
-                z_channels=16,
-                scale_factor=0.3611,
-                shift_factor=0.1159,
+            "mini": ModelSpec(
+                repo_id="TencentARC/flux-mini",
+                file_name="flux-mini.safetensors",
+                init=InitialParams(
+                    num_steps=25,
+                    max_length=512,
+                    guidance=3.5,
+                    shift=True,
+                ),
+                params=XFluxParams(
+                    in_channels=64,
+                    vec_in_dim=768,
+                    context_in_dim=4096,
+                    hidden_size=3072,
+                    mlp_ratio=4.0,
+                    num_heads=24,
+                    depth=5,
+                    depth_single_blocks=10,
+                    axes_dim=[16, 56, 56],
+                    theta=10_000,
+                    qkv_bias=True,
+                    guidance_embed=True,
+                ),
             ),
-        ),
+        },
     },
-    "model.taesd.flux1-dev": {
-        "*": ModelSpec(repo_id="madebyollin/taef1", file_name="diffusion_pytorch_model.safetensors", params=AutoencoderTiny),
-    },
-    "model.dit.flux1-schnell": {
-        "*": ModelSpec(
-            repo_id="black-forest-labs/FLUX.1-schnell",
-            file_name="flux1-schnell.safetensors",
-            init=InitialParams(
-                num_steps=4,
-                max_length=256,
-                guidance=2.5,
-                shift=False,
+    {
+        "model.vae.flux1-dev": {
+            "*": ModelSpec(
+                repo_id="black-forest-labs/FLUX.1-dev",
+                file_name="ae.safetensors",
+                params=AutoEncoderParams(
+                    resolution=256,
+                    in_channels=3,
+                    ch=128,
+                    out_ch=3,
+                    ch_mult=[1, 2, 4, 4],
+                    num_res_blocks=2,
+                    z_channels=16,
+                    scale_factor=0.3611,
+                    shift_factor=0.1159,
+                ),
             ),
-            params=FluxParams(
-                in_channels=64,
-                vec_in_dim=768,
-                context_in_dim=4096,
-                hidden_size=3072,
-                mlp_ratio=4.0,
-                num_heads=24,
-                depth=19,
-                depth_single_blocks=38,
-                axes_dim=[16, 56, 56],
-                theta=10_000,
-                qkv_bias=True,
-                guidance_embed=False,
+        },
+    },
+    {
+        "model.taesd.flux1-dev": {
+            "*": ModelSpec(repo_id="madebyollin/taef1", file_name="diffusion_pytorch_model.safetensors", params=AutoencoderTiny),
+        },
+        "model.dit.flux1-schnell": {
+            "*": ModelSpec(
+                repo_id="black-forest-labs/FLUX.1-schnell",
+                file_name="flux1-schnell.safetensors",
+                init=InitialParams(
+                    num_steps=4,
+                    max_length=256,
+                    guidance=2.5,
+                    shift=False,
+                ),
+                params=FluxParams(
+                    in_channels=64,
+                    vec_in_dim=768,
+                    context_in_dim=4096,
+                    hidden_size=3072,
+                    mlp_ratio=4.0,
+                    num_heads=24,
+                    depth=19,
+                    depth_single_blocks=38,
+                    axes_dim=[16, 56, 56],
+                    theta=10_000,
+                    qkv_bias=True,
+                    guidance_embed=False,
+                ),
             ),
-        ),
-        "fp8-sai": CompatibilitySpec(
-            repo_id="Comfy-Org/flux1-schnell",
-            file_name="flux1-schnell-fp8.safetensors",
-        ),
-        "fp8-e4m3fn-sai": CompatibilitySpec(
-            repo_id="Kijai/flux-fp8",
-            file_name="flux1-schnell-fp8-e4m3fn.safetensors",
-        ),
+            "fp8-sai": CompatibilitySpec(
+                repo_id="Comfy-Org/flux1-schnell",
+                file_name="flux1-schnell-fp8.safetensors",
+            ),
+            "fp8-e4m3fn-sai": CompatibilitySpec(
+                repo_id="Kijai/flux-fp8",
+                file_name="flux1-schnell-fp8-e4m3fn.safetensors",
+            ),
+        },
     },
-    "model.dit.flux2-dev": {
-        "*": ModelSpec(
-            repo_id="black-forest-labs/FLUX.2-dev",
-            file_name="flux2-dev.safetensors",
-            params=Flux2Params(),
-        )
+    {
+        "model.dit.flux2-dev": {
+            "*": ModelSpec(
+                repo_id="black-forest-labs/FLUX.2-dev",
+                file_name="flux2-dev.safetensors",
+                params=Flux2Params(),
+            )
+        },
+        "model.vae.flux2-dev": {
+            "*": ModelSpec(
+                repo_id="black-forest-labs/FLUX.2-dev",
+                file_name="ae.safetensors",
+                params=AutoEncoder2Params(),
+            )
+        },
+        "model.dit.flux2-dev:fp8-sai": {
+            "*": ModelSpec(
+                repo_id="Comfy-Org/flux2-dev",
+                file_name="split_files/diffusion_models/flux2_dev_fp8mixed.safetensors",
+                params=Flux2Params(),
+            )
+        },
     },
-    "model.vae.flux2-dev": {
-        "*": ModelSpec(
-            repo_id="black-forest-labs/FLUX.2-dev",
-            file_name="ae.safetensors",
-            params=AutoEncoder2Params(),
-        )
-    },
-    "model.dit.flux2-dev:fp8-sai": {
-        "*": ModelSpec(
-            repo_id="Comfy-Org/flux2-dev",
-            file_name="split_files/diffusion_models/flux2_dev_fp8mixed.safetensors",
-            params=Flux2Params(),
-        )
-    },
-}
-
-
-def get_model_spec(mir_id: str, compatibility_key: str | None = None) -> ModelSpec | CompatibilitySpec | None:
-    """Get a ModelSpec or CompatibilitySpec for a given model ID.\n
-    :param mir_id: Model ID (e.g., "model.dit.flux1-dev")
-    :param compatibility_key: Optional compatibility key (e.g., "fp8-sai"). If None, returns base ModelSpec.
-    :returns: ModelSpec if compatibility_key is None, CompatibilitySpec if provided and available, None if provided but not found
-    """
-    if mir_id not in configs:
-        if compatibility_key is None:
-            available = ", ".join(configs.keys())
-            raise ValueError(f"Unknown model ID: {mir_id}. Available: {available}")
-        return None
-
-    config_dict = configs[mir_id]
-
-    # If compatibility_key is provided, try to get compatibility spec
-    if compatibility_key is not None:
-        compat_spec = config_dict.get(compatibility_key)
-        if compat_spec is None:
-            return None
-        return compat_spec
-    else:
-        # Otherwise, return base ModelSpec from "*" key
-        if "*" not in config_dict:
-            raise ValueError(f"Model {mir_id} does not have a base spec (missing '*' key)")
-
-        base_spec = config_dict["*"]
-        if not isinstance(base_spec, ModelSpec):
-            raise ValueError(f"Model {mir_id} base spec is not a ModelSpec")
-
-        return base_spec
-
-
-def get_merged_model_spec(mir_id: str, compatibility_key: str | None = None) -> ModelSpec:
-    """Get a ModelSpec with compatibility overrides merged in.\n
-    :param mir_id: Model ID (e.g., "model.dit.flux1-dev")
-    :param compatibility_key: Optional compatibility key (e.g., "fp8-sai")
-    :returns: ModelSpec with compatibility overrides applied
-    """
-    base_spec = get_model_spec(mir_id)
-    if not isinstance(base_spec, ModelSpec):
-        raise ValueError(f"Model {mir_id} does not have a base ModelSpec")
-    if compatibility_key is None:
-        return base_spec
-
-    compat_spec = get_model_spec(mir_id, compatibility_key)
-    if compat_spec is None:
-        raise ValueError(f"Model {mir_id} does not have compatibility spec '{compatibility_key}'")
-
-    if isinstance(compat_spec, CompatibilitySpec):
-        return ModelSpec(
-            repo_id=compat_spec.repo_id,
-            file_name=compat_spec.file_name,
-            params=base_spec.params,
-            init=base_spec.init,
-        )
-    return base_spec
+]
 
 
 def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> dict:

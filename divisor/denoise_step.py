@@ -8,18 +8,14 @@ from typing import Any, Callable, Optional
 from einops import repeat
 from nnll.init_gpu import device
 import torch
-from torch import Tensor
+from torch import Tensor, nn
 
-from divisor.spec import GetImagePredictionSettings, GetPredictionSettings
+from divisor.state import GetImagePredictionSettings, GetPredictionSettings
 from divisor.variant import apply_variation_noise
 
 # Try to import model types for type checking
-try:
-    from divisor.flux1.model import Flux
-    from divisor.flux2.model import Flux2
-except ImportError:
-    Flux = Any
-    Flux2 = Any
+Flux = nn.Module
+Flux2 = nn.Module
 
 
 def create_clear_prediction_cache(

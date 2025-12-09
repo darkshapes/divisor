@@ -24,7 +24,7 @@ from divisor.denoise_step import (
 )
 from divisor.flux1.model import Flux
 from divisor.flux1.text_embedder import HFEmbedder
-from divisor.spec import (
+from divisor.state import (
     DenoiseSettings,
     GetImagePredictionSettings,
     GetPredictionSettings,

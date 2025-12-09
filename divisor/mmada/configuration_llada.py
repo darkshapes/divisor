@@ -1,13 +1,27 @@
 # SPDX-License-Identifier: MIT
 # Adapted from https://github.com/Gen-Verse/MMaDA
 
-from dataclasses import dataclass
 from enum import Enum
 from os import PathLike
 from typing import Union
-from typing import Optional
+from dataclasses import asdict, dataclass, field
+from glob import glob
+from pathlib import Path
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+)
 
-from transformers import AutoConfig, PreTrainedConfig
+from transformers import AutoConfig, PretrainedConfig
+
 
 __all__ = [
     "ActivationType",
@@ -415,7 +429,7 @@ class ActivationCheckpointingStrategy(StrEnum):
     """
 
 
-class LLaDAConfig(PreTrainedConfig):
+class LLaDAConfig(PretrainedConfig):
     model_type = "llada"
     keys_to_ignore_at_inference = ["past_key_values"]  # TODO: confirm
 

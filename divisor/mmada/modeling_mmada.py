@@ -8,18 +8,18 @@ from nnll.init_gpu import device
 import numpy as np
 import torch
 import torch.nn.functional as F
-from transformers import PreTrainedConfig
 from transformers.models.auto import AutoConfig, AutoModel, AutoModelForCausalLM
+from transformers.configuration_utils import PretrainedConfig
 
 from divisor.mmada.modeling_llada import LLaDAModelLM
 from divisor.mmada.sampling import cosine_schedule, mask_by_random_topk
 
-if device.type == "cuda":
-    import torch.backends.cuda
-if device.type == "mps":
-    torch_dtype = torch.float32
-else:
-    torch_dtype = torch.float64
+dtype_by_device = {
+    "cuda": torch.bfloat16,
+    "mps": torch.float32,
+    "cpu": torch.float32,
+}
+device_dtype = dtype_by_device[device.type]
 
 
 def add_gumbel_noise(logits, temperature):
@@ -31,8 +31,8 @@ def add_gumbel_noise(logits, temperature):
     """
     if temperature == 0:
         return logits
-    logits = logits.to(torch_dtype)
-    noise = torch.rand_like(logits, dtype=torch_dtype)
+    logits = logits.to(device_dtype)
+    noise = torch.rand_like(logits, dtype=device_dtype)
     gumbel_noise = (-torch.log(noise)) ** temperature
     return logits.exp() / gumbel_noise
 
@@ -58,7 +58,7 @@ def get_num_transfer_tokens(mask_index, steps):
     return num_transfer_tokens
 
 
-class MMadaConfig(PreTrainedConfig):
+class MMadaConfig(PretrainedConfig):
     model_type = "mmada"
 
     def __init__(self, **kwargs):
@@ -457,7 +457,7 @@ class MMadaModelLM(LLaDAModelLM):
                 logits_with_noise = add_gumbel_noise(logits, temperature=temperature)
                 x0 = torch.argmax(logits_with_noise, dim=-1)  # b, l
                 if remasking == "low_confidence":
-                    p = F.softmax(logits.to(torch_dtype), dim=-1)
+                    p = F.softmax(logits.to(device_dtype), dim=-1)
                     x0_p = torch.squeeze(torch.gather(p, dim=-1, index=torch.unsqueeze(x0, -1)), -1)  # b, l
                 elif remasking == "random":
                     x0_p = torch.rand((x0.shape[0], x0.shape[1]), device=x0.device)
@@ -559,7 +559,7 @@ class MMadaModelLM(LLaDAModelLM):
                 logits_with_noise = add_gumbel_noise(logits, temperature=temperature)
                 x0 = torch.argmax(logits_with_noise, dim=-1)  # b, l
                 if remasking == "low_confidence":
-                    p = F.softmax(logits.to(torch_dtype), dim=-1)
+                    p = F.softmax(logits.to(device_dtype), dim=-1)
                     x0_p = torch.squeeze(torch.gather(p, dim=-1, index=torch.unsqueeze(x0, -1)), -1)  # b, l
                 elif remasking == "random":
                     x0_p = torch.rand((x0.shape[0], x0.shape[1]), device=x0.device)

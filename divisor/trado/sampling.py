@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
-from transformers import PreTrainedConfig
+from transformers import PretrainedConfig
 
 
 def log(t, eps=1e-20):
@@ -122,7 +122,7 @@ def top_k_top_p_filtering(
 
 
 def compute_default_rope_parameters(
-    config: Optional[PreTrainedConfig] = None,
+    config: Optional[PretrainedConfig] = None,
     device: Optional["torch.device"] = None,
     seq_len: Optional[int] = None,
     **rope_kwargs,
@@ -130,7 +130,7 @@ def compute_default_rope_parameters(
     """
     Computes the inverse frequencies according to the original RoPE implementation
     Args:
-        config ([`~transformers.PreTrainedConfig`]):
+        config ([`~transformers.PretrainedConfig`]):
             The model configuration.
         device (`torch.device`):
             The device to use for initialization of the inverse frequencies.
