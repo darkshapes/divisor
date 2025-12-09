@@ -67,7 +67,7 @@ def get_lin_function(x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: flo
     """
     m = (y2 - y1) / (x2 - x1)
     b = y1 - m * x1
-    return lambda x: m * *
+    return lambda x: m * x + b
 
 
 def get_schedule(

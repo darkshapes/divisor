@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+import torch
+
 from divisor.state import RNGState
 
 
