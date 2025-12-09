@@ -59,17 +59,16 @@ dvzr
 ```
 usage: divisor --model-type dev --quantization <args>
 
-divisor - low-level diffusion prototyping
+Divisor Multimodal CLI
 
 options:
   -h, --help            show this help message and exit
   --quantization        Enable quantization (fp8, e5m2, e4m3fn) for the model
-  -m, --model-type {dev,schnell,dev2,mini,llm}
-                        Model type to use: 'dev' (flux1-dev), 'schnell' (flux1-schnell), 'dev2' (flux2-dev), 'mini' (flux1-mini), 'llm' (MMaDA) Default:
-                        dev
+  -m, --model-type {flux1-dev,mini,flux1-schnell,flux2-dev,mmada,mixcot}
+                        Model type to use: ['flux1-dev', 'mini', 'flux1-schnell', 'flux2-dev', 'mmada', 'mixcot'], Default:
+                        flux1-dev
 
-Valid arguments : --ae_id, --width, --height, --guidance, --seed, --prompt, --tiny, --device, --num_steps, --loop, --offload, --compile,
---verbose
+Valid arguments : --ae_id, --width, --height, --guidance, --seed, --prompt, --tiny, --device, --num_steps, --loop, --offload, --compile, --verbose
 ```
 
 [![dvzr pytest](https://github.com/darkshapes/divisor/actions/workflows/divisor.yml/badge.svg)](https://github.com/darkshapes/divisor/actions/workflows/divisor.yml)<br>
