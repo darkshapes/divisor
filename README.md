@@ -1,36 +1,8 @@
-## Divisor
+## Divisor <br>
 
-> Hands-on procedural generation.
+Divisor is a framework for hands-on procedural generation. It offers precise control over advanced diffusion model processes, enabling faster and easier experimentation on neural networks with off-the-shelf computers. Requires minimum 8GB+ Video RAM on Nvidia or M-series GPU.
 
-> Divisor is a framework enabling flexible media creation using advanced diffusion models like [Flux](https://github.com/black-forest-labs/flux2) and [MMaDA](https://github.com/Gen-Verse/MMaDA). Developers, researchers, and artists gain precise control over low-level generative processes using off-the-shelf computers, making experimentation with neural networks faster and easier than ever.
-
-#### Features:<hr>
-
-> - Multimodal Creation - Actively sculpt any content such as text and images.
-> - Robust Versioning – Pause, resume, save, or restore states with exacting reproducibility and reversibility.
-> - Private & Safe - Compartmentalized and local first, so data never leaves your workspace.
-> - Fine‑Grained Noise & Variation Controls – Branch variations to create diverse and consistent inspiration.
-> - Integration with External Resources – Start quickly with batteries included: models, adapters, and [MIR](https://github.com/darkshapes/mir) specs.
-
-#### Tech Specs:
-
-> - Manual Timestep Control – Step-by-step processing of dynamic prompts, layer‑wise manipulations, and on‑the‑fly parameter changes.
-> - Extensible Prompt Engineering – Dedicated multimodal prompting, system messages, and automatic parsing for LLM‑driven results.
-> - Model‑Agnostic Architecture – Unified API abstraction allows interchangeable custom LoRA and autoencoders.
-> - User‑Facing Interfaces – CLI and Gradio interfaces ready to use or attach to other apps.
-> - Sensible Python Engineering - Uses modern tooling with minimal dependences
-
-#### Requires:<hr>
-
-> **Windows/MacOS/Linux device**
->
-> **Nvidia graphics card or M-series chip with 8GB+ VRAM**. AMD support untested.
->
-> [UV](https://docs.astral.sh/uv/#installation)
->
-> [Git (Windows 10/11)](https://github.com/darkshapes/sdbx/wiki/_Setup-:-Git-%E2%80%90Windows-only%E2%80%90)<br>
-
-#### Install:<hr>
+<sub>MacOS, Linux, Windows PC [[ UV](https://docs.astral.sh/uv/#installation) ] [ [Git on Windows](https://github.com/darkshapes/sdbx/wiki/_Setup-:-Git-%E2%80%90Windows-only%E2%80%90) ]</sub>
 
 ```bash
 git clone https://github.com/darkshapes/divisor
@@ -38,25 +10,22 @@ cd divisor
 uv sync --dev
 ```
 
-> Linux/Macos
+<sub>MacOS/Linux</sub>
 
 ```bash
 source .venv/bin/activate
 ```
 
-> Windows:
+<sub>Windows</sub>
 
-```Powershell
+```powershell
 Set-ExecutionPolicy Bypass -Scope Process -Force; .venv\Scripts\Activate.ps1
 ```
 
-#### Run:<hr>
+<hr>
 
-```
+```powershell
 dvzr
-```
-
-```
 usage: divisor --model-type dev --quantization <args>
 
 Divisor Multimodal CLI

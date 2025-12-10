@@ -50,7 +50,6 @@ preview = true
 [tool.uv.sources]
 
 nnll = { git = "https://github.com/darkshapes/nnll" }
-transformers = { git = "https://github.com/huggingface/transformers" }
 jetengine = { git = "https://github.com/Labman42/JetEngine.git" }
 
 [tool.ruff]
