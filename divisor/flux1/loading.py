@@ -13,9 +13,10 @@ from nnll.init_gpu import device
 from safetensors.torch import load_file as load_sft
 import torch
 
+from divisor.spec import get_model_spec
 from divisor.flux1.autoencoder import AutoEncoder, AutoEncoderParams
 from divisor.flux1.model import Flux, FluxLoraWrapper
-from divisor.flux1.spec import get_merged_model_spec, optionally_expand_state_dict
+from divisor.flux1.spec import configs, optionally_expand_state_dict
 from divisor.flux1.text_embedder import HFEmbedder
 from divisor.flux2.autoencoder import (
     AutoEncoder as AutoEncoder2,
@@ -143,19 +144,19 @@ def load_flow_model(
     :param compatibility_key: Optional compatibility key (e.g., "fp8-sai") to override repo_id and file_name
     :returns: Loaded Flux model"""
 
-    config = get_merged_model_spec(mir_id, compatibility_key=compatibility_key)
+    model_spec = get_model_spec(mir_id, configs)
 
     with torch.device("meta"):
-        if config.params is Flux2Params:
-            model = Flux2(config.params).to(torch.bfloat16)
+        if model_spec.params is Flux2Params:
+            model = Flux2(model_spec.params).to(torch.bfloat16)
         elif lora_repo_id and lora_filename:
-            model = FluxLoraWrapper(params=config.params).to(torch.bfloat16)
-        elif config.params is XFluxParams:
-            model = XFlux(config.params).to(torch.bfloat16)
+            model = FluxLoraWrapper(params=model_spec.params).to(torch.bfloat16)
+        elif model_spec.params is XFluxParams:
+            model = XFlux(model_spec.params).to(torch.bfloat16)
         else:
-            model = Flux(config.params).to(torch.bfloat16)  # type: ignore
+            model = Flux(model_spec.params).to(torch.bfloat16)  # type: ignore
 
-    ckpt_path = str(retrieve_model(config.repo_id, config.file_name))
+    ckpt_path = str(retrieve_model(model_spec.repo_id, model_spec.file_name))
     nfo(f": {os.path.basename(ckpt_path)}")
     sd = load_sft(ckpt_path, device=device.type)
     load_state_dict_into_model(model, sd, verbose=verbose)  # type: ignore

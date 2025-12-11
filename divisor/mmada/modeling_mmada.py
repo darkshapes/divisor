@@ -19,9 +19,9 @@ from divisor.mmada.modeling_llada import LLaDAModelLM
 from divisor.mmada.sampling import cosine_schedule, mask_by_random_topk
 
 if device.type == "mps":
-    torch_dtype = torch.float32
+    torch_dtype = torch.bfloat16
 else:
-    torch_dtype = torch.float64
+    torch_dtype = torch.bfloat16
 
 
 def add_gumbel_noise(logits, temperature):

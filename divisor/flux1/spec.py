@@ -23,10 +23,10 @@ class CompatibilitySpec:
 
 @dataclass
 class InitialParams:
-    num_steps: int
-    max_length: int
-    guidance: float
-    shift: bool
+    num_steps: int | None = None
+    max_length: int | None = None
+    guidance: float | None = None
+    shift: bool | None = None
     width: int = 1360
     height: int = 768
 
@@ -36,10 +36,10 @@ class ModelSpec:
     repo_id: str
     file_name: str
     params: FluxParams | AutoEncoderParams | XFluxParams | Flux2Params | AutoEncoder2Params | type[AutoencoderTiny] | type[FluxLoraWrapper]
-    init: InitialParams | None = None
+    init: InitialParams
 
 
-configs = {
+configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]] = {
     "model.dit.flux1-dev": {
         "*": ModelSpec(
             repo_id="black-forest-labs/FLUX.1-dev",
@@ -106,6 +106,12 @@ configs = {
         "*": ModelSpec(
             repo_id="black-forest-labs/FLUX.1-dev",
             file_name="ae.safetensors",
+            init=InitialParams(
+                num_steps=25,
+                max_length=512,
+                guidance=3.5,
+                shift=True,
+            ),
             params=AutoEncoderParams(
                 resolution=256,
                 in_channels=3,
@@ -120,7 +126,12 @@ configs = {
         ),
     },
     "model.taesd.flux1-dev": {
-        "*": ModelSpec(repo_id="madebyollin/taef1", file_name="diffusion_pytorch_model.safetensors", params=AutoencoderTiny),
+        "*": ModelSpec(
+            repo_id="madebyollin/taef1",
+            file_name="diffusion_pytorch_model.safetensors",
+            init=InitialParams(),
+            params=AutoencoderTiny,
+        ),
     },
     "model.dit.flux1-schnell": {
         "*": ModelSpec(
@@ -161,6 +172,7 @@ configs = {
             repo_id="black-forest-labs/FLUX.2-dev",
             file_name="flux2-dev.safetensors",
             params=Flux2Params(),
+            init=InitialParams(),
         )
     },
     "model.vae.flux2-dev": {
@@ -168,6 +180,7 @@ configs = {
             repo_id="black-forest-labs/FLUX.2-dev",
             file_name="ae.safetensors",
             params=AutoEncoder2Params(),
+            init=InitialParams(),
         )
     },
     "model.dit.flux2-dev:fp8-sai": {
@@ -175,67 +188,10 @@ configs = {
             repo_id="Comfy-Org/flux2-dev",
             file_name="split_files/diffusion_models/flux2_dev_fp8mixed.safetensors",
             params=Flux2Params(),
+            init=InitialParams(),
         )
     },
 }
-
-
-def get_model_spec(mir_id: str, compatibility_key: str | None = None) -> ModelSpec | CompatibilitySpec | None:
-    """Get a ModelSpec or CompatibilitySpec for a given model ID.\n
-    :param mir_id: Model ID (e.g., "model.dit.flux1-dev")
-    :param compatibility_key: Optional compatibility key (e.g., "fp8-sai"). If None, returns base ModelSpec.
-    :returns: ModelSpec if compatibility_key is None, CompatibilitySpec if provided and available, None if provided but not found
-    """
-    if mir_id not in configs:
-        if compatibility_key is None:
-            available = ", ".join(configs.keys())
-            raise ValueError(f"Unknown model ID: {mir_id}. Available: {available}")
-        return None
-
-    config_dict = configs[mir_id]
-
-    # If compatibility_key is provided, try to get compatibility spec
-    if compatibility_key is not None:
-        compat_spec = config_dict.get(compatibility_key)
-        if compat_spec is None:
-            return None
-        return compat_spec
-    else:
-        # Otherwise, return base ModelSpec from "*" key
-        if "*" not in config_dict:
-            raise ValueError(f"Model {mir_id} does not have a base spec (missing '*' key)")
-
-        base_spec = config_dict["*"]
-        if not isinstance(base_spec, ModelSpec):
-            raise ValueError(f"Model {mir_id} base spec is not a ModelSpec")
-
-        return base_spec
-
-
-def get_merged_model_spec(mir_id: str, compatibility_key: str | None = None) -> ModelSpec:
-    """Get a ModelSpec with compatibility overrides merged in.\n
-    :param mir_id: Model ID (e.g., "model.dit.flux1-dev")
-    :param compatibility_key: Optional compatibility key (e.g., "fp8-sai")
-    :returns: ModelSpec with compatibility overrides applied
-    """
-    base_spec = get_model_spec(mir_id)
-    if not isinstance(base_spec, ModelSpec):
-        raise ValueError(f"Model {mir_id} does not have a base ModelSpec")
-    if compatibility_key is None:
-        return base_spec
-
-    compat_spec = get_model_spec(mir_id, compatibility_key)
-    if compat_spec is None:
-        raise ValueError(f"Model {mir_id} does not have compatibility spec '{compatibility_key}'")
-
-    if isinstance(compat_spec, CompatibilitySpec):
-        return ModelSpec(
-            repo_id=compat_spec.repo_id,
-            file_name=compat_spec.file_name,
-            params=base_spec.params,
-            init=base_spec.init,
-        )
-    return base_spec
 
 
 def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> dict:

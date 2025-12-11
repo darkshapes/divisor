@@ -1,70 +1,67 @@
 # SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
 # <!-- // /*  d a r k s h a p e s */ -->
 
-"""
-Main entry point for divisor CLI.
-Routes to different inference modes based on flags.
-Exclusive import location of submodules to avoid circular imports.
-"""
+# Consolidated entry‑point for all supported inference modes.
 
-import argparse
-import sys
+from typing import Any, Callable, Dict
 
 from fire import Fire
+from inspect import signature, Parameter
 
-from divisor.contents import build_available_models
-from divisor.flux1.spec import configs as flux1_configs
-from divisor.mmada.spec import configs as mmada_configs
+all_params: dict[str, Parameter] = {}
 
-flux_args = build_available_models(flux1_configs)
-mmada_args = build_available_models(mmada_configs)
-model_args = flux_args | mmada_args
+_MODE_MODULE: Dict[str, str] = {
+    "flux1": "divisor.flux1.prompt",
+    "xflux1": "divisor.xflux1.prompt",
+    "flux2": "divisor.flux2.prompt",
+    "mmada": "divisor.mmada.gradio",  # UI entry‑point
+}
 
 
-def main():
-    """Main entry point that routes to appropriate inference function."""
-    parser = argparse.ArgumentParser(description="Divisor Multimodal CLI")
-    parser.usage = "divisor --model-type dev --quantization <args>"
-    parser.epilog = """Valid arguments : 
-    --ae_id, --width, --height, --guidance, --seed, --prompt,
-    --tiny, --device, --num_steps, --loop,
-    --offload, --compile, --verbose
+def _load_main(module_path: str) -> Callable[..., Any]:
     """
-    parser.add_argument(
-        "--quantization",
-        action="store_true",
-        help="Enable quantization (fp8, e5m2, e4m3fn) for the model",
+    Import *module_path* and return its ``main`` function.
+    """
+    module = __import__(module_path, fromlist=["main"])
+    return getattr(module, "main")
+
+
+def _patch_run_signature() -> None:
+    from inspect import signature, Parameter, Signature
+
+    all_params: dict[str, Parameter] = {}
+    for mod_path in _MODE_MODULE.values():
+        mod = __import__(mod_path, fromlist=["main"])
+        main_fn = getattr(mod, "main")
+        for p in signature(main_fn).parameters.values():
+            if p.kind in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY):
+                all_params.setdefault(p.name, p)
+
+    run_sig = Signature(
+        parameters=[
+            Parameter("mode", Parameter.POSITIONAL_OR_KEYWORD, default="flux1"),
+            *all_params.values(),
+        ]
     )
+    run.__signature__ = run_sig  # type: ignore[attr-defined]
 
-    parser.add_argument(
-        "-m",
-        "--model-type",
-        choices=model_args,
-        default=list(model_args)[0],
-        help=f"""
-        Model type to use: {list(model_args)}, Default: {list(model_args)[0]}
-        """,
-    )
 
-    args, remaining_argv = parser.parse_known_args()
-    model_id = args.model_type
-    if args.model_type in mmada_args:
-        from divisor.mmada.gradio import main
-    else:
-        model_id = args.model_type
-        if args.model_type == "flux2-dev":
-            from divisor.flux2.prompt import main
-        else:
-            if args.model_type == "mini":
-                from divisor.xflux1.prompt import main
+def run(mode: str = "flux1", **kwargs: Any) -> None:
+    main_fn = _load_main(_MODE_MODULE[mode])
 
-                model_id = f"flux1-dev:{args.model_type}"
-            else:
-                from divisor.flux1.prompt import main
-    remaining_argv = ["--model-id", model_id] + remaining_argv  # change to     model_args[model_id]
+    # Keep only arguments that the concrete main expects.
+    target_sig = signature(main_fn)
+    allowed = {p.name for p in target_sig.parameters.values() if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)}
+    args = {k: v for k, v in kwargs.items() if k in allowed}
+    main_fn(**args)
 
-    sys.argv = [sys.argv[0]] + remaining_argv
-    Fire(main)
+
+def main() -> None:
+    """
+    CLI wrapper – ``python -m divisor.cli --mode flux2 ...``.
+    """
+    _patch_run_signature()
+    Fire(run)
 
 
 if __name__ == "__main__":

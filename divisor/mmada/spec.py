@@ -2,6 +2,7 @@
 # Adapted from https://github.com/Gen-Verse/MMaDA
 
 from dataclasses import dataclass
+from typing import Union
 
 from huggingface_hub import constants
 
@@ -41,7 +42,7 @@ class ModelSpecDiffusers:
     init: InitialParams
 
 
-configs = {
+configs: dict[str, dict[str, ModelSpecDiffusers | CompatibilitySpecDiffusers]] = {
     "model.mldm.mmada": {
         "*": ModelSpecDiffusers(
             repo_id="Gen-Verse/MMaDA-8B-Base",
@@ -70,68 +71,3 @@ configs = {
         ),
     },
 }
-
-
-def get_model_spec(mir_id: str, compatibility_key: str | None = None) -> ModelSpecDiffusers | CompatibilitySpecDiffusers | None:
-    """Get a Diffusers ModelSpec or CompatibilitySpec for a given model ID.\n
-    :param mir_id: Model ID (e.g., "model.mldm.mmada.8b-base")
-    :param compatibility_key: Optional compatibility key. If None, returns base ModelSpec.
-    :returns: ModelSpec if compatibility_key is None, CompatibilitySpec if provided and available, None if provided but not found
-    """
-    if mir_id not in configs:
-        if compatibility_key is None:
-            available = ", ".join(configs.keys())
-            raise ValueError(f"Unknown model ID: {mir_id}. Available: {available}")
-        return None
-
-    config_dict = configs[mir_id]
-
-    # If compatibility_key is provided, try to get compatibility spec
-    if compatibility_key is not None:
-        compat_spec = config_dict.get(compatibility_key)
-        if compat_spec is None:
-            return None
-        return compat_spec
-    else:
-        # Otherwise, return base ModelSpec from "*" key
-        if "*" not in config_dict:
-            raise ValueError(f"Model {mir_id} does not have a base spec (missing '*' key)")
-
-        base_spec = config_dict["*"]
-        if not isinstance(base_spec, ModelSpecDiffusers):
-            raise ValueError(f"Model {mir_id} base spec is not a ModelSpec")
-
-        return base_spec
-
-
-def get_merged_model_spec(mir_id: str, compatibility_key: str | None = None) -> ModelSpecDiffusers:
-    """Get a Diffusers ModelSpec with compatibility overrides merged in.\n
-    :param mir_id: Model ID (e.g., "model.mldm.mmada" or "model.mldm.mmada:mixcot")
-    :param compatibility_key: Optional compatibility key (extracted from mir_id if it contains ':')
-    :returns: ModelSpec with compatibility overrides applied
-    """
-    # Parse compatibility key from mir_id if it contains ':'
-    if ":" in mir_id:
-        base_mir_id, compat_key = mir_id.split(":", 1)
-        compatibility_key = compat_key
-        mir_id = base_mir_id
-
-    base_spec = get_model_spec(mir_id)
-    if not isinstance(base_spec, ModelSpecDiffusers):
-        raise ValueError(f"Model {mir_id} does not have a base ModelSpec")
-
-    if compatibility_key is None:
-        return base_spec
-
-    compat_spec = get_model_spec(mir_id, compatibility_key)
-    if compat_spec is None:
-        raise ValueError(f"Model {mir_id} does not have compatibility spec '{compatibility_key}'")
-
-    if isinstance(compat_spec, CompatibilitySpecDiffusers):
-        return ModelSpecDiffusers(
-            repo_id=compat_spec.repo_id,
-            init=base_spec.init,
-            params=base_spec.params,
-        )
-
-    return base_spec

@@ -9,10 +9,12 @@ from safetensors.torch import load_file as load_sft
 import torch
 
 from divisor.flux1.loading import retrieve_model
+from divisor.flux1.spec import configs as flux_configs
 from divisor.flux2 import precision
 from divisor.flux2.autoencoder import AutoEncoder, AutoEncoderParams
 from divisor.flux2.model import Flux2, Flux2Params
 from divisor.flux2.text_encoder import Mistral3SmallEmbedder
+from divisor.spec import get_model_spec
 
 
 FLUX2_MODEL_INFO = {
@@ -40,16 +42,14 @@ FLUX2_FP8_MODEL_INFO = {
 }
 
 
-def load_flow_model(model_name: str, device: torch.device = device) -> Flux2:
-    config = FLUX2_MODEL_INFO[model_name.lower()]
-
+def load_flow_model(mir_id: str, device: torch.device = device) -> Flux2:
+    model_spec = get_model_spec(mir_id, flux_configs)
     weight_path = retrieve_model(
-        repo_id=config["repo_id"],
-        file_name=config["filename"],
+        repo_id=model_spec["repo_id"],
+        file_name=model_spec["file_name"],
     )
-
     with torch.device("meta"):
-        model = Flux2(FLUX2_MODEL_INFO[model_name.lower()]["params"]).to(precision)
+        model = Flux2(model_spec["params"]).to(precision)
     nfo(f": {os.path.basename(weight_path)}")
     sd = load_sft(weight_path, device=str(device))
     model.load_state_dict(sd, strict=False, assign=True)

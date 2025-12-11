@@ -9,12 +9,12 @@ from divisor.mmada.live_token import (
     get_highlighted_text_tuples,
     get_num_transfer_tokens,
 )
-from divisor.mmada.loading import load_model, torch_dtype
+from divisor.mmada.loading import load_diffusers_model, torch_dtype
 from divisor.mmada.sampling import add_gumbel_noise, prepare
-from divisor.mmada.spec import get_merged_model_spec
+from divisor.mmada.system_messages import MMADA_THINKING_MODE_LM_PROMPT
 from divisor.mmada.text_embedder import HFEmbedder
-
-# VQ_MODEL = MAGVITv2().from_pretrained("showlab/magvitv2").to(DEVICE)
+from divisor.spec import get_model_spec
+from divisor.mmada.spec import configs as mmada_configs
 
 
 def clear_outputs_action():
@@ -23,25 +23,22 @@ def clear_outputs_action():
 
 @torch.no_grad()
 def generate_viz_wrapper_lm(
-    model_id,
-    prompt_text,
-    steps,
-    gen_length,
-    block_length,
-    temperature,
-    cfg_scale,
-    remasking_strategy,
-    thinking_mode_lm,
+    mir_id: str,
+    prompt_text: str,
+    steps: int,
+    gen_length: int,
+    block_length: int,
+    temperature: float,
+    cfg_scale: float,
+    remasking_strategy: str = "low_confidence",
+    thinking_mode_lm: bool = False,
 ):
-    spec = get_merged_model_spec(model_id)
+    spec = get_model_spec(mir_id, configs=mmada_configs)
     mask_id = spec.init.mask_id
-    model = load_model(model_id, device=device)
+    model = load_diffusers_model(model_id, device=device)
     hf = HFEmbedder(spec.repo_id, max_length=spec.init.max_position_embeddings)
     if thinking_mode_lm:
-        prompt_text = (
-            "You should first think about the reasoning process in the mind and then provide the user with the answer. The reasoning process is enclosed within <think> </think> tags, i.e. <think> reasoning process here </think> answer here\n"
-            + prompt_text
-        )
+        prompt_text = MMADA_THINKING_MODE_LM_PROMPT + prompt_text
 
     input_ids = prepare(model, hf.tokenizer, prompt_text)
     batch_size = input_ids.shape[0]

@@ -12,10 +12,10 @@ import torch
 from divisor.controller import rng
 from divisor.flux1.loading import load_ae, load_clip, load_flow_model, load_t5
 from divisor.flux1.sampling import denoise, get_schedule, prepare
-from divisor.flux1.spec import InitialParams, configs, get_model_spec
+from divisor.flux1.spec import InitialParams, configs
 from divisor.noise import prepare_noise_for_model
 from divisor.state import DenoisingState
-from divisor.spec import find_mir_spec
+from divisor.spec import get_model_spec
 
 
 def parse_prompt(state: DenoisingState) -> DenoisingState | None:
@@ -88,8 +88,8 @@ def parse_prompt(state: DenoisingState) -> DenoisingState | None:
 
 @torch.inference_mode()
 def main(
-    model_id: str = "flux1-dev",
-    ae_id: str = "flux1-dev",
+    mir_id: str = "model.dit.flux1-dev",
+    ae_id: str = "model.vae.flux1-dev",
     width: int = 1360,
     height: int = 768,
     guidance: float = 2.5,
@@ -118,13 +118,11 @@ def main(
     :param loop: start an interactive session and sample multiple times
     :param guidance: guidance value used for guidance distillation
     """
-    model_id, subkey, ae_id = find_mir_spec(model_id, ae_id, configs, tiny=tiny)
-
-    spec = get_model_spec(model_id)
+    spec = get_model_spec(mir_id, configs)
     init = getattr(spec, "init", None)
 
     if init is None:
-        raise ValueError(f"Model {model_id} does not have initialization parameters (init) configured")
+        raise ValueError(f"Model {mir_id} does not have initialization parameters (init) configured")
 
     prompt_parts = prompt.split("|")
     if len(prompt_parts) == 1:
@@ -137,11 +135,11 @@ def main(
     assert not ((additional_prompts is not None) and loop), "Do not provide additional prompts and set loop to True"
 
     compatibility_key = "fp8-sai" if quantization else None
-    spec = get_model_spec(model_id)
+    spec = get_model_spec(mir_id)
     init = getattr(
         spec,
         "init",
-        ValueError(f"Model {model_id} does not have initialization parameters (init) configured"),
+        ValueError(f"Model {mir_id} does not have initialization parameters (init) configured"),
     )
 
     assert isinstance(init, InitialParams), "init must be an InitialParams"
@@ -153,7 +151,7 @@ def main(
     clip = load_clip(device)
     # Load model to final device if not offloading (compile requires model to be on target device)
     model = load_flow_model(
-        model_id,
+        mir_id,
         device=torch.device("cpu") if offload else device,
         compatibility_key=compatibility_key,
         verbose=verbose,

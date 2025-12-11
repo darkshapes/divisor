@@ -21,7 +21,6 @@ from divisor.flux2.sampling import (
     get_schedule,
 )
 from divisor.flux2.util import (
-    FLUX2_MODEL_INFO,
     load_ae,
     load_flow_model,
     load_mistral_small_embedder,
@@ -31,8 +30,8 @@ from divisor.state import DenoiseSettings, DenoisingState
 
 
 def main(
-    model_id: str = "flux2-dev",
-    ae_id: str = "flux2-dev",
+    mir_id: str = "model.dit.flux2-dev",
+    ae_id: str = "model.vae.flux2-dev",
     width: int = 1360,
     height: int = 768,
     guidance: float = 4,
@@ -46,10 +45,8 @@ def main(
     compile: bool = False,
     input_images: list[str] | None = None,
 ):
-    model_id = f"model.dit.{model_id}".lower()
-    ae_id = f"model.vae.{ae_id}".lower()
-    assert model_id.lower() in FLUX2_MODEL_INFO, f"{model_id} is not available, choose from {FLUX2_MODEL_INFO.keys()}"
-
+    # assert model_id.lower() in FLUX2_MODEL_INFO, f"{model_id} is not available, choose from {FLUX2_MODEL_INFO.keys()}"
+    spec = get_model_spec(mir_id, configs=flux2_configs)
     prompt_parts = prompt.split("|")
     if len(prompt_parts) == 1:
         prompt = prompt_parts[0]

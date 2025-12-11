@@ -84,3 +84,4 @@ preview*
 .output
 .gradio/certificate.pem
 .aider*
+.history*

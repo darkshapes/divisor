@@ -13,17 +13,17 @@ from divisor.controller import rng
 from divisor.flux1.loading import load_ae, load_clip, load_flow_model, load_t5
 from divisor.flux1.prompt import parse_prompt
 from divisor.flux1.sampling import get_schedule, prepare
-from divisor.flux1.spec import InitialParams, configs, get_model_spec
+from divisor.flux1.spec import InitialParams, configs
 from divisor.noise import get_noise
 from divisor.state import DenoisingState
-from divisor.spec import find_mir_spec
+from divisor.spec import get_model_spec
 from divisor.xflux1.sampling import denoise
 
 
 @torch.inference_mode()
 def main(
-    model_id: str = "flux1-dev:mini",
-    ae_id: str = "flux1-dev",
+    mir_id: str = "model.dit.flux1-dev:mini",
+    ae_id: str = "model.vae.flux1-dev",
     width: int = 1360,
     height: int = 768,
     guidance: float = 2.5,
@@ -53,9 +53,6 @@ def main(
     :param guidance: guidance value used for guidance distillation
     """
 
-    # Find and validate MIR specs for model and autoencoder
-    model_id, subkey, ae_id = find_mir_spec(model_id, ae_id, configs, tiny=tiny)
-
     prompt_parts = prompt.split("|")
     if len(prompt_parts) == 1:
         prompt = prompt_parts[0]
@@ -67,13 +64,12 @@ def main(
     assert not ((additional_prompts is not None) and loop), "Do not provide additional prompts and set loop to True"
 
     # Determine compatibility key: use fp8-sai for quantization, otherwise use subkey if provided
-    compatibility_key = "fp8-sai" if quantization else subkey
-    spec = get_model_spec(model_id)
+    spec = get_model_spec(mir_id, configs)
 
     init = getattr(
         spec,
         "init",
-        ValueError(f"Model {model_id} does not have initialization parameters (init) configured"),
+        ValueError(f"Model {mir_id} does not have initialization parameters (init) configured"),
     )
     assert isinstance(init, InitialParams), "init must be an InitialParams"
 
