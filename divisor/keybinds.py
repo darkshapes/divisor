@@ -13,13 +13,10 @@ from divisor.cli_input import (
     handle_float_setting,
     handle_toggle,
 )
-from divisor.controller import (
-    ManualTimestepController,
-    update_state_and_cache,
-)
+from divisor.controller import ManualTimestepController, update_state_and_cache
+from divisor.interaction_context import InteractionContext
 from divisor.noise import prepare_noise_for_model
 from divisor.state import DenoisingState
-from divisor.interaction_context import InteractionContext
 
 
 def choice(key: str, description: str) -> Callable[[Callable], Callable]:

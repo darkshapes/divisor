@@ -10,6 +10,8 @@ import torch
 import torch.nn.functional as F
 from torchvision import transforms
 
+from divisor.contents import get_dtype
+
 
 def log(t, eps=1e-20):
     return torch.log(t.clamp(min=eps))
@@ -140,17 +142,12 @@ def add_gumbel_noise(logits, temperature):
     """
     if abs(temperature) < 1e-9:  # Effectively zero temperature
         return logits
-    # Ensure logits are float64 for precision with noise, as suggested by user context
-    if device.type == "mps":
-        logits = logits.to(torch.float32)
-    else:
-        logits = logits.to(torch.float64)
-    # Standard Gumbel noise: -log(-log(U)), U ~ Uniform(0,1)
-    # Add small epsilon for numerical stability inside logs
-    if device.type == "mps":
-        noise = torch.rand_like(logits, dtype=torch.float32)
-    else:
-        noise = torch.rand_like(logits, dtype=torch.float64)
+
+    max_device_precision = get_dtype(device, max_precision=True)
+    logits = logits.to(max_device_precision)
+    noise = torch.rand_like(logits, dtype=max_device_precision)
+    # Standard Gumbel noise: -log(-log(U)), U ~ Uniform(0,1) Add small epsilon for numerical stability inside logs
+
     standard_gumbel_noise = -torch.log(-torch.log(noise + 1e-20) + 1e-20)
     return logits + temperature * standard_gumbel_noise
 

@@ -2,6 +2,27 @@
 # <!-- // /*  d a r k s h a p e s */ -->
 
 from typing import Any
+import torch
+from nnll.init_gpu import device
+
+
+def get_lora_rank(checkpoint):
+    for k in checkpoint.keys():
+        if k.endswith(".down.weight"):
+            return checkpoint[k].shape[0]
+
+
+def get_dtype(device: torch.device = device, max_precision: bool = False) -> torch.dtype:
+    """Assign dtype based on accelerator availablilty\n
+    :param device: Device to get the dtype for
+    :param max_precision: If True, return the maximum precision dtype for the given device
+    :returns: Dtype for the given device"""
+    dtype_by_device = {
+        "cuda": torch.bfloat16 if not max_precision else torch.float64,
+        "mps": torch.bfloat16 if not max_precision else torch.float32,
+        "cpu": torch.float32,
+    }
+    return dtype_by_device[device.type]
 
 
 def populate_model_choices(configs: dict[str, Any]) -> list[str]:

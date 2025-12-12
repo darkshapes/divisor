@@ -4,12 +4,10 @@
 """Divisor class definitions and configuration dataclasses."""
 
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from nnll.random import RNGState
 import torch
 from torch import Tensor
-from torch import nn
 
 
 @dataclass

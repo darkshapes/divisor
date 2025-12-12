@@ -1,83 +1,258 @@
 # SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
 # <!-- // /*  d a r k s h a p e s */ -->
+# adapted BFL Flux code from https://github.com/black-forest-labs/flux and  https://github.com/Gen-Verse/MMaDA
+
 
 from dataclasses import replace
-from typing import Any, List, Tuple
+from dataclasses import dataclass
+from typing import Any
 
-from nnll.init_gpu import device
+from nnll.console import nfo
 import torch
 
+from divisor.contents import build_available_models
+from divisor.flux1.autoencoder import AutoEncoderParams as AutoEncoder1Params
+from divisor.flux1.model import FluxLoraWrapper, FluxParams
+from divisor.flux2.autoencoder import AutoEncoderParams as AutoEncoder2Params
+from divisor.flux2.model import Flux2Params
+from divisor.mmada.modeling_mmada import MMadaConfig as MMaDAParams
+from divisor.xflux1.model import XFluxParams
 
-def get_dtype(device: torch.device = device) -> torch.dtype:
-    dtype_by_device = {
-        "cuda": torch.bfloat16,
-        "mps": torch.bfloat16,
-        "cpu": torch.float32,
-    }
-    return dtype_by_device[device.type]
+
+@dataclass
+class CompatibilitySpec:
+    repo_id: str
+    file_name: str
 
 
-def find_mir_spec(
-    model_id: str,
-    ae_id: str,
-    configs: dict,
-    tiny: bool = False,
-    prefix: str = "model.dit.",
-) -> Tuple[str, str | None, str]:
-    """Find/validate model specifications by MIR (Machine Intelligence Resource) ID.\n
-    :param model_id: Model ID, optionally with subkey (e.g., "flux1-dev" or "flux1-dev:mini")
-    :param ae_id: Autoencoder ID
-    :param configs: Configuration dictionary containing model specs
-    :param tiny: Whether to use tiny autoencoder prefix (model.taesd. instead of model.vae.)
-    :param prefix: Prefix to add to model_id (default: "model.dit.")
-    :returns: Tuple of (normalized_model_id, subkey, normalized_ae_id)
-    :raises ValueError: If model_id, subkey, or ae_id is not found in configs
-    """
+@dataclass
+class InitialParamsFlux:
+    num_steps: int
+    max_length: int
+    guidance: float
+    shift: bool
+    width: int = 1360
+    height: int = 768
 
-    def _validate_in_configs(key: str, key_type: str, available: List[str] | None = None) -> None:
-        """Helper to validate a key exists in configs."""
-        if key not in configs:
-            available_keys = available if available is not None else list(configs.keys())
-            available_str = ", ".join(available_keys)
-            raise ValueError(f"Got unknown {key_type}: {key}, chose from {available_str}")
 
-    # Handle model_id with optional subkey
-    subkey = None
-    if ":" in model_id:
-        base_model_id, subkey = model_id.split(":", 1)
-        normalized_model_id = f"{prefix}{base_model_id}".lower()
-        subkey = subkey.lower()
-        _validate_in_configs(
-            normalized_model_id,
-            "base model id",
+@dataclass
+class InitialParamsMMaDA:
+    """Default initialization parameters for MMaDA models."""
+
+    steps: int
+    gen_length: int
+    block_length: int
+    temperature: float
+    cfg_scale: float
+    remasking_strategy: str
+    mask_id: int
+    max_position_embeddings: int
+    max_text_len: int
+
+
+@dataclass
+class AutoencoderTinyParams:
+    """"""
+
+
+@dataclass
+class ModelSpec:
+    repo_id: str
+    params: FluxParams | AutoEncoder1Params | XFluxParams | Flux2Params | MMaDAParams | AutoEncoder2Params | AutoencoderTinyParams | FluxLoraWrapper
+    file_name: str
+    init: InitialParamsFlux | InitialParamsMMaDA | None = None
+
+
+flux_configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]] = {
+    "model.dit.flux1-dev": {
+        "*": ModelSpec(
+            repo_id="black-forest-labs/FLUX.1-dev",
+            file_name="flux1-dev.safetensors",
+            init=InitialParamsFlux(
+                num_steps=28,
+                max_length=512,
+                guidance=4.0,
+                shift=True,
+            ),
+            params=FluxParams(
+                in_channels=64,
+                vec_in_dim=768,
+                context_in_dim=4096,
+                hidden_size=3072,
+                mlp_ratio=4.0,
+                num_heads=24,
+                depth=19,
+                depth_single_blocks=38,
+                axes_dim=[16, 56, 56],
+                theta=10_000,
+                qkv_bias=True,
+                guidance_embed=True,
+            ),
+        ),
+        "*@fp8-e5m2-sai": CompatibilitySpec(
+            repo_id="Kijai/flux-fp8",
+            file_name="flux1-dev-fp8-e5m2.safetensors",
+        ),
+        "*@fp8-e4m3fn-sai": CompatibilitySpec(
+            repo_id="Kijai/flux-fp8",
+            file_name="flux1-dev-fp8-e4m3fn.safetensors",
+        ),
+        "*@fp8-sai": CompatibilitySpec(
+            repo_id="XLabs-AI/flux-dev-fp8",
+            file_name="flux-dev-fp8.safetensors",
+        ),
+        "mini": ModelSpec(
+            repo_id="TencentARC/flux-mini",
+            file_name="flux-mini.safetensors",
+            init=InitialParamsFlux(
+                num_steps=25,
+                max_length=512,
+                guidance=3.5,
+                shift=True,
+            ),
+            params=XFluxParams(
+                in_channels=64,
+                vec_in_dim=768,
+                context_in_dim=4096,
+                hidden_size=3072,
+                mlp_ratio=4.0,
+                num_heads=24,
+                depth=5,
+                depth_single_blocks=10,
+                axes_dim=[16, 56, 56],
+                theta=10_000,
+                qkv_bias=True,
+                guidance_embed=True,
+            ),
+        ),
+    },
+    "model.vae.flux1-dev": {
+        "*": ModelSpec(
+            repo_id="black-forest-labs/FLUX.1-dev",
+            file_name="ae.safetensors",
+            params=AutoEncoder1Params(
+                resolution=256,
+                in_channels=3,
+                ch=128,
+                out_ch=3,
+                ch_mult=[1, 2, 4, 4],
+                num_res_blocks=2,
+                z_channels=16,
+                scale_factor=0.3611,
+                shift_factor=0.1159,
+            ),
+        ),
+    },
+    "model.taesd.flux1-dev": {
+        "*": ModelSpec(repo_id="madebyollin/taef1", file_name="diffusion_pytorch_model.safetensors", params=AutoencoderTinyParams()),
+    },
+    "model.dit.flux1-schnell": {
+        "*": ModelSpec(
+            repo_id="black-forest-labs/FLUX.1-schnell",
+            file_name="flux1-schnell.safetensors",
+            init=InitialParamsFlux(
+                num_steps=4,
+                max_length=256,
+                guidance=2.5,
+                shift=False,
+            ),
+            params=FluxParams(
+                in_channels=64,
+                vec_in_dim=768,
+                context_in_dim=4096,
+                hidden_size=3072,
+                mlp_ratio=4.0,
+                num_heads=24,
+                depth=19,
+                depth_single_blocks=38,
+                axes_dim=[16, 56, 56],
+                theta=10_000,
+                qkv_bias=True,
+                guidance_embed=False,
+            ),
+        ),
+        "*@fp8-sai": CompatibilitySpec(
+            repo_id="Comfy-Org/flux1-schnell",
+            file_name="flux1-schnell-fp8.safetensors",
+        ),
+        "*@fp8-e4m3fn-sai": CompatibilitySpec(
+            repo_id="Kijai/flux-fp8",
+            file_name="flux1-schnell-fp8-e4m3fn.safetensors",
+        ),
+    },
+    "model.dit.flux2-dev": {
+        "*": ModelSpec(
+            repo_id="black-forest-labs/FLUX.2-dev",
+            file_name="flux2-dev.safetensors",
+            params=Flux2Params(),
+        ),
+        "*@fp8-sai": CompatibilitySpec(
+            repo_id="Comfy-Org/flux2-dev",
+            file_name="split_files/diffusion_models/flux2_dev_fp8mixed.safetensors",
+        ),
+    },
+    "model.vae.flux2-dev": {
+        "*": ModelSpec(
+            repo_id="black-forest-labs/FLUX.2-dev",
+            file_name="ae.safetensors",
+            params=AutoEncoder2Params(),
         )
-        base_model = configs[normalized_model_id]
+    },
+}
 
-        if subkey not in base_model:
-            available_subkeys = [k for k in base_model.keys() if k != "*"]
-            available_str = ", ".join(available_subkeys)
-            raise ValueError(f"Got unknown subkey '{subkey}' for model {normalized_model_id}. Available subkeys: {available_str}")
+mmada_configs = {
+    "model.mldm.mmada": {
+        "*": ModelSpec(
+            repo_id="Gen-Verse/MMaDA-8B-Base",
+            file_name="model.safetensors",
+            init=InitialParamsMMaDA(
+                steps=256,
+                gen_length=512,
+                block_length=128,
+                temperature=1.0,
+                cfg_scale=0.0,
+                remasking_strategy="low_confidence",
+                mask_id=126336,
+                max_position_embeddings=2048,
+                max_text_len=512,
+            ),
+            params=MMaDAParams(
+                vocab_size=50257,
+                llm_vocab_size=50257,
+                llm_model_path="",
+                codebook_size=8192,
+                num_vq_tokens=1024,
+                num_new_special_tokens=0,
+            ),
+        ),
+        "mixcot": CompatibilitySpec(
+            repo_id="Gen-Verse/MMaDA-8B-MixCoT",
+            file_name="model.safetensors",
+        ),
+    },
+}
 
-        base_spec = base_model["*"]
-        subkey_spec = base_model[subkey]
 
-        # Merge subkey spec with base spec (subkey values take precedence)
-        merged_spec = merge_spec(base_spec, subkey_spec)
-        if merged_spec is not base_spec:
-            # Update configs with merged spec so subsequent lookups use merged values
-            configs[normalized_model_id] = {**base_model, "*": merged_spec}
-    else:
-        normalized_model_id = f"{prefix}{model_id}".lower()
-        _validate_in_configs(normalized_model_id, "model id")
+def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> dict:
+    """Optionally expand the state dict to match the model's parameters shapes.\n
+    :param model: The model to match parameters against
+    :param state_dict: The state dictionary to expand
+    :returns: The expanded state dictionary
+    """
+    for name, param in model.named_parameters():
+        if name in state_dict:
+            if state_dict[name].shape != param.shape:
+                nfo(f"Expanding '{name}' with shape {state_dict[name].shape} to model parameter with shape {param.shape}.")
+                # expand with zeros:
+                expanded_state_dict_weight = torch.zeros_like(param, device=state_dict[name].device)
+                slices = tuple(slice(0, dim) for dim in state_dict[name].shape)
+                expanded_state_dict_weight[slices] = state_dict[name]
+                state_dict[name] = expanded_state_dict_weight
 
-    ae_prefix = "model.taesd." if tiny else "model.vae."
-    normalized_ae_id = f"{ae_prefix}{ae_id}".lower()
-    _validate_in_configs(normalized_ae_id, "ae id")
-
-    return normalized_model_id, subkey, normalized_ae_id
+    return state_dict
 
 
-def merge_spec(base_spec: Any, subkey_spec: Any) -> Any:
+def merge_spec(base_spec: Any, subkey_spec: Any) -> ModelSpec:
     """Merge two dataclass or nested dataclass specs with overlapping subkey values taking precedence over base values.\n
     :param base_spec: Base specification dataclass
     :param subkey_spec: Subkey specification dataclass (values take precedence)
@@ -112,7 +287,7 @@ def merge_spec(base_spec: Any, subkey_spec: Any) -> Any:
     return base_spec
 
 
-def get_model_spec(mir_id: str, configs: list[dict[str, Any]]) -> Any | None:
+def get_model_spec(mir_id: str, configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]]) -> ModelSpec:
     """Get a ModelSpec or CompatibilitySpec for a given model ID. Use to point to a known model spec.\n
     :param mir_id: Model ID (e.g., "model.dit.flux1-dev")
     :param configs: Configuration mapping containing model specs
@@ -121,15 +296,19 @@ def get_model_spec(mir_id: str, configs: list[dict[str, Any]]) -> Any | None:
     """
 
     if ":" in mir_id:
-        spec_key, compatibility_key = mir_id.split(":")
-        for config_entry in configs:
-            if spec_key in config_entry:
-                base_entry = config_entry[spec_key]["*"]
-                if compat_entry := config_entry[spec_key].get(compatibility_key, None):
-                    return merge_spec(base_entry, compat_entry)
-                raise ValueError(f"{mir_id} has no defined model spec")
+        series_key, compatibility_key = mir_id.split(":")
+        if base_spec := configs.get(series_key, {}).get("*", None):
+            if compatibility_spec := configs.get(series_key, {}).get(compatibility_key, None):
+                return merge_spec(base_spec, compatibility_spec)
+
     else:
-        for config_entry in configs:
-            if spec_entry := config_entry.get(mir_id, None):
-                return spec_entry["*"]
-            raise ValueError(f"{mir_id} has no defined model spec")
+        if model_spec := configs.get(mir_id, {}).get("*", None):
+            if isinstance(model_spec, ModelSpec):
+                return model_spec
+
+    raise ValueError(f"{mir_id} has no defined model spec")
+
+
+mmada_map = build_available_models(mmada_configs)
+
+flux_map = build_available_models(flux_configs)

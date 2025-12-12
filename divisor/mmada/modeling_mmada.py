@@ -3,25 +3,20 @@
 
 from __future__ import annotations
 
+from PIL import Image
+from nnll.init_gpu import device
 import numpy as np
 import torch
 import torch.nn.functional as F
-from transformers.models.auto import AutoModel, AutoConfig, AutoModelForCausalLM
-from PIL import Image
-
 from transformers import PretrainedConfig
-from nnll.init_gpu import device
+from transformers.models.auto import AutoConfig, AutoModel, AutoModelForCausalLM
 
-if device.type == "cuda":
-    import torch.backends.cuda
-
+from divisor.contents import get_dtype
 from divisor.mmada.modeling_llada import LLaDAModelLM
 from divisor.mmada.sampling import cosine_schedule, mask_by_random_topk
 
-if device.type == "mps":
-    torch_dtype = torch.float32
-else:
-    torch_dtype = torch.float64
+if device.type == "cuda":
+    import torch.backends.cuda
 
 
 def add_gumbel_noise(logits, temperature):
@@ -31,10 +26,11 @@ def add_gumbel_noise(logits, temperature):
     Thus, we use float64.
     ... Unless we are mps, in which case we use float32.
     """
+    precision = get_dtype(device)
     if temperature == 0:
         return logits
-    logits = logits.to(torch_dtype)
-    noise = torch.rand_like(logits, dtype=torch_dtype)
+    logits = logits.to(precision)
+    noise = torch.rand_like(logits, dtype=precision)
     gumbel_noise = (-torch.log(noise)) ** temperature
     return logits.exp() / gumbel_noise
 
@@ -403,7 +399,7 @@ class MMadaModelLM(LLaDAModelLM):
             attention_bias = None
         try:
             device = idx.device
-        except:
+        except Exception:
             device = input_embeddings.device
 
         result = []
@@ -420,6 +416,7 @@ class MMadaModelLM(LLaDAModelLM):
 
         # print(f"num_blocks: {num_blocks}, steps: {steps}")
         # num_transfer_tokens = get_num_transfer_tokens(prompt_index, steps)
+        precision = get_dtype(device)
         for num_block in range(num_blocks):
             block_mask_index = x[:, idx.shape[1] + num_block * block_length : idx.shape[1] + (num_block + 1) * block_length :] == mask_id
             num_transfer_tokens = get_num_transfer_tokens(block_mask_index, steps)
@@ -440,7 +437,7 @@ class MMadaModelLM(LLaDAModelLM):
                 logits_with_noise = add_gumbel_noise(logits, temperature=temperature)
                 x0 = torch.argmax(logits_with_noise, dim=-1)  # b, l
                 if remasking == "low_confidence":
-                    p = F.softmax(logits.to(torch_dtype), dim=-1)
+                    p = F.softmax(logits.to(precision), dim=-1)
                     x0_p = torch.squeeze(torch.gather(p, dim=-1, index=torch.unsqueeze(x0, -1)), -1)  # b, l
                 elif remasking == "random":
                     x0_p = torch.rand((x0.shape[0], x0.shape[1]), device=x0.device)
@@ -509,7 +506,7 @@ class MMadaModelLM(LLaDAModelLM):
             attention_bias = None
         try:
             device = idx.device
-        except:
+        except Exception:
             device = input_embeddings.device
 
         result = []
@@ -524,6 +521,7 @@ class MMadaModelLM(LLaDAModelLM):
         assert steps % num_blocks == 0
         steps = steps // num_blocks
 
+        precision = get_dtype(device)
         for num_block in range(num_blocks):
             block_mask_index = x[:, idx.shape[1] + num_block * block_length : idx.shape[1] + (num_block + 1) * block_length :] == mask_id
             num_transfer_tokens = get_num_transfer_tokens(block_mask_index, steps)
@@ -542,7 +540,7 @@ class MMadaModelLM(LLaDAModelLM):
                 logits_with_noise = add_gumbel_noise(logits, temperature=temperature)
                 x0 = torch.argmax(logits_with_noise, dim=-1)  # b, l
                 if remasking == "low_confidence":
-                    p = F.softmax(logits.to(torch_dtype), dim=-1)
+                    p = F.softmax(logits.to(precision), dim=-1)
                     x0_p = torch.squeeze(torch.gather(p, dim=-1, index=torch.unsqueeze(x0, -1)), -1)  # b, l
                 elif remasking == "random":
                     x0_p = torch.rand((x0.shape[0], x0.shape[1]), device=x0.device)

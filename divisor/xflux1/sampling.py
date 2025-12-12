@@ -19,6 +19,7 @@ from divisor.denoise_step import (
     create_recompute_text_embeddings,
 )
 from divisor.flux1.sampling import prepare, unpack
+from divisor.interaction_context import InteractionContext
 from divisor.state import (
     AdditionalPredictionSettings,
     DenoiseSettings,
@@ -26,7 +27,6 @@ from divisor.state import (
     GetPredictionSettings,
 )
 from divisor.xflux1.model import XFlux
-from divisor.interaction_context import InteractionContext
 
 
 def create_get_prediction_xflux1(

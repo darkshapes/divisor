@@ -12,13 +12,10 @@ import sys
 
 from fire import Fire
 
-from divisor.contents import build_available_models
-from divisor.flux1.spec import configs as flux1_configs
-from divisor.mmada.spec import configs as mmada_configs
+from divisor.spec import flux_map
+from divisor.spec import mmada_map
 
-flux_args = build_available_models(flux1_configs)
-mmada_args = build_available_models(mmada_configs)
-model_args = flux_args | mmada_args
+model_args = flux_map | mmada_map
 
 
 def main():
@@ -48,8 +45,10 @@ def main():
 
     args, remaining_argv = parser.parse_known_args()
     model_id = args.model_type
-    if args.model_type in mmada_args:
+    if args.model_type in mmada_map:
         from divisor.mmada.gradio import main
+
+        remaining_argv = [""]  # Gradio app doesn't need arguments
     else:
         model_id = args.model_type
         if args.model_type == "flux2-dev":
@@ -57,11 +56,9 @@ def main():
         else:
             if args.model_type == "mini":
                 from divisor.xflux1.prompt import main
-
-                model_id = f"flux1-dev:{args.model_type}"
             else:
                 from divisor.flux1.prompt import main
-    remaining_argv = ["--model-id", model_id] + remaining_argv  # change to     model_args[model_id]
+        remaining_argv = ["--mir-id", model_args[model_id]] + remaining_argv  # change to     model_args[model_id]
 
     sys.argv = [sys.argv[0]] + remaining_argv
     Fire(main)

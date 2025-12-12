@@ -24,7 +24,8 @@ from divisor.denoise_step import (
     create_get_prediction,
     create_recompute_text_embeddings,
 )
-from divisor.flux2 import precision
+from divisor.contents import get_dtype
+from nnll.init_gpu import device
 from divisor.flux2.model import Flux2
 from divisor.state import (
     DenoiseSettings,
@@ -74,6 +75,7 @@ def scatter_ids(x: Tensor, x_ids: Tensor) -> list[Tensor]:
 
 
 def encode_image_refs(ae, img_ctx: list[Image.Image]):
+    precision = get_dtype(device)
     scale = 10
 
     if len(img_ctx) > 1:
@@ -359,9 +361,7 @@ def denoise_interactive(
     controller_ref: list[Optional["ManualTimestepController"]] = [None]  # Reference to controller for closure access
 
     model_ref: list[Flux2] = [model]
-    # Ensure model is on the correct device (fixes meta device issue)
     target_device = img.device
-    # Safely get model device, handling Mock objects in tests
     try:
         model_device = next(model.parameters()).device
     except (TypeError, StopIteration, AttributeError):
@@ -510,15 +510,11 @@ def denoise_interactive(
 
                 context = nullcontext()
             with context:
-                # When autocast is disabled (MPS), ensure intermediate is in correct dtype for VAE
                 if denoise_device.type != "cuda":
-                    # Get VAE encoder dtype to ensure intermediate matches (bfloat16)
-                    # Safely get encoder dtype, handling Mock objects in tests
                     try:
                         ae_dtype = next(ae.encoder.parameters()).dtype
                     except (TypeError, StopIteration, AttributeError):
-                        # Fallback: use intermediate dtype if we can't get encoder dtype (for Mock objects in tests)
-                        ae_dtype = intermediate.dtype
+                        ae_dtype = intermediate.dtype  # For Tests
                     intermediate = intermediate.to(dtype=ae_dtype)
 
                 # Apply VAE shift/scale offset by manually adjusting the decode operation

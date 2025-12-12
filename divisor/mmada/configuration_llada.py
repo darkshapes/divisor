@@ -274,7 +274,7 @@ class ModelConfig:
     models tend to have near 0 bias terms anyway.
     """
 
-    bias_for_layer_norm: bool = None
+    bias_for_layer_norm: bool | None = None
     """
     Whether or not to include bias parameters in layer norm.
     This is separate from the include_bias parameter, because of a ROCm crash when biases are disabled in
