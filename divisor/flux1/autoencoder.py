@@ -311,10 +311,8 @@ class AutoEncoder(nn.Module):
         self.shift_factor = params.shift_factor
 
     def encode(self, x: Tensor) -> Tensor:
-        # Get encoder dtype for proper type matching
         encoder_dtype = next(self.encoder.parameters()).dtype
-        # Convert input to match encoder dtype
-        x = x.to(encoder_dtype)
+        x = x.to(encoder_dtype)  # Quality of Life:sample dtype always matches encoder dtype
         z = self.reg(self.encoder(x))
         z = self.scale_factor * (z - self.shift_factor)
         return z
@@ -325,3 +323,24 @@ class AutoEncoder(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return self.decode(self.encode(x))
+
+
+if __name__ == "__main__":
+    import torch
+
+    params = AutoEncoderParams(
+        resolution=256,
+        in_channels=3,
+        ch=128,
+        out_ch=3,
+        ch_mult=[1, 2, 4, 4],
+        num_res_blocks=2,
+        z_channels=16,
+        scale_factor=0.3611,
+        shift_factor=0.1159,
+    )
+
+    model = AutoEncoder(params)
+    x = torch.randn(1, 3, 512, 512)
+    z = model.encode(x)
+    print(z.shape)

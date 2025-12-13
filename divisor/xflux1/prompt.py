@@ -13,32 +13,29 @@ from divisor.controller import rng
 from divisor.flux1.loading import load_ae, load_clip, load_flow_model, load_t5
 from divisor.flux1.prompt import parse_prompt
 from divisor.flux1.sampling import get_schedule, prepare
-from divisor.flux1.spec import InitialParams, configs, get_model_spec
 from divisor.noise import get_noise
+from divisor.spec import InitialParamsFlux, ModelSpec, flux_configs, get_model_spec
 from divisor.state import DenoisingState
-from divisor.spec import find_mir_spec
 from divisor.xflux1.sampling import denoise
 
 
 @torch.inference_mode()
 def main(
-    model_id: str = "flux1-dev:mini",
-    ae_id: str = "flux1-dev",
+    mir_id: str = "model.dit.flux1-dev:mini",
+    ae_id: str = "model.vae.flux1-dev",
     width: int = 1360,
     height: int = 768,
     guidance: float = 2.5,
-    seed: int | None = rng.next_seed(),
+    seed: int = rng.next_seed(),
     prompt: str = "",
-    # ('a photo of a forest with mist swirling around the tree trunks. The word "FLUX" is painted over it in big, red brush strokes with visible texture'),
     quantization: bool = False,
-    tiny: bool = False,
     device: torch.device = device,
-    num_steps: int | None = None,
+    num_steps: int = 50,
     loop: bool = False,
-    # 2.5, 4.0
     offload: bool = False,
     compile: bool = False,
     verbose: bool = False,
+    input_images: list[str] | None = None,
 ):
     """Sample the flux model. Either interactively (set `--loop`) or run for a single image.\n
     :param name: Name of the model to load
@@ -53,8 +50,11 @@ def main(
     :param guidance: guidance value used for guidance distillation
     """
 
-    # Find and validate MIR specs for model and autoencoder
-    model_id, subkey, ae_id = find_mir_spec(model_id, ae_id, configs, tiny=tiny)
+    if quantization:
+        mir_id += ":@fp8-sai"
+
+    model_spec: ModelSpec = get_model_spec(mir_id, flux_configs)
+    ae_spec = get_model_spec(ae_id, flux_configs)
 
     prompt_parts = prompt.split("|")
     if len(prompt_parts) == 1:
@@ -64,29 +64,17 @@ def main(
         additional_prompts = prompt_parts[1:]
         prompt = prompt_parts[0]
 
-    assert not ((additional_prompts is not None) and loop), "Do not provide additional prompts and set loop to True"
-
-    # Determine compatibility key: use fp8-sai for quantization, otherwise use subkey if provided
-    compatibility_key = "fp8-sai" if quantization else subkey
-    spec = get_model_spec(model_id)
-
-    init = getattr(
-        spec,
-        "init",
-        ValueError(f"Model {model_id} does not have initialization parameters (init) configured"),
-    )
-    assert isinstance(init, InitialParams), "init must be an InitialParams"
+    init: InitialParamsFlux = model_spec.init
 
     height = 16 * (height // 16)
     width = 16 * (width // 16)
 
-    t5 = load_t5(device, init.max_length or 512)
+    t5 = load_t5(device, init.max_length)
     clip = load_clip(device)
     # Load model to final device if not offloading (compile requires model to be on target device)
     model = load_flow_model(
-        model_id,
+        model_spec,
         device=torch.device("cpu") if offload else device,
-        compatibility_key=compatibility_key,
         verbose=verbose,
     )
 
@@ -97,7 +85,7 @@ def main(
         model = torch.compile(model)  # type: ignore[assignment]
         is_compiled = True
 
-    ae = load_ae(ae_id, device=torch.device("cpu") if offload else device)
+    ae = load_ae(ae_spec, configs=flux_configs, device=torch.device("cpu") if offload else device)
 
     # Create initial state from CLI args
     state = DenoisingState.from_cli_args(

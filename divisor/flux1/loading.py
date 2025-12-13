@@ -13,16 +13,19 @@ from nnll.init_gpu import device
 from safetensors.torch import load_file as load_sft
 import torch
 
-from divisor.flux1.autoencoder import AutoEncoder, AutoEncoderParams
+from divisor.flux1.autoencoder import AutoEncoder as AutoEncoder1, AutoEncoderParams
 from divisor.flux1.model import Flux, FluxLoraWrapper
-from divisor.flux1.spec import get_merged_model_spec, optionally_expand_state_dict
 from divisor.flux1.text_embedder import HFEmbedder
 from divisor.flux2.autoencoder import (
     AutoEncoder as AutoEncoder2,
     AutoEncoderParams as AutoEncoder2Params,
 )
 from divisor.flux2.model import Flux2, Flux2Params
+from divisor.flux2.text_encoder import Mistral3SmallEmbedder
+from divisor.spec import get_model_spec, ModelSpec, CompatibilitySpec, optionally_expand_state_dict
 from divisor.xflux1.model import XFlux, XFluxParams
+from divisor.contents import get_dtype
+from divisor.mmada.modeling_mmada import MMadaConfig as MMaDAParams, MMadaModelLM as MMaDAModelLM
 
 
 def print_load_warning(missing: list[str], unexpected: list[str]) -> None:
@@ -127,12 +130,11 @@ def load_lora_weights(
 
 
 def load_flow_model(
-    mir_id: str,
+    model_spec: ModelSpec,
     device: torch.device = device,
     verbose: bool = True,
     lora_repo_id: str | None = None,
     lora_filename: str | None = None,
-    compatibility_key: str | None = None,
 ) -> Flux:
     """Load a flow model (DiT model).\n
     :param mir_id: Model ID (e.g., "model.dit.flux1-dev")
@@ -143,22 +145,23 @@ def load_flow_model(
     :param compatibility_key: Optional compatibility key (e.g., "fp8-sai") to override repo_id and file_name
     :returns: Loaded Flux model"""
 
-    config = get_merged_model_spec(mir_id, compatibility_key=compatibility_key)
-
     with torch.device("meta"):
-        if config.params is Flux2Params:
-            model = Flux2(config.params).to(torch.bfloat16)
+        if model_spec.params is Flux2Params:
+            model = Flux2(model_spec.params).to(torch.bfloat16)
         elif lora_repo_id and lora_filename:
-            model = FluxLoraWrapper(params=config.params).to(torch.bfloat16)
-        elif config.params is XFluxParams:
-            model = XFlux(config.params).to(torch.bfloat16)
+            model = FluxLoraWrapper(params=model_spec.params).to(torch.bfloat16)
+        elif model_spec.params is XFluxParams:
+            model = XFlux(model_spec.params).to(torch.bfloat16)
         else:
-            model = Flux(config.params).to(torch.bfloat16)  # type: ignore
+            model = Flux(model_spec.params).to(torch.bfloat16)  # type: ignore
 
-    ckpt_path = str(retrieve_model(config.repo_id, config.file_name))
+    ckpt_path = str(retrieve_model(model_spec.repo_id, model_spec.file_name))
     nfo(f": {os.path.basename(ckpt_path)}")
     sd = load_sft(ckpt_path, device=device.type)
-    load_state_dict_into_model(model, sd, verbose=verbose)  # type: ignore
+    if model_spec.params is Flux2Params:
+        model.load_state_dict(sd, strict=False, assign=True)
+    else:
+        load_state_dict_into_model(model, sd, verbose=verbose)  # type: ignore
     if device.type == "mps":
         convert_fp8_to_bf16(model, verbose=verbose)  # type: ignore
     if lora_repo_id and lora_filename:
@@ -166,6 +169,62 @@ def load_flow_model(
             raise ValueError("LoRA weights can only be loaded into FluxLoraWrapper models")
         load_lora_weights(model, lora_repo_id, lora_filename, device, verbose)
     return model  # type: ignore
+
+
+def load_ae(
+    mir_id: ModelSpec,
+    configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]],
+    device: torch.device = device,
+) -> AutoEncoder1 | AutoEncoder2 | AutoencoderTiny:
+    """Load the autoencoder model.\n
+    :param mir_id: Model ID (e.g., "model.vae.flux1-dev" or "model.taesd.flux1-dev")
+    :param device: Device to load the model on
+    :returns: Loaded AutoEncoder instance
+    """
+    model_spec = get_model_spec(mir_id, configs)
+
+    ckpt_path = str(retrieve_model(model_spec.repo_id, model_spec.file_name))
+
+    with torch.device("meta"):
+        if isinstance(model_spec.params, AutoEncoderParams):
+            ae = AutoEncoder1(model_spec.params)
+        elif isinstance(model_spec.params, AutoEncoder2Params):
+            ae = AutoEncoder2(model_spec.params)
+        elif model_spec.params is AutoencoderTiny:
+            raise NotImplementedError("AutoencoderTiny loading not yet implemented. Use model.vae.flux1-dev instead.")
+        else:
+            raise ValueError(f"Config {mir_id} is not an autoencoder (expected AutoEncoder1Params or AutoEncoder2Params, got {type(model_spec.params).__name__})")
+
+    nfo(f": {os.path.basename(ckpt_path)}")
+    sd = load_sft(ckpt_path, device=device.type)
+    if isinstance(ae, AutoEncoder2):
+        ae.load_state_dict(sd, strict=True, assign=True)
+    else:
+        load_state_dict_into_model(ae, sd, verbose=True)
+    return ae  # type: ignore # to device flux2
+
+
+def load_mmada_model(
+    model_spec: ModelSpec,
+    device: torch.device = device,
+) -> MMaDAModelLM:
+    """Load a MMaDA model\n
+    :param model_spec: ModelSpec object containing model details
+    :param target_device: Device to load the model on
+    :param compatibility_key: Optional compatibility key (e.g., "mixcot") to override repo_id and file_name
+    :param force_reload: If True, bypass cache and reload the model
+    :returns: Loaded MMaDA model
+    :raises: TypeError if model_spec.params is not a MMaDAParams
+    """
+    precision = get_dtype(device)
+    if isinstance(model_spec.params, MMaDAParams):
+        model_spec.params.llm_model_path = model_spec.repo_id
+        model = MMaDAModelLM.from_pretrained(model_spec.repo_id, dtype=precision)  # type: ignore
+
+        model = model.to(device).eval()
+
+        return model
+    raise TypeError(f"MMaDA params not found for: {model_spec.repo_id} with params type {type(model_spec.params).__name__}")
 
 
 def load_t5(device: str | torch.device = device, max_length: int = 512) -> HFEmbedder:
@@ -177,27 +236,5 @@ def load_clip(device: str | torch.device = device) -> HFEmbedder:
     return HFEmbedder("openai/clip-vit-large-patch14", max_length=77, dtype=torch.bfloat16).to(device)
 
 
-def load_ae(mir_id: str, device: torch.device = device) -> AutoEncoder:
-    """Load the autoencoder model.\n
-    :param mir_id: Model ID (e.g., "model.vae.flux1-dev" or "model.taesd.flux1-dev")
-    :param device: Device to load the model on
-    :returns: Loaded AutoEncoder instance
-    """
-    config = get_merged_model_spec(mir_id)
-
-    ckpt_path = str(retrieve_model(config.repo_id, config.file_name))
-
-    with torch.device("meta"):
-        if isinstance(config.params, AutoEncoderParams):
-            ae = AutoEncoder(config.params)
-        elif isinstance(config.params, AutoEncoder2Params):
-            ae = AutoEncoder2(config.params)
-        elif config.params is AutoencoderTiny:
-            raise NotImplementedError("AutoencoderTiny loading not yet implemented. Use model.vae.flux1-dev instead.")
-        else:
-            raise ValueError(f"Config {mir_id} is not an autoencoder (expected AutoEncoderParams or AutoEncoder2Params, got {type(config.params).__name__})")
-
-    nfo(f": {os.path.basename(ckpt_path)}")
-    sd = load_sft(ckpt_path, device=device.type)
-    load_state_dict_into_model(ae, sd, verbose=True)
-    return ae  # type: ignore # to device flux2
+def load_mistral_small_embedder(device: str | torch.device = device) -> Mistral3SmallEmbedder:
+    return Mistral3SmallEmbedder().to(device)

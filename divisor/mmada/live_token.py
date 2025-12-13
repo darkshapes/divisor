@@ -3,6 +3,8 @@
 
 import torch
 
+from divisor.mmada.system_messages import THINKING_MODE_LM_PROMPT
+
 
 def get_num_transfer_tokens(mask_index, steps):
     mask_num = mask_index.sum(dim=1, keepdim=True)
@@ -47,10 +49,7 @@ def get_highlighted_text_tuples(current_x_ids_batch, prompt_input_ids, prompt_le
 
 def get_input_ids(prompt_text, thinking_mode_lm, tokenizer, model_id, device):
     if thinking_mode_lm:
-        prompt_text = (
-            "You should first think about the reasoning process in the mind and then provide the user with the answer. The reasoning process is enclosed within <think> </think> tags, i.e. <think> reasoning process here </think> answer here\n"
-            + prompt_text
-        )
+        prompt_text = THINKING_MODE_LM_PROMPT + prompt_text
 
     try:
         m = [{"role": "user", "content": prompt_text}]

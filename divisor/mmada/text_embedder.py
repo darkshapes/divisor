@@ -58,4 +58,4 @@ class HFEmbedder:
                 max_length=self.max_length,
             )["input_ids"].to(device)
 
-        return outputs  # [self.output_key]
+        return outputs  # type: ignore [self.output_key]

@@ -5,11 +5,12 @@ from pathlib import Path
 
 from PIL import Image
 from einops import rearrange
+from nnll.init_gpu import device
 import torch
 import torch.nn as nn
-from transformers import AutoProcessor, Mistral3ForConditionalGeneration, pipeline
+from transformers import AutoProcessor, Mistral3ForConditionalGeneration
 
-from divisor.flux2 import precision_name
+from divisor.contents import get_dtype
 from divisor.flux2.sampling import cap_pixels, concatenate_images
 from divisor.flux2.system_messages import (
     PROMPT_IMAGE_INTEGRITY,
@@ -24,6 +25,7 @@ from divisor.flux2.system_messages import (
 OUTPUT_LAYERS = [10, 20, 30]
 MAX_LENGTH = 512
 UPSAMPLING_MAX_IMAGE_SIZE = 768**2
+precision: torch.dtype = get_dtype(device)
 
 
 class Mistral3SmallEmbedder(nn.Module):
@@ -31,7 +33,7 @@ class Mistral3SmallEmbedder(nn.Module):
         self,
         model_spec: str = "mistralai/Mistral-Small-3.2-24B-Instruct-2506",
         model_spec_processor: str = "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-        torch_dtype: str = precision_name,
+        torch_dtype: torch.dtype = precision,
     ):
         super().__init__()
 
@@ -44,8 +46,6 @@ class Mistral3SmallEmbedder(nn.Module):
 
         self.max_length = MAX_LENGTH
         self.upsampling_max_image_size = UPSAMPLING_MAX_IMAGE_SIZE
-
-        self.nsfw_classifier = pipeline("image-classification", model="Falconsai/nsfw_image_detection")
 
     def _validate_and_process_images(self, img: list[list[Image.Image]] | list[Image.Image]) -> list[list[Image.Image]]:
         # Simple validation: ensure it's a list of PIL images or list of lists of PIL images

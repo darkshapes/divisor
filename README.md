@@ -1,3 +1,9 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/darkshapes/entity-statement/refs/heads/main/png/divisor/divisor_300.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/darkshapes/entity-statement/refs/heads/main/png/divisor/divisor_300_light.png">
+  <img alt="Cryptic square shaped letters forming the word DIVISOR at a 45 degree slant" src="https://raw.githubusercontent.com/darkshapes/entity-statement/refs/heads/main/png/divisor/divisor_300.png">
+</picture><br><br>
+
 ## Divisor <br>
 
 Divisor is a framework for hands-on procedural generation. It offers precise control over advanced diffusion model processes, enabling faster and easier experimentation on neural networks with off-the-shelf computers. Requires minimum 8GB+ Video RAM on Nvidia or M-series GPU.

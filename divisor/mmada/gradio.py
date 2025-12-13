@@ -5,8 +5,9 @@ import gradio as gr
 from nnll.init_gpu import device
 
 from divisor.mmada import app
-from divisor.mmada.loading import load_model
-from divisor.mmada.spec import configs
+from divisor.flux1.loading import load_mmada_model
+from divisor.spec import mmada_configs, get_model_spec
+from divisor.mmada.system_messages import EXAMPLE_PROMPT_LM_1
 
 css_styles = """
 .gradio-container{font-family:'IBM Plex Sans',sans-serif;margin:auto;}
@@ -47,7 +48,7 @@ footer{display:none !important}
 
 def toggle_thinking_mode_lm(current_thinking_mode):
     new_state = not current_thinking_mode
-    new_label = "Thinking Mode ✅" if new_state else "Thinking Mode ❌"
+    new_label = "Thinking Mode ✓" if new_state else "Thinking Mode ✗"
     return new_state, gr.update(value=new_label)
 
 
@@ -62,7 +63,7 @@ color_map_config = {
     "GEN": "#DCABFA",
 }
 
-model_choices = ["model.mldm.mmada"] + ["model.mldm.mmada:" + n for n in configs["model.mldm.mmada"] if n != "*"]
+model_choices = ["model.mldm.mmada"] + ["model.mldm.mmada:" + n for n in mmada_configs["model.mldm.mmada"] if n != "*"]
 with gr.Blocks(css=css_styles) as demo:
     thinking_mode_lm = gr.State(False)
     thinking_mode_mmu = gr.State(False)
@@ -75,11 +76,7 @@ with gr.Blocks(css=css_styles) as demo:
     gr.Markdown("## Text Generation")
     with gr.Row():
         with gr.Column(scale=2):
-            prompt_input_box_lm = gr.Textbox(
-                label="Enter your prompt:",
-                lines=3,
-                value="A rectangular prism has a length of 5 units, a width of 4 units, and a height of 3 units. What is the volume of the prism?",
-            )
+            prompt_input_box_lm = gr.Textbox(label="Enter your prompt:", lines=3, value=EXAMPLE_PROMPT_LM_1)
             think_button_lm = gr.Button("Toggle Thinking", elem_id="think_btn")
             with gr.Accordion("Generation Parameters", open=True):
                 with gr.Row():
@@ -109,111 +106,13 @@ with gr.Blocks(css=css_styles) as demo:
             )
             output_final_text_box_lm = gr.Textbox(label="Final Output", lines=8, interactive=False, show_copy_button=True)
 
-    gr.Examples(
-        examples=[
-            [
-                model_choices[0],
-                "A rectangular prism has a length of 5 units, a width of 4 units, and a height of 3 units. What is the volume of the prism?",
-                256,
-                512,
-                128,
-                1,
-                0,
-                "low_confidence",
-                False,
-            ],
-            [
-                model_choices[0],
-                "Lily can run 12 kilometers per hour for 4 hours. After that, she can run 6 kilometers per hour. How many kilometers can she run in 8 hours?",
-                256,
-                512,
-                64,
-                1,
-                0,
-                "low_confidence",
-                False,
-            ],
-        ],
-        inputs=[
-            model_select_radio,
-            prompt_input_box_lm,
-            steps_slider_lm,
-            gen_length_slider_lm,
-            block_length_slider_lm,
-            temperature_slider_lm,
-            cfg_scale_slider_lm,
-            remasking_dropdown_lm,
-            thinking_mode_lm,
-        ],
-        outputs=[output_visualization_box_lm, output_final_text_box_lm],
-        fn=app.generate_viz_wrapper_lm,
-    )
-
-    # gr.Markdown("---")
-    # gr.Markdown("## Part 2. Multimodal Understanding")
-    # with gr.Row():
-    #     with gr.Column(scale=2):
-    #         prompt_input_box_mmu = gr.Textbox(label="Enter your prompt:", lines=3, value="Please describe this image in detail.")
-    #         think_button_mmu = gr.Button("Toggle Thinking", elem_id="think_btn")
-    #         with gr.Accordion("Generation Parameters", open=True):
-    #             with gr.Row():
-    #                 gen_length_slider_mmu = gr.Slider(minimum=64, maximum=1024, value=512, step=64, label="Generation Length", info="Number of tokens to generate.")
-    #                 steps_slider_mmu = gr.Slider(minimum=1, maximum=512, value=256, step=32, label="Total Sampling Steps", info="Must be divisible by (gen_length / block_length).")
-    #             with gr.Row():
-    #                 block_length_slider_mmu = gr.Slider(minimum=32, maximum=1024, value=128, step=32, label="Block Length", info="gen_length must be divisible by this.")
-    #                 remasking_dropdown_mmu = gr.Dropdown(choices=["low_confidence", "random"], value="low_confidence", label="Remasking Strategy")
-    #             with gr.Row():
-    #                 cfg_scale_slider_mmu = gr.Slider(minimum=0.0, maximum=2.0, value=0.0, step=0.1, label="CFG Scale", info="Classifier-Free Guidance. 0 disables it.")
-    #                 temperature_slider_mmu = gr.Slider(
-    #                     minimum=0.0, maximum=2.0, value=1, step=0.05, label="Temperature", info="Controls randomness via Gumbel noise. 0 is deterministic."
-    #                 )
-
-    #         with gr.Row():
-    #             image_upload_box = gr.Image(type="pil", label="Upload Image")
-
-    #         with gr.Row():
-    #             run_button_ui_mmu = gr.Button("Generate Description", variant="primary", scale=3)
-    #             clear_button_ui_mmu = gr.Button("Clear Outputs", scale=1)
-
-    #     with gr.Column(scale=3):
-    #         gr.Markdown("## Live Generation Process")
-    #         output_visualization_box_mmu = gr.HighlightedText(
-    #             label="Token Sequence (Live Update)",
-    #             show_legend=True,
-    #             color_map=color_map_config,
-    #             combine_adjacent=False,
-    #             interactive=False,
-    #             elem_id="live-update-scrollable-box",
-    #         )
-    #         gr.Markdown("## Final Generated Text")
-    #         output_final_text_box_mmu = gr.Textbox(label="Final Output", lines=8, interactive=False, show_copy_button=True)
-
-    # gr.Examples(
-    #     examples=[
-    #         ["mmu_validation_2/sunflower.jpg", "Please describe this image in detail.", 256, 512, 128, 1, 0, "low_confidence"],
-    #         ["mmu_validation_2/woman.jpg", "Please describe this image in detail.", 256, 512, 128, 1, 0, "low_confidence"],
-    #     ],
-    #     inputs=[
-    #         image_upload_box,
-    #         prompt_input_box_mmu,
-    #         steps_slider_mmu,
-    #         gen_length_slider_mmu,
-    #         block_length_slider_mmu,
-    #         temperature_slider_mmu,
-    #         cfg_scale_slider_mmu,
-    #         remasking_dropdown_mmu,
-    #     ],
-    #     outputs=[output_visualization_box_mmu, output_final_text_box_mmu],
-    #     fn=app.generate_viz_wrapper,
-    # )
-
     think_button_lm.click(fn=toggle_thinking_mode_lm, inputs=[thinking_mode_lm], outputs=[thinking_mode_lm, think_button_lm])
-    # think_button_mmu.click(fn=toggle_thinking_mode_mmu, inputs=[thinking_mode_mmu], outputs=[thinking_mode_mmu, think_button_mmu])
 
     def initialize_model():
         default_model_id = model_choices[0]
         try:
-            load_model(default_model_id, device=device)
+            model_spec = get_model_spec(default_model_id, mmada_configs)
+            load_mmada_model(model_spec, device=device)
             status = f"Model '{default_model_id}' loaded successfully."
         except Exception as e:
             status = f"Error loading model '{default_model_id}': {str(e)}"
@@ -225,7 +124,6 @@ with gr.Blocks(css=css_styles) as demo:
         return None, None  # Clear visualization and final text
 
     clear_button_ui_lm.click(fn=clear_outputs, inputs=None, outputs=[output_visualization_box_lm, output_final_text_box_lm], queue=False)
-    # clear_button_ui_mmu.click(fn=clear_outputs, inputs=None, outputs=[image_upload_box, output_visualization_box_mmu, output_final_text_box_mmu], queue=False)
 
     run_button_ui_lm.click(
         fn=app.generate_viz_wrapper_lm,
@@ -242,22 +140,6 @@ with gr.Blocks(css=css_styles) as demo:
         ],
         outputs=[output_visualization_box_lm, output_final_text_box_lm],
     )
-
-    # run_button_ui_mmu.click(
-    #     fn=app.generate_viz_wrapper,
-    #     inputs=[
-    #         image_upload_box,
-    #         prompt_input_box_mmu,
-    #         steps_slider_mmu,
-    #         gen_length_slider_mmu,
-    #         block_length_slider_mmu,
-    #         temperature_slider_mmu,
-    #         cfg_scale_slider_mmu,
-    #         remasking_dropdown_mmu,
-    #         thinking_mode_mmu,
-    #     ],
-    #     outputs=[output_visualization_box_mmu, output_final_text_box_mmu],
-    # )
 
 
 def main():

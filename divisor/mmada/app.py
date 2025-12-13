@@ -5,16 +5,16 @@ from nnll.init_gpu import device
 import torch
 import torch.nn.functional as F
 
+from divisor.contents import get_dtype
+from divisor.flux1.loading import load_mmada_model
 from divisor.mmada.live_token import (
     get_highlighted_text_tuples,
     get_num_transfer_tokens,
 )
-from divisor.mmada.loading import load_model, torch_dtype
 from divisor.mmada.sampling import add_gumbel_noise, prepare
-from divisor.mmada.spec import get_merged_model_spec
 from divisor.mmada.text_embedder import HFEmbedder
-
-# VQ_MODEL = MAGVITv2().from_pretrained("showlab/magvitv2").to(DEVICE)
+from divisor.spec import InitialParamsMMaDA, MMaDAParams, get_model_spec, mmada_configs, ModelSpec
+from divisor.mmada.system_messages import THINKING_MODE_LM_PROMPT
 
 
 def clear_outputs_action():
@@ -23,7 +23,7 @@ def clear_outputs_action():
 
 @torch.no_grad()
 def generate_viz_wrapper_lm(
-    model_id,
+    mir_id,
     prompt_text,
     steps,
     gen_length,
@@ -33,15 +33,21 @@ def generate_viz_wrapper_lm(
     remasking_strategy,
     thinking_mode_lm,
 ):
-    spec = get_merged_model_spec(model_id)
-    mask_id = spec.init.mask_id
-    model = load_model(model_id, device=device)
-    hf = HFEmbedder(spec.repo_id, max_length=spec.init.max_position_embeddings)
-    if thinking_mode_lm:
-        prompt_text = (
-            "You should first think about the reasoning process in the mind and then provide the user with the answer. The reasoning process is enclosed within <think> </think> tags, i.e. <think> reasoning process here </think> answer here\n"
-            + prompt_text
+    precision = get_dtype(device)
+    model_spec: ModelSpec = get_model_spec(mir_id, mmada_configs)
+    if not isinstance(model_spec.params, MMaDAParams) or not isinstance(model_spec.init, InitialParamsMMaDA):
+        raise TypeError(
+            f"MMaDA spec not found for: {mir_id} \
+                with params type {type(model_spec.params).__name__} \
+                    and init type {type(model_spec.init).__name__}",
         )
+    else:
+        mask_id = model_spec.init.mask_id
+        max_position_embeddings = model_spec.init.max_position_embeddings
+        model = load_mmada_model(model_spec, device=device)
+        hf = HFEmbedder(model_spec.repo_id, max_length=max_position_embeddings)
+    if thinking_mode_lm:
+        prompt_text = THINKING_MODE_LM_PROMPT + prompt_text
 
     input_ids = prepare(model, hf.tokenizer, prompt_text)
     batch_size = input_ids.shape[0]
@@ -116,10 +122,10 @@ def generate_viz_wrapper_lm(
             x0_predicted_tokens = torch.argmax(logits_with_noise, dim=-1)
 
             if remasking_strategy == "low_confidence":
-                probs = F.softmax(logits.to(torch_dtype), dim=-1)
+                probs = F.softmax(logits.to(precision), dim=-1)
                 x0_probs = torch.gather(probs, dim=-1, index=x0_predicted_tokens.unsqueeze(-1)).squeeze(-1)
             elif remasking_strategy == "random":
-                x0_probs = torch.rand(x.shape, device=x.device, dtype=torch_dtype)
+                x0_probs = torch.rand(x.shape, device=x.device, dtype=precision)
             else:
                 yield (
                     get_highlighted_text_tuples(x, input_ids, prompt_len, hf.tokenizer, mask_id, raw_prompt_attention_mask),

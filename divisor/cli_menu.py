@@ -9,9 +9,9 @@ from typing import Any, Callable
 from nnll.console import nfo
 
 from divisor.controller import ManualTimestepController
+from divisor.interaction_context import InteractionContext
 from divisor.keybinds import _CHOICE_REGISTRY
 from divisor.state import DenoisingState
-from divisor.interaction_context import InteractionContext
 
 
 def _format_menu_line(
@@ -49,6 +49,7 @@ def route_choices(
     controller: ManualTimestepController,
     state: DenoisingState,
     interaction_context: InteractionContext,
+    **kwargs: Any,
 ) -> DenoisingState:
     """Process user choice input and return updated state.\n
     :param controller: ManualTimestepController instance
@@ -71,26 +72,13 @@ def route_choices(
         fn = choice_function["fn"]
         # Inspect function signature to call with correct arguments
         sig = inspect.signature(fn)
+        param_names = list(sig.parameters.keys())
+        # print(param_names)
         kwargs = {}
-
-        for param_name, param in sig.parameters.items():
-            if param_name == "controller":
-                kwargs[param_name] = controller
-            elif param_name == "state":
-                kwargs[param_name] = state
-            elif param_name == "interaction_context":
-                kwargs[param_name] = interaction_context
-            elif hasattr(interaction_context, param_name):
-                # Get attribute from interaction_context
-                value = getattr(interaction_context, param_name, None)
-                # Include if value is not None, OR if parameter has no default (required)
-                if value is not None or param.default == inspect.Parameter.empty:
-                    kwargs[param_name] = value
-            # For optional parameters with defaults that aren't in interaction_context,
-            # they'll use their default values
-
-        # Create a copy of kwargs for each lambda to avoid closure issues
-        choice_handlers[choice_letter] = lambda fn=fn, kwargs=kwargs.copy(): fn(**kwargs)
+        for name in param_names:
+            if name not in kwargs and hasattr(controller, name):
+                kwargs[name] = getattr(interaction_context, name, None)
+        choice_handlers[choice_letter] = lambda fn=fn, kwargs=kwargs: fn(controller, state, interaction_context, **kwargs)
     prompt = "".join(k.upper() for k in _CHOICE_REGISTRY if k) + "/q"
     choice = input(f": [{prompt}] or advance with Enter:").lower().strip()
 
@@ -100,10 +88,9 @@ def route_choices(
         nfo("Quitting...")
         sys.exit(0)
 
-    if choice == "/":
+    elif choice == "/":
         return controller.current_state
-
-    if choice in choice_handlers:
+    elif choice in choice_handlers:
         result = choice_handlers[choice]()
         state = result if isinstance(result, DenoisingState) else state
     else:

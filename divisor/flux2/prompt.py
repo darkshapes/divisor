@@ -10,9 +10,10 @@ from nnll.console import nfo
 from nnll.init_gpu import clear_cache, device
 import torch
 
+from divisor.contents import get_dtype
 from divisor.controller import rng
+from divisor.flux1.loading import load_ae, load_flow_model, load_mistral_small_embedder
 from divisor.flux1.prompt import parse_prompt
-from divisor.flux2 import precision
 from divisor.flux2.sampling import (
     batched_prc_img,
     batched_prc_txt,
@@ -20,36 +21,43 @@ from divisor.flux2.sampling import (
     encode_image_refs,
     get_schedule,
 )
-from divisor.flux2.util import (
-    FLUX2_MODEL_INFO,
-    load_ae,
-    load_flow_model,
-    load_mistral_small_embedder,
-)
 from divisor.noise import get_noise
+from divisor.spec import flux_configs, get_model_spec, ModelSpec
 from divisor.state import DenoiseSettings, DenoisingState
 
 
 def main(
-    model_id: str = "flux2-dev",
-    ae_id: str = "flux2-dev",
+    mir_id: str = "model.dit.flux2-dev",
+    ae_id: str = "model.vae.flux2-dev",
     width: int = 1360,
     height: int = 768,
     guidance: float = 4,
-    seed: int | None = rng.next_seed(),
+    seed: int = rng.next_seed(),
     prompt: str = "",
+    quantization: bool = False,
     device: torch.device = device,
     num_steps: int = 50,
     upsample_prompt: bool = False,
     loop: bool = False,
     offload: bool = False,
     compile: bool = False,
+    verbose: bool = False,
     input_images: list[str] | None = None,
-):
-    model_id = f"model.dit.{model_id}".lower()
-    ae_id = f"model.vae.{ae_id}".lower()
-    assert model_id.lower() in FLUX2_MODEL_INFO, f"{model_id} is not available, choose from {FLUX2_MODEL_INFO.keys()}"
+) -> None:
+    """Sample the flux model. Either interactively (set `--loop`) or run for a single image.\n
+    :param name: Name of the model to load
+    :param height: height of the sample in pixels (should be a multiple of 16)
+    :param width: width of the sample in pixels (should be a multiple of 16)
+    :param seed: Set a seed for sampling
+    :param output_name: where to save the output image, `{idx}` will be replaced by the index of the sample
+    :param prompt: Prompt used for sampling
+    :param device: Pytorch device
+    :param num_steps: number of sampling steps (default 4 for schnell, 28 for guidance distilled)
+    :param loop: start an interactive session and sample multiple times
+    :param guidance: guidance value used for guidance distillation
+    """
 
+    precision = get_dtype(device)
     prompt_parts = prompt.split("|")
     if len(prompt_parts) == 1:
         prompt = prompt_parts[0]
@@ -58,23 +66,27 @@ def main(
         additional_prompts = prompt_parts[1:]
         prompt = prompt_parts[0]
 
-    assert not ((additional_prompts is not None) and loop), "Do not provide additional prompts and set loop to True"
-
     mistral = load_mistral_small_embedder()
-    model = load_flow_model(model_id, device=torch.device("cpu") if offload else device)
+    if quantization:
+        mir_id += ":@fp8-sai"
+    model_spec: ModelSpec = get_model_spec(mir_id, flux_configs)
+    ae_spec = get_model_spec(ae_id, flux_configs)
+    model = load_flow_model(
+        model_spec,
+        device=torch.device("cpu") if offload else device,
+        verbose=verbose,
+    )
 
     is_compiled = False
-    if compile and not offload:
-        # Compile only if not offloading (compiled models can't be easily moved between devices)
+    if compile and not offload:  # Compiled models can't be easily moved between devices
         nfo("Compilation enabled.")
         model = torch.compile(model)  # type: ignore[assignment]
         is_compiled = True
 
-    ae = load_ae(ae_id)
+    ae = load_ae(ae_spec, configs=flux_configs, device=torch.device("cpu") if offload else device)
     ae.eval()
     mistral.eval()
 
-    # Create initial state from CLI args
     state = DenoisingState.from_cli_args(
         prompt=prompt,
         width=width,
@@ -104,7 +116,7 @@ def main(
             1,
             state.height,
             state.width,
-            dtype=torch.bfloat16,
+            dtype=precision,
             seed=rng.seed,  # type: ignore
             device=device,
             version_2=True,
