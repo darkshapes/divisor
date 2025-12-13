@@ -169,12 +169,18 @@ class TestCommandsSamplingIntegration:
                 # Verify state was updated
                 assert result == mock_controller.current_state
 
-    def test_toggle_buffer_mask_updates_controller(self, mock_controller):
+    def test_toggle_buffer_mask_updates_controller(self, mock_controller, mock_clear_cache, mock_rng, mock_var_rng):
         """Test that toggle_buffer_mask correctly updates the controller."""
         initial_state = mock_controller.current_state
+        variation_rng = mock_var_rng.var_rng
+        interaction_context = InteractionContext(
+            clear_prediction_cache=mock_clear_cache.clear_prediction_cache,
+            rng=mock_rng,
+            variation_rng=variation_rng,
+        )
         initial_state.use_previous_as_mask = False
 
-        result = toggle_buffer_mask(mock_controller, initial_state)
+        result = toggle_buffer_mask(mock_controller, initial_state, interaction_context)
 
         # Verify set_use_previous_as_mask was called with True (toggled)
         mock_controller.set_use_previous_as_mask.assert_called_once_with(True)
