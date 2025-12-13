@@ -207,6 +207,7 @@ def change_seed(
 def toggle_buffer_mask(
     controller: ManualTimestepController,
     state: DenoisingState,
+    interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Handle buffer mask toggle.\n
     :param controller: ManualTimestepController instance
@@ -326,6 +327,8 @@ def change_prompt(
 
 @choice("e", "Edit Mode")
 def edit_mode(
+    controller: ManualTimestepController,
+    state: DenoisingState,
     interaction_context: InteractionContext,
 ) -> None:
     """Handle edit mode (debugger breakpoint).\n
@@ -393,7 +396,7 @@ def change_variation(
     """
     try:
         var_input = input(
-            f"Variation (current integer seed: {state.variation_seed}, float strength: {state.variation_strength:.3f}. type a number, leave empty for random, or use 0.0 to disable): "
+            f"Variation (current integer seed: {state.variation_seed}, float strength: {state.variation_strength:.3f}. type a number, leave empty for random seed, or use 0.0 to disable): "
         ).strip()
 
         if not var_input or "." not in var_input:

@@ -67,18 +67,18 @@ def route_choices(
         line = _format_menu_line(choice_letter, choice_description, state)
         nfo(line)
 
-    choice_handlers: dict[str, Callable[[], Any]] = {}
+    menu_keybinds: dict[str, Callable[[], Any]] = {}
     for choice_letter, choice_function in _CHOICE_REGISTRY.items():
         fn = choice_function["fn"]
-        # Inspect function signature to call with correct arguments
         sig = inspect.signature(fn)
+        print(sig)
         param_names = list(sig.parameters.keys())
         # print(param_names)
         kwargs = {}
         for name in param_names:
             if name not in kwargs and hasattr(controller, name):
                 kwargs[name] = getattr(interaction_context, name, None)
-        choice_handlers[choice_letter] = lambda fn=fn, kwargs=kwargs: fn(controller, state, interaction_context, **kwargs)
+        menu_keybinds[choice_letter] = lambda fn=fn, kwargs=kwargs: fn(controller, state, interaction_context, **kwargs)
     prompt = "".join(k.upper() for k in _CHOICE_REGISTRY if k) + "/q"
     choice = input(f": [{prompt}] or advance with Enter:").lower().strip()
 
@@ -90,8 +90,8 @@ def route_choices(
 
     elif choice == "/":
         return controller.current_state
-    elif choice in choice_handlers:
-        result = choice_handlers[choice]()
+    elif choice in menu_keybinds:
+        result = menu_keybinds[choice]()
         state = result if isinstance(result, DenoisingState) else state
     else:
         nfo("Invalid choice, please try again")

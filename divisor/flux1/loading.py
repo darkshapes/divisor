@@ -22,7 +22,7 @@ from divisor.flux2.autoencoder import (
 )
 from divisor.flux2.model import Flux2, Flux2Params
 from divisor.flux2.text_encoder import Mistral3SmallEmbedder
-from divisor.spec import get_model_spec, ModelSpec, CompatibilitySpec, optionally_expand_state_dict
+from divisor.spec import ModelSpec, CompatibilitySpec, optionally_expand_state_dict
 from divisor.xflux1.model import XFlux, XFluxParams
 from divisor.contents import get_dtype
 from divisor.mmada.modeling_mmada import MMadaConfig as MMaDAParams, MMadaModelLM as MMaDAModelLM
@@ -172,7 +172,7 @@ def load_flow_model(
 
 
 def load_ae(
-    mir_id: ModelSpec,
+    model_spec: ModelSpec,
     configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]],
     device: torch.device = device,
 ) -> AutoEncoder1 | AutoEncoder2 | AutoencoderTiny:
@@ -181,8 +181,6 @@ def load_ae(
     :param device: Device to load the model on
     :returns: Loaded AutoEncoder instance
     """
-    model_spec = get_model_spec(mir_id, configs)
-
     ckpt_path = str(retrieve_model(model_spec.repo_id, model_spec.file_name))
 
     with torch.device("meta"):
@@ -193,7 +191,7 @@ def load_ae(
         elif model_spec.params is AutoencoderTiny:
             raise NotImplementedError("AutoencoderTiny loading not yet implemented. Use model.vae.flux1-dev instead.")
         else:
-            raise ValueError(f"Config {mir_id} is not an autoencoder (expected AutoEncoder1Params or AutoEncoder2Params, got {type(model_spec.params).__name__})")
+            raise ValueError(f"Config {model_spec.repo_id} is not an autoencoder (expected AutoEncoder1Params or AutoEncoder2Params, got {type(model_spec.params).__name__})")
 
     nfo(f": {os.path.basename(ckpt_path)}")
     sd = load_sft(ckpt_path, device=device.type)
