@@ -49,6 +49,7 @@ def route_choices(
     controller: ManualTimestepController,
     state: DenoisingState,
     interaction_context: InteractionContext,
+    **kwargs: Any,
 ) -> DenoisingState:
     """Process user choice input and return updated state.\n
     :param controller: ManualTimestepController instance
@@ -77,7 +78,7 @@ def route_choices(
         for name in param_names:
             if name not in kwargs and hasattr(controller, name):
                 kwargs[name] = getattr(interaction_context, name, None)
-        choice_handlers[choice_letter] = lambda fn=fn, kwargs=kwargs: fn(**kwargs)
+        choice_handlers[choice_letter] = lambda fn=fn, kwargs=kwargs: fn(controller, state, interaction_context, **kwargs)
     prompt = "".join(k.upper() for k in _CHOICE_REGISTRY if k) + "/q"
     choice = input(f": [{prompt}] or advance with Enter:").lower().strip()
 
@@ -87,10 +88,9 @@ def route_choices(
         nfo("Quitting...")
         sys.exit(0)
 
-    if choice == "/":
+    elif choice == "/":
         return controller.current_state
-
-    if choice in choice_handlers:
+    elif choice in choice_handlers:
         result = choice_handlers[choice]()
         state = result if isinstance(result, DenoisingState) else state
     else:

@@ -10,6 +10,7 @@ from divisor.cli_menu import route_choices
 from divisor.controller import ManualTimestepController
 from divisor.flux1.autoencoder import AutoEncoder
 from divisor.flux1.sampling import denoise
+from divisor.interaction_context import InteractionContext
 from divisor.keybinds import (
     change_guidance,
     change_layer_dropout,
@@ -21,7 +22,6 @@ from divisor.keybinds import (
     toggle_deterministic,
 )
 from divisor.state import DenoiseSettings, DenoisingState, TimestepState
-from divisor.interaction_context import InteractionContext
 
 
 class TestCommandsSamplingIntegration:
@@ -80,31 +80,44 @@ class TestCommandsSamplingIntegration:
         rng.next_seed = Mock(return_value=123)
         return rng
 
+    @pytest.fixture
+    def mock_var_rng(self):
+        """Create a mock RNG."""
+        var_rng = Mock()
+        var_rng.next_seed = Mock(return_value=987)
+        return var_rng
+
     def test_change_guidance_updates_controller(self, mock_controller, mock_rng, mock_var_rng, mock_clear_cache):
         """Test that change_guidance correctly updates the controller."""
         initial_state = mock_controller.current_state
+        variation_rng = mock_var_rng.var_rng
         interaction_context = InteractionContext(
-            clear_prediction_cache=mock_clear_cache,
+            clear_prediction_cache=mock_clear_cache.clear_prediction_cache,
             rng=mock_rng,
-            variation_rng=mock_var_rng,
+            variation_rng=variation_rng,
         )
         with patch("divisor.keybinds.get_float_input", return_value=7.5):
-            result = change_guidance(mock_controller, initial_state, interaction_context)
+            result = change_guidance(
+                controller=mock_controller,
+                state=initial_state,
+                interaction_context=interaction_context,
+            )
 
             # Verify set_guidance was called with correct value
             mock_controller.set_guidance.assert_called_once_with(7.5)
             # Verify cache was cleared
-            mock_clear_cache.clear_prediction_cache.assert_called_once()
+            interaction_context.clear_prediction_cache.assert_called_once()
             # Verify state was updated
             assert result == mock_controller.current_state
 
     def test_change_layer_dropout_updates_controller(self, mock_controller, mock_rng, mock_var_rng, mock_clear_cache):
         """Test that change_layer_dropout correctly updates the controller."""
         initial_state = mock_controller.current_state
+        variation_rng = mock_var_rng.var_rng
         interaction_context = InteractionContext(
-            clear_prediction_cache=mock_clear_cache,
+            clear_prediction_cache=mock_clear_cache.clear_prediction_cache,
             rng=mock_rng,
-            variation_rng=mock_var_rng,
+            variation_rng=variation_rng,
         )
         with patch("builtins.input", return_value="1,2,3"):
             result = change_layer_dropout(mock_controller, initial_state, interaction_context)
@@ -119,10 +132,11 @@ class TestCommandsSamplingIntegration:
     def test_change_resolution_updates_controller(self, mock_controller, mock_clear_cache, mock_rng, mock_var_rng):
         """Test that change_resolution correctly updates the controller."""
         initial_state = mock_controller.current_state
+        variation_rng = mock_var_rng.var_rng
         interaction_context = InteractionContext(
-            clear_prediction_cache=mock_clear_cache,
+            clear_prediction_cache=mock_clear_cache.clear_prediction_cache,
             rng=mock_rng,
-            variation_rng=mock_var_rng,
+            variation_rng=variation_rng,
         )
         with patch("divisor.keybinds.generate_valid_resolutions", return_value=[(512, 512), (768, 512)]), patch("builtins.input", return_value="0"):
             result = change_resolution(mock_controller, initial_state, interaction_context)
@@ -137,10 +151,11 @@ class TestCommandsSamplingIntegration:
     def test_change_seed_updates_controller(self, mock_controller, mock_clear_cache, mock_rng, mock_var_rng):
         """Test that change_seed correctly updates the controller."""
         initial_state = mock_controller.current_state
+        variation_rng = mock_var_rng.var_rng
         interaction_context = InteractionContext(
-            clear_prediction_cache=mock_clear_cache,
+            clear_prediction_cache=mock_clear_cache.clear_prediction_cache,
             rng=mock_rng,
-            variation_rng=mock_var_rng,
+            variation_rng=variation_rng,
         )
 
         with patch("divisor.keybinds.get_int_input", return_value=999):
@@ -170,10 +185,12 @@ class TestCommandsSamplingIntegration:
         """Test that change_vae_offset correctly updates shift offset."""
         initial_state = mock_controller.current_state
         mock_ae = Mock(spec=AutoEncoder)
+        variation_rng = mock_var_rng.var_rng
         interaction_context = InteractionContext(
-            clear_prediction_cache=mock_clear_cache,
+            clear_prediction_cache=mock_clear_cache.clear_prediction_cache,
             rng=mock_rng,
-            variation_rng=mock_var_rng,
+            variation_rng=variation_rng,
+            ae=mock_ae,
         )
         with patch("builtins.input", side_effect=["s", "0.1"]):
             with patch("divisor.keybinds.handle_float_setting") as mock_handle:
@@ -193,10 +210,12 @@ class TestCommandsSamplingIntegration:
         """Test that change_vae_offset correctly updates scale offset."""
         initial_state = mock_controller.current_state
         mock_ae = Mock(spec=AutoEncoder)
+        variation_rng = mock_var_rng.var_rng
         interaction_context = InteractionContext(
-            clear_prediction_cache=mock_clear_cache,
+            clear_prediction_cache=mock_clear_cache.clear_prediction_cache,
             rng=mock_rng,
-            variation_rng=mock_var_rng,
+            variation_rng=variation_rng,
+            ae=mock_ae,
         )
 
         with patch("builtins.input", side_effect=["c", "0.05"]):
@@ -213,23 +232,24 @@ class TestCommandsSamplingIntegration:
         """Test that toggle_deterministic correctly updates the controller."""
         initial_state = mock_controller.current_state
         initial_state.deterministic = False
-        interaction_context = InteractionContext(
-            clear_prediction_cache=mock_clear_cache,
-            rng=mock_rng,
-            variation_rng=mock_var_rng,
-        )
 
         with patch("divisor.controller.rng") as mock_rng, patch("divisor.controller.variation_rng") as mock_var_rng:
             mock_rng.random_mode = Mock()
             mock_var_rng.random_mode = Mock()
+
+            interaction_context = InteractionContext(
+                clear_prediction_cache=mock_clear_cache.clear_prediction_cache,
+                rng=mock_rng,
+                variation_rng=mock_var_rng,
+            )
 
             result = toggle_deterministic(mock_controller, initial_state, interaction_context)
 
             # Verify set_deterministic was called with True (toggled)
             mock_controller.set_deterministic.assert_called_once_with(True)
             # Verify RNG modes were updated
-            mock_clear_cache.rng.random_mode.assert_called_once_with(reproducible=True)
-            mock_clear_cache.variation_rng.random_mode.assert_called_once_with(reproducible=True)
+            interaction_context.rng.random_mode.assert_called_once_with(reproducible=True)
+            interaction_context.variation_rng.random_mode.assert_called_once_with(reproducible=True)
             # Verify cache was cleared
             mock_clear_cache.clear_prediction_cache.assert_called_once()
 
@@ -237,15 +257,20 @@ class TestCommandsSamplingIntegration:
         """Test that change_prompt correctly updates the controller."""
         initial_state = mock_controller.current_state
         mock_recompute = Mock()
+        variation_rng = mock_var_rng.var_rng
         interaction_context = InteractionContext(
-            clear_prediction_cache=mock_clear_cache,
+            clear_prediction_cache=mock_clear_cache.clear_prediction_cache,
             rng=mock_rng,
-            variation_rng=mock_var_rng,
+            variation_rng=variation_rng,
             recompute_text_embeddings=mock_recompute,
         )
 
         with patch("builtins.input", return_value="new prompt text"):
-            result = change_prompt(mock_controller, initial_state, interaction_context)
+            result = change_prompt(
+                controller=mock_controller,
+                state=initial_state,
+                interaction_context=interaction_context,
+            )
 
             # Verify set_prompt was called with new prompt
             mock_controller.set_prompt.assert_called_once_with("new prompt text")
@@ -254,49 +279,48 @@ class TestCommandsSamplingIntegration:
             # Verify state was updated
             assert result == mock_controller.current_state
 
-    def test_route_choices_calls_correct_handler(self, mock_controller, mock_clear_cache, mock_rng):
+    def test_route_choices_calls_correct_handler(self, mock_controller, mock_clear_cache, mock_rng, mock_var_rng):
         """Test that route_choices routes to correct command handler."""
         initial_state = mock_controller.current_state
         mock_controller.current_layer_dropout = [None]
-        mock_var_rng = Mock()
+        variation_rng = mock_var_rng.var_rng
         interaction_context = InteractionContext(
-            clear_prediction_cache=mock_clear_cache,
+            clear_prediction_cache=mock_clear_cache.clear_prediction_cache,
             rng=mock_rng,
-            variation_rng=mock_var_rng,
+            variation_rng=variation_rng,
         )
         with patch("builtins.input", side_effect=["g", "7.5"]):
-            with patch("divisor.keybinds.get_float_input") as mock_handle:
+            with patch("divisor.keybinds.get_float_input", autospec=True) as mock_handle:
                 mock_handle.return_value = mock_controller.current_state
                 result = route_choices(
                     mock_controller,
                     initial_state,
                     interaction_context,
                 )
+        # Verify change_guidance was called
+        assert mock_handle.called
 
-                # Verify change_guidance was called
-                assert mock_handle.called
-
-    def test_route_choices_advances_on_empty_input(self, mock_controller, mock_clear_cache, mock_rng):
+    def test_route_choices_advances_on_empty_input(self, mock_controller, mock_clear_cache, mock_rng, mock_var_rng):
         """Test that route_choices advances step on empty input."""
         initial_state = mock_controller.current_state
         current_layer_dropout = [None]
-        mock_var_rng = Mock()
+        variation_rng = mock_var_rng.var_rng
         interaction_context = InteractionContext(
-            clear_prediction_cache=mock_clear_cache,
+            clear_prediction_cache=mock_clear_cache.clear_prediction_cache,
             rng=mock_rng,
-            variation_rng=mock_var_rng,
+            variation_rng=variation_rng,
         )
-        with patch("builtins.input", return_value=""):
-            result = route_choices(
-                mock_controller,
-                initial_state,
-                interaction_context,
-            )
+        with patch(
+            "builtins.input",
+            side_effect="""
+        """,
+        ):
+            result = route_choices(mock_controller, initial_state, interaction_context)
 
             # Verify step was called
             mock_controller.step.assert_called_once()
             # Verify cache was cleared
-            mock_clear_cache.assert_called_once()
+            mock_clear_cache.clear_prediction_cache.assert_called_once()
 
     def test_denoise_initializes_controller_with_state_values(self):
         """Test that denoise function initializes controller with state values."""
@@ -480,14 +504,19 @@ class TestCommandsSamplingIntegration:
     def test_commands_clear_cache_when_state_changes(self, mock_controller, mock_rng, mock_var_rng, mock_clear_cache):
         """Test that commands clear prediction cache when state changes."""
         initial_state = mock_controller.current_state
+        variation_rng = mock_var_rng.var_rng
         interaction_context = InteractionContext(
-            clear_prediction_cache=mock_clear_cache,
+            clear_prediction_cache=mock_clear_cache.clear_prediction_cache,
             rng=mock_rng,
-            variation_rng=mock_var_rng,
+            variation_rng=variation_rng,
         )
 
         with patch("divisor.keybinds.get_float_input", return_value=7.5):
-            change_guidance(mock_controller, initial_state, interaction_context)
+            result = change_guidance(
+                controller=mock_controller,
+                state=initial_state,
+                interaction_context=interaction_context,
+            )
             assert mock_clear_cache.clear_prediction_cache.call_count == 1
 
         # Reset mock
@@ -495,7 +524,11 @@ class TestCommandsSamplingIntegration:
 
         # Test layer dropout change
         with patch("builtins.input", return_value="1,2"):
-            change_layer_dropout(mock_controller, initial_state, interaction_context)
+            result = change_layer_dropout(
+                controller=mock_controller,
+                state=initial_state,
+                interaction_context=interaction_context,
+            )
             assert mock_clear_cache.clear_prediction_cache.call_count == 1
 
     def test_route_choices_integration_with_denoise_loop(self):

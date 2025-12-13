@@ -2,7 +2,7 @@
 # <!-- // /*  d a r k s h a p e s */ -->
 
 from collections import OrderedDict
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict
 
 from nnll.console import nfo
 from nnll.helpers import generate_valid_resolutions
@@ -299,7 +299,6 @@ def change_prompt(
     controller: ManualTimestepController,
     state: DenoisingState,
     interaction_context: InteractionContext,
-    recompute_text_embeddings: Optional[Callable[[str], None]],
 ) -> DenoisingState:
     """Handle prompt change.\n
     :param controller: ManualTimestepController instance
@@ -313,8 +312,8 @@ def change_prompt(
 
     if new_prompt:
         controller.set_prompt(new_prompt)
-        if recompute_text_embeddings is not None:
-            recompute_text_embeddings(new_prompt)
+        if interaction_context.recompute_text_embeddings is not None:
+            interaction_context.recompute_text_embeddings(new_prompt)
         else:
             interaction_context.clear_prediction_cache()
         state = controller.current_state

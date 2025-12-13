@@ -25,15 +25,15 @@ class TestFindMirSpec:
     def test_find_mir_spec_with_subkey(self):
         """Test find_mir_spec with model ID containing subkey."""
         test_configs = deepcopy(flux_configs)
-        mir_id = "model.dit.flux1-dev:mini"
+        mir_id = "model.dit.flux1-dev"
 
         merged_spec = get_model_spec(
-            mir_id,
+            mir_id + ":mini",
             configs=test_configs,
         )
 
         # Verify that the merged spec was stored in configs
-        merged_spec = test_configs[mir_id]["*"]
+
         assert isinstance(merged_spec, ModelSpec)
         # Verify subkey values took precedence
         assert merged_spec.repo_id == "TencentARC/flux-mini"  # From mini subkey
@@ -54,7 +54,7 @@ class TestFindMirSpec:
         """Test that find_mir_spec raises ValueError for invalid model ID."""
         test_configs = deepcopy(flux_configs)
 
-        with pytest.raises(ValueError, match="Got unknown model id"):
+        with pytest.raises(ValueError, match="invalid-model has no defined model spec"):
             get_model_spec(
                 mir_id="invalid-model",
                 configs=test_configs,
@@ -64,7 +64,7 @@ class TestFindMirSpec:
         """Test that find_mir_spec raises ValueError for invalid base model in subkey format."""
         test_configs = deepcopy(flux_configs)
 
-        with pytest.raises(ValueError, match="Got unknown base model id"):
+        with pytest.raises(ValueError, match="invalid-base:mini has no defined model spec"):
             get_model_spec(
                 mir_id="invalid-base:mini",
                 configs=test_configs,
@@ -74,7 +74,7 @@ class TestFindMirSpec:
         """Test that find_mir_spec raises ValueError for invalid subkey."""
         test_configs = deepcopy(flux_configs)
 
-        with pytest.raises(ValueError, match="Got unknown subkey"):
+        with pytest.raises(ValueError, match="odel.dit.flux1-dev:invalid-subkey has no defined model spec"):
             get_model_spec(
                 mir_id="model.dit.flux1-dev:invalid-subkey",
                 configs=test_configs,
@@ -85,7 +85,8 @@ class TestFindMirSpec:
         test_configs = deepcopy(flux_configs)
 
         with pytest.raises(
-            ValueError, match="Got unknown ae id: model.vae.invalid-ae, chose from model.dit.flux1-dev, model.vae.flux1-dev, model.taesd.flux1-dev, model.dit.flux1-schnell"
+            ValueError,
+            match="model.vae.invalid-ae has no defined model spec",
         ):
             get_model_spec(
                 mir_id="model.vae.invalid-ae",
@@ -104,7 +105,6 @@ class TestFindMirSpec:
         ae_id = get_model_spec("model.vae.flux1-dev", flux_configs)
 
         # Get the merged spec
-        merged_spec = test_configs[mir_id]["*"]
         assert isinstance(merged_spec, ModelSpec)
         assert merged_spec.init is not None
         assert ae_id.repo_id == "black-forest-labs/FLUX.1-dev"
@@ -164,19 +164,22 @@ class TestMergeSpec:
             init=base_init,
         )
         subkey_spec = ModelSpec(
-            repo_id="base/repo",  # Same as base
-            file_name="base.safetensors",  # Same as base
+            repo_id="subkey/repo",  # Same as base
+            file_name="subkey.safetensors",  # Same as base
             params=None,
             init=subkey_init,
         )
 
         merged = merge_spec(base_spec, subkey_spec)
 
+        assert merged.repo_id == "subkey/repo"
+        assert merged.file_name == "subkey.safetensors"
         assert merged.init is not None
         assert merged.init.num_steps == 25  # Subkey value
         assert merged.init.max_length == 512  # Subkey value (same as base)
         assert merged.init.guidance == 3.5  # Subkey value
         assert merged.init.shift is True  # Subkey value (same as base)
+        print(merged)
 
     def test_merge_spec_partial_override(self):
         """Test merge_spec when subkey only overrides some fields."""

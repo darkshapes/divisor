@@ -51,7 +51,8 @@ def main(
     """
 
     if quantization:
-        mir_id += ":*@fp8-sai"
+        mir_id += ":@fp8-sai"
+
     model_spec: ModelSpec = get_model_spec(mir_id, flux_configs)
     ae_spec = get_model_spec(ae_id, flux_configs)
 

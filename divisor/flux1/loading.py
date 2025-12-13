@@ -135,7 +135,6 @@ def load_flow_model(
     verbose: bool = True,
     lora_repo_id: str | None = None,
     lora_filename: str | None = None,
-    compatibility_key: str | None = None,
 ) -> Flux:
     """Load a flow model (DiT model).\n
     :param mir_id: Model ID (e.g., "model.dit.flux1-dev")
