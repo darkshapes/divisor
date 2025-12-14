@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 import torch
 from torch import Tensor
+import torch.nn.functional as F
 
 from divisor.controller import rng
 
@@ -20,6 +21,7 @@ def get_noise(
     dtype: torch.dtype = torch.bfloat16,
     device: torch.device | None = None,
     version_2: bool = False,
+    perlin: bool = False,
 ) -> Tensor:
     """Generate noise tensor for Flux models.\n
     :param num_samples: Number of samples to generate
@@ -35,34 +37,50 @@ def get_noise(
     Flux2 shape: (num_samples, 128, height // 16, width // 16)
     """
     # Get the generator's device to ensure compatibility
-    generator_device = rng._torch_generator.device if rng._torch_generator is not None else torch.device("cpu")
-    rng._torch_generator.manual_seed(seed)  # type: ignore # reset seed
-
-    if version_2:
-        # Flux2: (num_samples, 128, height // 16, width // 16)
+    generator_device: torch.device | None = rng._torch_generator.device if rng._torch_generator is not None else torch.device("cpu")  # type: ignore # reset seed
+    generator: torch.Generator = rng._torch_generator  # type: ignore # reset seed
+    generator.manual_seed(seed)
+    if version_2:  # Flux2: (num_samples, 128, height // 16, width // 16)
         shape = (
             num_samples,
             128,
             height // 16,
             width // 16,
         )
-    else:
-        # Flux1: (num_samples, 16, 2 * ceil(height/16), 2 * ceil(width/16))
-        # allow for packing
+    else:  # Flux1: (num_samples, 16, 2 * ceil(height/16), 2 * ceil(width/16))
         shape = (
             num_samples,
             16,
             2 * math.ceil(height / 16),
             2 * math.ceil(width / 16),
         )
+    if perlin:
+        low_h = max(1, shape[2] // 4)
+        low_w = max(1, shape[3] // 4)
 
-    # Create tensor on generator's device first (required for MPS compatibility)
-    noise = torch.randn(
-        shape,
-        dtype=dtype,
-        generator=rng._torch_generator,
-        device=generator_device,
-    )
+        low_res = torch.rand(
+            num_samples,
+            shape[1],
+            low_h,
+            low_w,
+            dtype=dtype,
+            generator=generator,
+            device=generator_device,
+        )
+
+        noise = F.interpolate(
+            low_res,
+            size=(shape[2], shape[3]),
+            mode="bicubic",
+            align_corners=False,
+        )
+    else:
+        noise = torch.randn(
+            *shape,
+            dtype=dtype,
+            generator=generator,
+            device=generator_device,
+        )
 
     # Move to target device if different
     if device is not None and generator_device != device:
