@@ -85,7 +85,7 @@ def get_noise(
     width: int,
     seed: int,
     dtype: torch.dtype = torch.bfloat16,
-    device: torch.device | None = None,
+    device: torch.device = torch.device("cpu"),
     version_2: bool = False,
     perlin: bool = False,
 ) -> Tensor:
@@ -99,7 +99,7 @@ def get_noise(
     :param version_2: ``True`` for Flux2 shape, ``False`` for Flux1 shape
     :param perlin: Generate Perlin‑style noise when ``True``
     :returns: Noise tensor with shape appropriate for the model type"""
-    generator_device: torch.device = rng._torch_generator.device if rng._torch_generator is not None else torch.device("cpu")
+    generator_device: torch.device = rng._torch_generator.device if rng._torch_generator is not None else device
     generator: torch.Generator = rng._torch_generator  # type: ignore[attr-defined]
     generator.manual_seed(seed)
     shape = _get_noise_shape(
@@ -108,6 +108,7 @@ def get_noise(
         width=width,
         version_2=version_2,
     )
+    print(f"shape: {shape}")
     if perlin:
         noise = perlin_pyramid_noise(
             shape=shape,
