@@ -11,12 +11,15 @@ from nnll.console import nfo
 import torch
 
 from divisor.contents import build_available_models
-from divisor.flux1.autoencoder import AutoEncoderParams as AutoEncoder1Params
+from divisor.flux1.autoencoder import AutoEncoderParams as AutoEncoder1Params, AutoEncoder as AutoEncoder1
 from divisor.flux1.model import FluxLoraWrapper, FluxParams
-from divisor.flux2.autoencoder import AutoEncoderParams as AutoEncoder2Params
+from divisor.flux1.model import Flux
+from divisor.flux2.autoencoder import AutoEncoderParams as AutoEncoder2Params, AutoEncoder as AutoEncoder2
 from divisor.flux2.model import Flux2Params
-from divisor.mmada.modeling_mmada import MMadaConfig as MMaDAParams
+from divisor.flux2.model import Flux2
 from divisor.mini.model import XFluxParams
+from divisor.mini.model import XFlux
+from divisor.mmada.modeling_mmada import MMadaConfig as MMaDAParams, MMadaModelLM
 
 
 @dataclass
@@ -60,6 +63,7 @@ class ModelSpec:
     repo_id: str
     params: FluxParams | AutoEncoder1Params | XFluxParams | Flux2Params | MMaDAParams | AutoEncoder2Params | AutoencoderTinyParams | FluxLoraWrapper
     file_name: str
+    exec_fn: type[Flux] | type[Flux2] | type[XFlux] | type[MMadaModelLM] | type[FluxLoraWrapper] | type[AutoEncoder1] | type[AutoEncoder2]
     init: InitialParamsFlux | InitialParamsMMaDA | None = None
 
 
@@ -88,6 +92,7 @@ flux_configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]] = {
                 qkv_bias=True,
                 guidance_embed=True,
             ),
+            exec_fn=Flux,
         ),
         "@fp8-e5m2-sai": CompatibilitySpec(
             repo_id="Kijai/flux-fp8",
@@ -124,6 +129,7 @@ flux_configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]] = {
                 qkv_bias=True,
                 guidance_embed=True,
             ),
+            exec_fn=XFlux,
         ),
     },
     "model.vae.flux1-dev": {
@@ -141,10 +147,16 @@ flux_configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]] = {
                 scale_factor=0.3611,
                 shift_factor=0.1159,
             ),
+            exec_fn=AutoEncoder1,
         ),
     },
     "model.taesd.flux1-dev": {
-        "*": ModelSpec(repo_id="madebyollin/taef1", file_name="diffusion_pytorch_model.safetensors", params=AutoencoderTinyParams()),
+        "*": ModelSpec(
+            repo_id="madebyollin/taef1",
+            file_name="diffusion_pytorch_model.safetensors",
+            params=AutoencoderTinyParams(),
+            exec_fn=AutoEncoder1,
+        ),
     },
     "model.dit.flux1-schnell": {
         "*": ModelSpec(
@@ -170,6 +182,7 @@ flux_configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]] = {
                 qkv_bias=True,
                 guidance_embed=False,
             ),
+            exec_fn=Flux,
         ),
         "@fp8-sai": CompatibilitySpec(
             repo_id="Comfy-Org/flux1-schnell",
@@ -185,6 +198,7 @@ flux_configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]] = {
             repo_id="black-forest-labs/FLUX.2-dev",
             file_name="flux2-dev.safetensors",
             params=Flux2Params(),
+            exec_fn=Flux2,
         ),
         "@fp8-sai": CompatibilitySpec(
             repo_id="Comfy-Org/flux2-dev",
@@ -196,6 +210,7 @@ flux_configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]] = {
             repo_id="black-forest-labs/FLUX.2-dev",
             file_name="ae.safetensors",
             params=AutoEncoder2Params(),
+            exec_fn=AutoEncoder2,
         )
     },
 }
@@ -224,6 +239,7 @@ mmada_configs = {
                 num_vq_tokens=1024,
                 num_new_special_tokens=0,
             ),
+            exec_fn=MMadaModelLM,
         ),
         "mixcot": CompatibilitySpec(
             repo_id="Gen-Verse/MMaDA-8B-MixCoT",
@@ -295,8 +311,6 @@ def get_model_spec(mir_id: str, configs: dict[str, dict[str, ModelSpec | Compati
 
     if ":" in mir_id:
         series_key, compatibility_key = mir_id.split(":")
-        print(f"series_key: {series_key}")
-        print(f"compatibility_key: {compatibility_key}")
         if base_spec := configs.get(series_key, {}).get("*", None):
             if compatibility_spec := configs.get(series_key, {}).get(compatibility_key, None):
                 print(f"base_spec: {base_spec}")

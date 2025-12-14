@@ -10,7 +10,7 @@ from nnll.init_gpu import clear_cache, device
 import torch
 
 from divisor.controller import rng
-from divisor.flux1.loading import load_ae, load_clip, load_flow_model, load_t5
+from divisor.flux1.loading import load_clip, load_flow_model, load_t5
 from divisor.flux1.prompt import parse_prompt
 from divisor.flux1.sampling import get_schedule, prepare
 from divisor.noise import get_noise
@@ -85,7 +85,7 @@ def main(
         model = torch.compile(model)  # type: ignore[assignment]
         is_compiled = True
 
-    ae = load_ae(ae_spec, configs=flux_configs, device=torch.device("cpu") if offload else device)
+    ae = load_flow_model(ae_spec, device=torch.device("cpu") if offload else device)
 
     # Create initial state from CLI args
     state = DenoisingState.from_cli_args(

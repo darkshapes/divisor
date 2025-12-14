@@ -40,7 +40,6 @@ class TestPromptModelSpecs:
             # Mock the function to avoid actually loading models
             with (
                 patch("divisor.flux1.prompt.load_flow_model"),
-                patch("divisor.flux1.prompt.load_ae"),
                 patch("divisor.flux1.prompt.load_t5"),
                 patch("divisor.flux1.prompt.load_clip"),
             ):
@@ -53,7 +52,6 @@ class TestPromptModelSpecs:
         with pytest.raises(ValueError, match=f"{error_id} has no defined model spec"):
             with (
                 patch("divisor.flux1.prompt.load_flow_model"),
-                patch("divisor.flux1.prompt.load_ae"),
                 patch("divisor.flux1.prompt.load_t5"),
                 patch("divisor.flux1.prompt.load_clip"),
             ):
@@ -104,7 +102,6 @@ class TestPromptModelSpecs:
             with pytest.raises(ValueError, match="does not have a compatibility spec configured"):
                 with (
                     patch("divisor.flux1.prompt.load_flow_model"),
-                    patch("divisor.flux1.prompt.load_ae"),
                     patch("divisor.flux1.prompt.load_t5"),
                     patch("divisor.flux1.prompt.load_clip"),
                 ):
@@ -126,7 +123,6 @@ class TestPromptModelSpecs:
         # Mock load_flow_model to capture its arguments
         with (
             patch("divisor.flux1.prompt.load_flow_model") as mock_load,
-            patch("divisor.flux1.prompt.load_ae"),
             patch("divisor.flux1.prompt.load_t5"),
             patch("divisor.flux1.prompt.load_clip"),
             patch("divisor.flux1.prompt.prepare_noise_for_model"),
@@ -159,7 +155,6 @@ class TestPromptModelSpecs:
 
         with (
             patch("divisor.flux1.prompt.load_flow_model") as mock_load,
-            patch("divisor.flux1.prompt.load_ae"),
             patch("divisor.flux1.prompt.load_t5"),
             patch("divisor.flux1.prompt.load_clip"),
             patch("divisor.noise.prepare_noise_for_model"),

@@ -128,12 +128,14 @@ class TestMergeSpec:
             file_name="base.safetensors",
             params=None,
             init=None,
+            exec_fn=None,
         )
         subkey_spec = ModelSpec(
             repo_id="subkey/repo",
             file_name="subkey.safetensors",
             params=None,
             init=None,
+            exec_fn=None,
         )
 
         merged = merge_spec(base_spec, subkey_spec)
@@ -162,12 +164,14 @@ class TestMergeSpec:
             file_name="base.safetensors",
             params=None,
             init=base_init,
+            exec_fn=None,
         )
         subkey_spec = ModelSpec(
             repo_id="subkey/repo",  # Same as base
             file_name="subkey.safetensors",  # Same as base
             params=None,
             init=subkey_init,
+            exec_fn=1,
         )
 
         merged = merge_spec(base_spec, subkey_spec)
@@ -179,6 +183,7 @@ class TestMergeSpec:
         assert merged.init.max_length == 512  # Subkey value (same as base)
         assert merged.init.guidance == 3.5  # Subkey value
         assert merged.init.shift is True  # Subkey value (same as base)
+        assert merged.exec_fn == 1  # Subkey value (same as base)
         print(merged)
 
     def test_merge_spec_partial_override(self):
@@ -202,12 +207,14 @@ class TestMergeSpec:
             file_name="base.safetensors",
             params=None,
             init=base_init,
+            exec_fn=None,
         )
         subkey_spec = ModelSpec(
             repo_id="base/repo",
             file_name="base.safetensors",
             params=None,
             init=subkey_init,
+            exec_fn=None,
         )
 
         merged = merge_spec(base_spec, subkey_spec)
@@ -222,6 +229,7 @@ class TestMergeSpec:
             file_name="base.safetensors",
             params=None,
             init=None,
+            exec_fn=None,
         )
         subkey_spec = "not a dataclass"
 
@@ -236,12 +244,14 @@ class TestMergeSpec:
             file_name=None,
             params=None,
             init=InitialParamsFlux(num_steps=28, max_length=512, guidance=4.0, shift=True),
+            exec_fn=None,
         )
         subkey_spec = ModelSpec(
             repo_id="subkey/repo",
             file_name=None,  # None value
             params=None,
             init=None,  # None value
+            exec_fn=None,
         )
 
         merged = merge_spec(base_spec, subkey_spec)

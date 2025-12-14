@@ -12,7 +12,7 @@ import torch
 
 from divisor.contents import get_dtype
 from divisor.controller import rng
-from divisor.flux1.loading import load_ae, load_flow_model, load_mistral_small_embedder
+from divisor.flux1.loading import load_flow_model, load_mistral_small_embedder
 from divisor.flux1.prompt import parse_prompt
 from divisor.flux2.sampling import (
     batched_prc_img,
@@ -83,7 +83,7 @@ def main(
         model = torch.compile(model)  # type: ignore[assignment]
         is_compiled = True
 
-    ae = load_ae(ae_spec, configs=flux_configs, device=torch.device("cpu") if offload else device)
+    ae = load_flow_model(ae_spec, device=torch.device("cpu") if offload else device)
     ae.eval()
     mistral.eval()
 

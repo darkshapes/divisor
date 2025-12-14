@@ -77,46 +77,34 @@ def _patch_run_signature() -> None:
 
     run_sig = Signature(
         parameters=[
-            Parameter("mode", Parameter.POSITIONAL_OR_KEYWORD, default="flux1-dev"),
+            Parameter("model_id", Parameter.POSITIONAL_OR_KEYWORD, default="flux1-dev"),
             *all_params.values(),
         ]
     )
     run.__signature__ = run_sig  # type: ignore[attr-defined]
 
 
-def run(mode: str = "flux1-dev", *args, **kwargs: Any) -> None:
-    main_fn = MAIN_ROUTINES[mode]
+def run(model_id="flux1-dev", *args, **kwargs: Any) -> None:
+    """Run the main function for the given model ID.
+    :param mir_id: MIR series ID (e.g., "flux1-dev")
+    :param args: Additional arguments
+    :param kwargs: Additional keyword arguments"""
+    import sys
 
-    target_sig = signature(main_fn)
-    allowed = {p.name for p in target_sig.parameters.values() if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)}
-    args = {k: v for k, v in kwargs.items() if k in allowed}
-    main_fn(**args)
+    if main_fn := MAIN_ROUTINES.get(model_id):
+        target_sig = signature(main_fn)
+        allowed = {p.name for p in target_sig.parameters.values() if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)}
+        args = {k: v for k, v in kwargs.items() if k in allowed}
+        remaining_argv = ["--mir-id", model_args[model_id]] + sys.argv[1:]
+
+        sys.argv = [sys.argv[0]] + remaining_argv
+        print(sys.argv)
+        main_fn(**args)
+    else:
+        raise ValueError(f"Model ID {model_id} not found")
 
 
 def main() -> None:
-    """Main entry point that routes to appropriate inference function."""
-    parser = argparse.ArgumentParser(description="Divisor Multimodal CLI")
-    parser.usage = "divisor --model-type dev --quantization <args>"
-    parser.epilog = """Valid arguments : 
-    --ae_id, --width, --height, --guidance, --seed, --prompt,
-    --tiny, --device, --num_steps, --loop,
-    --offload, --compile, --verbose
-    """
-    parser.add_argument(
-        "--quantization",
-        action="store_true",
-        help="Enable quantization (fp8, e5m2, e4m3fn) for the model",
-    )
-
-    parser.add_argument(
-        "-m",
-        "--model-type",
-        choices=model_args,
-        default=list(model_args)[0],
-        help=f"""
-        Model type to use: {list(model_args)}, Default: {list(model_args)[0]}
-        """,
-    )
     _patch_run_signature()
     Fire(run)
 
