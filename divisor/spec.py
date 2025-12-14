@@ -15,8 +15,10 @@ from divisor.flux1.autoencoder import AutoEncoderParams as AutoEncoder1Params
 from divisor.flux1.model import FluxLoraWrapper, FluxParams
 from divisor.flux2.autoencoder import AutoEncoderParams as AutoEncoder2Params
 from divisor.flux2.model import Flux2Params
-from divisor.mmada.modeling_mmada import MMadaConfig as MMaDAParams
+from divisor.flux2.model import Flux2
 from divisor.xflux1.model import XFluxParams
+from divisor.xflux1.model import XFlux
+from divisor.mmada.modeling_mmada import MMadaConfig as MMaDAParams, MMadaModelLM
 
 
 @dataclass
@@ -89,15 +91,15 @@ flux_configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]] = {
                 guidance_embed=True,
             ),
         ),
-        "@fp8-e5m2-sai": CompatibilitySpec(
+        "@@fp8-e5m2-sai": CompatibilitySpec(
             repo_id="Kijai/flux-fp8",
             file_name="flux1-dev-fp8-e5m2.safetensors",
         ),
-        "@fp8-e4m3fn-sai": CompatibilitySpec(
+        "*@fp8-e4m3fn-sai": CompatibilitySpec(
             repo_id="Kijai/flux-fp8",
             file_name="flux1-dev-fp8-e4m3fn.safetensors",
         ),
-        "@fp8-sai": CompatibilitySpec(
+        "*@fp8-sai": CompatibilitySpec(
             repo_id="XLabs-AI/flux-dev-fp8",
             file_name="flux-dev-fp8.safetensors",
         ),
@@ -171,11 +173,11 @@ flux_configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]] = {
                 guidance_embed=False,
             ),
         ),
-        "@fp8-sai": CompatibilitySpec(
+        "*@fp8-sai": CompatibilitySpec(
             repo_id="Comfy-Org/flux1-schnell",
             file_name="flux1-schnell-fp8.safetensors",
         ),
-        "@fp8-e4m3fn-sai": CompatibilitySpec(
+        "*@fp8-e4m3fn-sai": CompatibilitySpec(
             repo_id="Kijai/flux-fp8",
             file_name="flux1-schnell-fp8-e4m3fn.safetensors",
         ),
@@ -186,7 +188,7 @@ flux_configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]] = {
             file_name="flux2-dev.safetensors",
             params=Flux2Params(),
         ),
-        "@fp8-sai": CompatibilitySpec(
+        "*@fp8-sai": CompatibilitySpec(
             repo_id="Comfy-Org/flux2-dev",
             file_name="split_files/diffusion_models/flux2_dev_fp8mixed.safetensors",
         ),
@@ -299,10 +301,7 @@ def get_model_spec(mir_id: str, configs: dict[str, dict[str, ModelSpec | Compati
         print(f"compatibility_key: {compatibility_key}")
         if base_spec := configs.get(series_key, {}).get("*", None):
             if compatibility_spec := configs.get(series_key, {}).get(compatibility_key, None):
-                print(f"base_spec: {base_spec}")
-                print(f"compatibility_spec: {compatibility_spec}")
                 merged_spec = merge_spec(base_spec, compatibility_spec)
-                print(f"merged_spec: {merged_spec}")
                 return merged_spec
     else:
         if model_spec := configs.get(mir_id, {}).get("*", None):

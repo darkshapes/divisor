@@ -86,7 +86,7 @@ class TestPromptModelSpecs:
 
     def test_main_uses_compatibility_spec_when_quantization_true(self):
         """Test that main() uses compatibility spec when quantization=True."""
-        mir_id = "model.dit.flux1-dev:@fp8-sai"
+        mir_id = "model.dit.flux1-dev:*@fp8-sai"
 
         model_spec = get_model_spec(mir_id, flux_configs)
         assert model_spec is not None
@@ -96,7 +96,7 @@ class TestPromptModelSpecs:
 
     def test_main_raises_error_when_quantization_true_but_no_compat_spec(self):
         """Test that main() raises error when quantization=True but no compatibility spec exists."""
-        mir_id = "model.dit.flux2-dev:@fp8-sai"
+        mir_id = "model.dit.flux2-dev:*@fp8-sai"
         compat_spec = get_model_spec(mir_id, flux_configs)
 
         # If compat_spec is None, main() should raise an error
@@ -134,7 +134,7 @@ class TestPromptModelSpecs:
             patch("divisor.flux1.prompt.denoise"),
         ):
             # Test with quantization=True
-            model_spec = get_model_spec(mir_id + ":@fp8-sai", flux_configs)
+            model_spec = get_model_spec(mir_id + ":*@fp8-sai", flux_configs)
             if model_spec is not None:
                 main(
                     mir_id=mir_id,
