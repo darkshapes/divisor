@@ -8,9 +8,75 @@ from typing import Any, Optional
 
 import torch
 from torch import Tensor
-import torch.nn.functional as F
 
 from divisor.controller import rng
+
+
+def _get_noise_shape(
+    num_samples: int,
+    height: int,
+    width: int,
+    version_2: bool,
+) -> tuple[int, int, int, int]:
+    """Return the tensor shape for the requested Flux model.\n
+    :param num_samples: Number of samples to generate
+    :param height: Height of the image
+    :param width: Width of the image
+    :param version_2: ``True`` for Flux2, ``False`` for Flux1
+    :returns: Shape tuple ``(batch_size, channels, height, width)`` appropriate for the model
+    """
+    if version_2:
+        return (
+            num_samples,
+            128,
+            height // 16,
+            width // 16,
+        )
+    return (
+        num_samples,
+        16,
+        2 * math.ceil(height / 16),
+        2 * math.ceil(width / 16),
+    )
+
+
+def perlin_pyramid_noise(
+    shape: tuple[int, int, int, int],
+    dtype: torch.dtype,
+    generator: torch.Generator,
+    device: torch.device,
+    mode: str = "bicubic",
+    discount: float = 0.5,
+    max_scale: int = 15,
+    octaves: int = 4,
+) -> Tensor:
+    """High‑resolution “pyramid” Perlin‑style noise.    \n
+    :param shape: Desired tensor shape
+    :param dtype: Data type for the tensor
+    :param generator: ``torch.Generator`` seeded by the caller
+    :param device: Device to allocate for noise
+    :param pyramid: Generate Perlin‑style noise with pyramid effect when ``True``
+    :returns: Noise tensor on ``generator_device``"""
+    batch_size, channels, height, width = shape
+    original_height, original_width = height, width
+    upsampler = torch.nn.Upsample(size=(original_height, original_width), mode=mode).to(device)
+
+    # Base uniform field in the range [-1.73, +1.73] (≈ √3 * 2)
+    noise = (torch.rand(shape, dtype=dtype, device=device, generator=generator) - 0.5) * 2 * 1.73
+    for index in range(octaves):
+        growth_factor = torch.rand(1, device=device, generator=generator).item() * 2 + 2  # → [2,4]
+
+        reshaped_height = min(original_height * max_scale, int(height * (growth_factor**index)))
+        reshaped_width = min(original_width * max_scale, int(width * (growth_factor**index)))
+        reshaped_shape = (batch_size, channels, reshaped_height, reshaped_width)
+        highres_noise = torch.randn(reshaped_shape, dtype=dtype, device=device, generator=generator)
+        shrunk_noise_to_blend = upsampler(highres_noise)
+        noise = noise + shrunk_noise_to_blend * (discount**index)
+        if reshaped_height >= original_height * max_scale or reshaped_width >= original_width * max_scale:
+            break
+
+    # Normalise to unit variance (zero‑mean is already guaranteed by the symmetric construction)
+    return noise / noise.std()
 
 
 def get_noise(
@@ -30,49 +96,24 @@ def get_noise(
     :param dtype: Data type of the noise
     :param seed: Seed for the random number generator
     :param device: Device to generate the noise on
-    :param model_type: Model type - "flux1" or "flux2" (default: "flux1")
-    :returns: Noise tensor with shape appropriate for the model type
-
-    Flux1 shape: (num_samples, 16, 2 * ceil(height/16), 2 * ceil(width/16))
-    Flux2 shape: (num_samples, 128, height // 16, width // 16)
-    """
-    # Get the generator's device to ensure compatibility
-    generator_device: torch.device | None = rng._torch_generator.device if rng._torch_generator is not None else torch.device("cpu")  # type: ignore # reset seed
-    generator: torch.Generator = rng._torch_generator  # type: ignore # reset seed
+    :param version_2: ``True`` for Flux2 shape, ``False`` for Flux1 shape
+    :param perlin: Generate Perlin‑style noise when ``True``
+    :returns: Noise tensor with shape appropriate for the model type"""
+    generator_device: torch.device = rng._torch_generator.device if rng._torch_generator is not None else torch.device("cpu")
+    generator: torch.Generator = rng._torch_generator  # type: ignore[attr-defined]
     generator.manual_seed(seed)
-    if version_2:  # Flux2: (num_samples, 128, height // 16, width // 16)
-        shape = (
-            num_samples,
-            128,
-            height // 16,
-            width // 16,
-        )
-    else:  # Flux1: (num_samples, 16, 2 * ceil(height/16), 2 * ceil(width/16))
-        shape = (
-            num_samples,
-            16,
-            2 * math.ceil(height / 16),
-            2 * math.ceil(width / 16),
-        )
+    shape = _get_noise_shape(
+        num_samples=num_samples,
+        height=height,
+        width=width,
+        version_2=version_2,
+    )
     if perlin:
-        low_h = max(1, shape[2] // 4)
-        low_w = max(1, shape[3] // 4)
-
-        low_res = torch.rand(
-            num_samples,
-            shape[1],
-            low_h,
-            low_w,
+        noise = perlin_pyramid_noise(
+            shape=shape,
             dtype=dtype,
             generator=generator,
             device=generator_device,
-        )
-
-        noise = F.interpolate(
-            low_res,
-            size=(shape[2], shape[3]),
-            mode="bicubic",
-            align_corners=False,
         )
     else:
         noise = torch.randn(
@@ -81,7 +122,6 @@ def get_noise(
             generator=generator,
             device=generator_device,
         )
-
     # Move to target device if different
     if device is not None and generator_device != device:
         noise = noise.to(device)
