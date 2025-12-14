@@ -8,9 +8,13 @@ Exclusive import location of submodules to avoid circular imports.
 """
 
 import argparse
-import sys
+import importlib
+from pathlib import Path
+from typing import Any, Callable, Dict
+from inspect import signature, Parameter, Signature
 
 from fire import Fire
+from nnll.console import nfo
 
 from divisor.spec import flux_map
 from divisor.spec import mmada_map
@@ -18,7 +22,78 @@ from divisor.spec import mmada_map
 model_args = flux_map | mmada_map
 
 
-def main():
+def _load_main_from_folder(folder: Path) -> Callable | None:
+    """Find `main` inside `prompt.py` or `gradio.py` in *subfolders*.
+    :param folder: The folder to search for `main`
+    :return: The `main` function or None if not found"""
+    for candidate in ("prompt.py", "gradio.py"):
+        module_path = folder / candidate
+        if module_path.is_file():
+            module_name = f"{folder.parent.name}.{folder.name}.{candidate[:-3]}"
+            try:
+                mod = importlib.import_module(module_name)
+                return getattr(mod, "main", None)
+            except (AttributeError, ModuleNotFoundError, ImportError) as e:
+                nfo(f"Could not import {module_name}: {e}")
+
+
+def build_main_mapping(base_dir: Path = Path(__file__).parent) -> Dict[str, Callable]:
+    """Create a mapping of model keys to their main functions.
+    :param base_dir: The base directory to search for subfolders
+    :return: A dictionary of model keys to their main functions"""
+    mapping: Dict[str, Callable] = {}
+
+    for subfolder in base_dir.iterdir():
+        if not subfolder.is_dir():
+            continue
+
+        key = subfolder.name
+        for model_key in model_args:
+            if model_key.startswith(key):
+                key = model_key
+                break
+            continue  # skip folders we don’t have a config for
+
+        main_fn = _load_main_from_folder(subfolder)
+        if main_fn is None:
+            continue
+
+        mapping[key] = main_fn
+
+    return mapping
+
+
+MAIN_ROUTINES: Dict[str, Callable] = build_main_mapping()
+
+
+def _patch_run_signature() -> None:
+    """Patch the run function to accept the mode and keyword arguments."""
+    all_params: dict[str, Parameter] = {}
+    for _, module_object in MAIN_ROUTINES.items():
+        main_fn = module_object
+        for p in signature(main_fn).parameters.values():
+            if p.kind in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY):
+                all_params.setdefault(p.name, p)
+
+    run_sig = Signature(
+        parameters=[
+            Parameter("mode", Parameter.POSITIONAL_OR_KEYWORD, default="flux1-dev"),
+            *all_params.values(),
+        ]
+    )
+    run.__signature__ = run_sig  # type: ignore[attr-defined]
+
+
+def run(mode: str = "flux1-dev", *args, **kwargs: Any) -> None:
+    main_fn = MAIN_ROUTINES[mode]
+
+    target_sig = signature(main_fn)
+    allowed = {p.name for p in target_sig.parameters.values() if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)}
+    args = {k: v for k, v in kwargs.items() if k in allowed}
+    main_fn(**args)
+
+
+def main() -> None:
     """Main entry point that routes to appropriate inference function."""
     parser = argparse.ArgumentParser(description="Divisor Multimodal CLI")
     parser.usage = "divisor --model-type dev --quantization <args>"
@@ -42,26 +117,8 @@ def main():
         Model type to use: {list(model_args)}, Default: {list(model_args)[0]}
         """,
     )
-
-    args, remaining_argv = parser.parse_known_args()
-    model_id = args.model_type
-    if args.model_type in mmada_map:
-        from divisor.mmada.gradio import main
-
-        remaining_argv = [""]  # Gradio app doesn't need arguments
-    else:
-        model_id = args.model_type
-        if args.model_type == "flux2-dev":
-            from divisor.flux2.prompt import main
-        else:
-            if args.model_type == "mini":
-                from divisor.xflux1.prompt import main
-            else:
-                from divisor.flux1.prompt import main
-        remaining_argv = ["--mir-id", model_args[model_id]] + remaining_argv  # change to     model_args[model_id]
-
-    sys.argv = [sys.argv[0]] + remaining_argv
-    Fire(main)
+    _patch_run_signature()
+    Fire(run)
 
 
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ from divisor.flux2.autoencoder import (
 from divisor.flux2.model import Flux2, Flux2Params
 from divisor.flux2.text_encoder import Mistral3SmallEmbedder
 from divisor.spec import ModelSpec, CompatibilitySpec, optionally_expand_state_dict
-from divisor.xflux1.model import XFlux, XFluxParams
+from divisor.mini.model import XFlux, XFluxParams
 from divisor.contents import get_dtype
 from divisor.mmada.modeling_mmada import MMadaConfig as MMaDAParams, MMadaModelLM as MMaDAModelLM
 

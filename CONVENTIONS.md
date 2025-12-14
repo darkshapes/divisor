@@ -1,24 +1,6 @@
-- Always include short sphinx/numpy-style docstrings.
-- Use `\n` instead of a line break on first line of docstrings.
-- Use snake_case and sequences of full words for variables rather than abbreviations or truncations of words.
-- In commit messages, use + for code adds
-- In commit messages, use - for code subtractions
-- In commit messages, use ~ for refactors/fixes
-- Avoid semantic commit messages.
-- Either return the full code or only change code where required.
-- Use precise variable names and code structure, rather than write comments.
-- Prefer first party imports over adding dependencies over writing own code.
-- Format first party imports to be above dependency imports, which are above current project imports.
+- Always include short sphinx/numpy-style docstrings with no empty lines, combine lines with three quotes and text, and use `\n` on the first line.
+- Start commit messages describing new code using `+`, removed code using `-` , or refactors and fixes using `~`.
 - Encapuslate imports within function definitions rather than at top of file whererever possible.
-- Prefer requests over httpx for making http requests.
+- Use precise variable names and code structure, and avoid code comments.
+- Use snake_case and sequences of full words for variables rather than abbreviations or truncations of words.
 - Prefer built-in types like `|`, instead of `Optional` and typing` import.
-- `pdocs` documentation `pdoc -o /docs <project name>`
-- `pytest` testing `pytest -vv`
-- `ruff` formatting
-- `ruff` linting
-- `pyright` type checking
-- `typos` (if vsc)
-- `uv` environment/python installation
-- `structlog` logging (viztrace on crashes)
-- Always avoid use of `Any`.
-- Do not add global variables.

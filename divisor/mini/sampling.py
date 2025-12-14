@@ -26,7 +26,7 @@ from divisor.state import (
     GetImagePredictionSettings,
     GetPredictionSettings,
 )
-from divisor.xflux1.model import XFlux
+from divisor.mini.model import XFlux
 
 
 def create_get_prediction_xflux1(

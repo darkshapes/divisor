@@ -1,18 +1,14 @@
 ---
 title: "Code of Conduct"
-date-last-modified: 2027-07-28,
+date-last-modified: 2025-09-12,
 authors:
-  name: ["EXDYSA"],
-  pronouns: ["she/her"]
-  name: ["Marinus Savoritias"]
-  pronouns: ["fae/faer, ve/veirs"]
+  - EXDYSA,she/her
+  - Marinus Savoritias, fae/faer, ve/veirs
 license: CC0-1.0
 version: 0.0.3
 ---
 
 # Code of Conduct Quick Reference
-
-Version = 0.0.2_2025-20-11
 
 ## Behavior Guide
 
@@ -46,6 +42,4 @@ Version = 0.0.2_2025-20-11
 
 > Remember: Designs mirror creator relationships. Treat others to the same service you want to build.
 
-\*More communication techniques:
-
-https://en.wikipedia.org/wiki/Nonviolent_Communication
+\*<sub>More communication techniques: https://en.wikipedia.org/wiki/Nonviolent_Communication</sub>

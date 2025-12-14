@@ -16,7 +16,7 @@ from divisor.flux1.sampling import get_schedule, prepare
 from divisor.noise import get_noise
 from divisor.spec import InitialParamsFlux, ModelSpec, flux_configs, get_model_spec
 from divisor.state import DenoisingState
-from divisor.xflux1.sampling import denoise
+from divisor.mini.sampling import denoise
 
 
 @torch.inference_mode()

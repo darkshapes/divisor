@@ -8,7 +8,7 @@ import torch
 from torch import Tensor, nn
 
 from divisor.flux1.layers import EmbedND, LastLayer, MLPEmbedder, timestep_embedding
-from divisor.xflux1.layers import DoubleStreamBlock, SingleStreamBlock
+from divisor.mini.layers import DoubleStreamBlock, SingleStreamBlock
 
 
 @dataclass

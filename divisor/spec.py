@@ -16,7 +16,7 @@ from divisor.flux1.model import FluxLoraWrapper, FluxParams
 from divisor.flux2.autoencoder import AutoEncoderParams as AutoEncoder2Params
 from divisor.flux2.model import Flux2Params
 from divisor.mmada.modeling_mmada import MMadaConfig as MMaDAParams
-from divisor.xflux1.model import XFluxParams
+from divisor.mini.model import XFluxParams
 
 
 @dataclass
