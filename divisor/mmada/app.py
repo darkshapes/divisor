@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Adapted from https://github.com/Gen-Verse/MMaDA
 
+from nnll.console import nfo
 from nnll.init_gpu import device
 import torch
 import torch.nn.functional as F
@@ -12,9 +13,15 @@ from divisor.mmada.live_token import (
     get_num_transfer_tokens,
 )
 from divisor.mmada.sampling import add_gumbel_noise, prepare
-from divisor.mmada.text_embedder import HFEmbedder
-from divisor.spec import InitialParamsMMaDA, MMaDAParams, get_model_spec, mmada_configs, ModelSpec
 from divisor.mmada.system_messages import THINKING_MODE_LM_PROMPT
+from divisor.mmada.text_embedder import HFEmbedder
+from divisor.spec import (
+    InitialParamsMMaDA,
+    MMaDAParams,
+    ModelSpec,
+    get_model_spec,
+    mmada_configs,
+)
 
 
 def clear_outputs_action():
@@ -56,7 +63,7 @@ def generate_viz_wrapper_lm(
 
     x = torch.full((batch_size, prompt_len + gen_length), mask_id, dtype=torch.long, device=device)
     x[:, :prompt_len] = input_ids.clone()
-    print(f"Starting generation: Prompt ({prompt_len} tokens) + Initial Masks")
+    nfo(f"Starting generation: Prompt ({prompt_len} tokens) + Initial Masks")
     # yield get_highlighted_text_tuples(x, input_ids, prompt_len, TOKENIZER, MASK_ID, raw_prompt_attention_mask), "Starting generation: Prompt + Initial Masks"
     yield (
         get_highlighted_text_tuples(x, input_ids, prompt_len, hf.tokenizer, mask_id, raw_prompt_attention_mask),

@@ -71,9 +71,7 @@ def route_choices(
     for choice_letter, choice_function in _CHOICE_REGISTRY.items():
         fn = choice_function["fn"]
         sig = inspect.signature(fn)
-        print(sig)
         param_names = list(sig.parameters.keys())
-        # print(param_names)
         kwargs = {}
         for name in param_names:
             if name not in kwargs and hasattr(controller, name):

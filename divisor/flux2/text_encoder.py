@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 from einops import rearrange
+from nnll.console import nfo
 from nnll.init_gpu import device
 import torch
 import torch.nn as nn
@@ -171,7 +172,7 @@ class Mistral3SmallEmbedder(nn.Module):
                 max_length=2048,
             )
         except ValueError as e:
-            print(f"Error processing input: {e}, your max length is probably too short, when you have images in the input.")
+            nfo(f"Error processing input: {e}, your max length is probably too short, when you have images in the input.")
             raise e
 
         # Move to device
@@ -199,7 +200,7 @@ class Mistral3SmallEmbedder(nn.Module):
             raw_txt = self.processor.tokenizer.batch_decode(generated_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=True)
             return raw_txt
         except Exception as e:
-            print(f"Error generating upsampled prompt: {e}, returning original prompt")
+            nfo(f"Error generating upsampled prompt: {e}, returning original prompt")
             return txt
 
     @torch.no_grad()

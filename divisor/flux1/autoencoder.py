@@ -343,4 +343,3 @@ if __name__ == "__main__":
     model = AutoEncoder(params)
     x = torch.randn(1, 3, 512, 512)
     z = model.encode(x)
-    print(z.shape)

@@ -15,6 +15,8 @@
 
 import torch
 
+from nnll.console import nfo
+
 reserved_token_mapping = {
     "<|soi|>": 126084,
     "<|eoi|>": 126085,
@@ -72,7 +74,6 @@ class UniversalPrompting:
                 self.sptids_dict["<|eot_id|>"] = torch.tensor(self.text_tokenizer.convert_tokens_to_ids(["<|eot_id|>"]))
                 self.sptids_dict["<|start_header_id|>"] = torch.tensor(self.text_tokenizer.convert_tokens_to_ids(["<|start_header_id|>"]))
         # plus 1 because at this time we add a task token before
-        print(f"self.sptids_dict: {self.sptids_dict}")
         self.max_text_len = max_text_len + 1
         self.pad_id = reserved_token_mapping["[iPAD]"]
         self.ignore_id = ignore_id
@@ -350,7 +351,7 @@ class UniversalPrompting:
             else:
                 prompt_length = len(return_temp_ids) - len(temp_ids)
             predict_length = len(temp_ids) - prompt_length
-            print(f"prompt_length: {prompt_length}, predict_length: {predict_length}, all length: {len(return_temp_ids)}, {return_temp_ids[-predict_length:]}")
+            nfo(f"prompt_length: {prompt_length}, predict_length: {predict_length}, all length: {len(return_temp_ids)}, {return_temp_ids[-predict_length:]}")
             prompt_mask = [1] * prompt_length + [0] * predict_length
             prompt_mask = torch.tensor(prompt_mask).to(device)
             sequence_ids.append(return_temp_ids.unsqueeze(0))

@@ -40,8 +40,6 @@ class LoRALinearLayer(nn.Module):
 
 class FLuxSelfAttnProcessor:
     def __call__(self, attn, x, pe, **attention_kwargs):
-        print("2" * 30)
-
         qkv = attn.qkv(x)
         q, k, v = rearrange(qkv, "B L (K H D) -> K B H L D", K=3, H=self.num_heads)
         q, k = attn.norm(q, k, v)
@@ -63,8 +61,6 @@ class LoraFluxAttnProcessor(nn.Module):
         q, k = attn.norm(q, k, v)
         x = attention(q, k, v, pe=pe)
         x = attn.proj(x) + self.proj_lora(x) * self.lora_weight
-        print("1" * 30)
-        print(x.norm(), (self.proj_lora(x) * self.lora_weight).norm(), "norm")
         return x
 
 

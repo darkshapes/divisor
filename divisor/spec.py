@@ -297,8 +297,6 @@ def get_model_spec(mir_id: str, configs: dict[str, dict[str, ModelSpec | Compati
 
     if ":" in mir_id:
         series_key, compatibility_key = mir_id.split(":")
-        print(f"series_key: {series_key}")
-        print(f"compatibility_key: {compatibility_key}")
         if base_spec := configs.get(series_key, {}).get("*", None):
             if compatibility_spec := configs.get(series_key, {}).get(compatibility_key, None):
                 merged_spec = merge_spec(base_spec, compatibility_spec)
