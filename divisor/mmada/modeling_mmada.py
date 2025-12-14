@@ -83,7 +83,7 @@ class MMadaModelLM(LLaDAModelLM):
     base_model_prefix = "model"
 
     def __init__(self, config: MMadaConfig, *args, **kwargs):
-        print(f"Initializing MMadaModelLM with config: {config}")
+        nfo(f"Initializing MMadaModelLM with config: {config}")
         super().__init__(config, *args, **kwargs)
 
         # # resize token embeddings

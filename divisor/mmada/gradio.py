@@ -2,12 +2,13 @@
 # Adapted from https://github.com/Gen-Verse/MMaDA
 
 import gradio as gr
+from nnll.console import nfo
 from nnll.init_gpu import device
 
-from divisor.mmada import app
 from divisor.flux1.loading import load_mmada_model
-from divisor.spec import mmada_configs, get_model_spec
+from divisor.mmada import app
 from divisor.mmada.system_messages import EXAMPLE_PROMPT_LM_1
+from divisor.spec import get_model_spec, mmada_configs
 
 css_styles = """
 .gradio-container{font-family:'IBM Plex Sans',sans-serif;margin:auto;}
@@ -143,7 +144,7 @@ with gr.Blocks(css=css_styles) as demo:
 
 
 def main():
-    print(f"Starting Gradio App. Attempting to use device: {device.type}")
+    nfo(f"Starting Gradio App. Attempting to use device: {device.type}")
     demo.launch(share=True)
 
 
