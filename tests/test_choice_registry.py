@@ -6,5 +6,5 @@ from divisor.cli_menu import _CHOICE_REGISTRY
 
 def test_registry_is_complete():
     """All keys that the original UI offered (including the empty key for Enter)"""
-    expected_keys = {"", "g", "s", "r", "l", "b", "a", "v", "d", "e", "p", "j"}
+    expected_keys = {"", "p", "g", "j", "a", "d", "e", "l", "b", "v", "s", "w", "r"}
     assert set(_CHOICE_REGISTRY.keys()) == expected_keys
