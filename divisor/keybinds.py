@@ -1,6 +1,28 @@
 # SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
 # <!-- // /*  d a r k s h a p e s */ -->
 
+"""
+Choice registry decorator.
+
+Usage:
+```
+@choice("g", "Guidance")
+def change_guidance(controller: ManualTimestepController,
+state: DenoisingState,
+clear_prediction_cache: Callable[[], None],) -> DenoisingState:
+
+    ...
+
+    return state
+```
+
+Returns:
+```
+{"fn": callable, "desc": description}
+```
+
+"""
+
 from collections import OrderedDict
 from typing import Any, Callable, Dict
 
@@ -21,24 +43,12 @@ from divisor.state import DenoisingState
 
 def choice(key: str, description: str) -> Callable[[Callable], Callable]:
     """Decorator that registers a function as a menu choice.\n
-    :param key: Single-character option the user will type
-    (e.g. ``"g"``).Use ``""`` for the *Enter* (advance) option.
-    :param description: Short human-readable description that will be shown in the prompt and self-document the registry
-
-    @# key → {"fn": callable, "desc": description}
-    def example_function(controller: ManualTimestepController, state: DenoisingState, clear_prediction_cache: Callable[[], None]) -> DenoisingState:
-        `Example function.\n
-        :param controller: ManualTimestepController instance
-        :param state: Current DenoisingState
-        :param clear_prediction_cache: Function to clear prediction cache
-        :returns: Updated DenoisingState
-        `
-        return state
-    """
+    :param key: Single-character option the user will type (e.g. ``"g"``).Use ``""`` for the *Enter* (advance) option.
+    :param description: Short human-readable description that will be shown in the prompt and self-document the registry"""
 
     def wrapper(fn: Callable) -> Callable:
-        # Normalise to lower‑case – the UI works case‑insensitively.
-        _CHOICE_REGISTRY[key.lower()] = {"fn": fn, "desc": description}
+        normalized_key = key.lower()
+        _CHOICE_REGISTRY[normalized_key] = {"fn": fn, "desc": description}  # case‑insensitive
         return fn
 
     return wrapper
@@ -103,7 +113,6 @@ def change_layer_dropout(
         else:
             layer_indices = [int(x.strip()) for x in dropout_input.split(",")]
 
-        # Update controller first
         controller.set_layer_dropout(layer_indices)
         interaction_context.clear_prediction_cache()
         state = controller.current_state
@@ -124,8 +133,8 @@ def change_resolution(
     :param controller: ManualTimestepController instance
     :param state: Current DenoisingState
     :param clear_prediction_cache: Function to clear prediction cache
-    :returns: Updated DenoisingState
-    """
+    :returns: Updated DenoisingState"""
+
     try:
         if state.width is None or state.height is None:
             nfo("Cannot generate resolutions: width or height not set")
@@ -192,9 +201,7 @@ def change_seed(
             prompt=state.prompt,
         )
 
-        # Update controller's current_sample
         controller.current_sample = new_sample
-        # Get updated state from controller (it will use the updated current_sample)
         interaction_context.clear_prediction_cache()
         updated_state = controller.current_state
         nfo(f"Seed set to: {new_seed}")
@@ -306,8 +313,8 @@ def change_prompt(
     :param state: Current DenoisingState
     :param clear_prediction_cache: Function to clear prediction cache
     :param recompute_text_embeddings: Optional function to recompute text embeddings
-    :returns: Updated DenoisingState
-    """
+    :returns: Updated DenoisingState"""
+
     current_prompt = state.prompt if state.prompt is not None else ""
     new_prompt = input(f"Enter new prompt (current: {current_prompt}): ").strip()
 
@@ -346,19 +353,11 @@ def jump_to_step(
     interaction_context: InteractionContext,
 ) -> DenoisingState:
     """Run the controller forward until a user‑specified step index.\n
-    The user enters the *target* step number (0‑based, inclusive).  The
-    function repeatedly calls ``controller.step()`` until the controller
-    reaches that index or the process finishes.
-
     :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState (unused – we return the
-                  controller’s final state)
-    :param clear_prediction_cache: Called once before the jump so any
-                                   cached predictions are invalidated.
-    :returns: The DenoisingState after the jump (or the current state if
-              the target is out of range).
-    """
-    # Ask the user for the target step
+    :param state: Current DenoisingState (unused – we return the controller’s final state)
+    :param clear_prediction_cache: Routine to nvalidate cache prediction.
+    :returns: DenoisingState post jump (or the current state if the target is out of range)."""
+
     target_str = input(f"Jump to step (0‑{controller.current_index} …{len(controller.timesteps) - 1}): ").strip()
     if not target_str.isdigit():
         nfo("Invalid step number – aborting jump.")
@@ -429,3 +428,43 @@ def change_variation(
     except (ValueError, KeyboardInterrupt):
         nfo("Invalid variation value, keeping current value")
     return state
+
+
+@choice("w", "Rewind")
+def rewind(
+    controller: ManualTimestepController,
+    state: DenoisingState,
+    interaction_context: InteractionContext,
+) -> DenoisingState:
+    """Rewind the controller by a specified number of steps.\n
+    :param controller: ManualTimestepController instance
+    :param state: Current DenoisingState
+    :param clear_prediction_cache: Function to clear prediction cache
+    :returns: Updated DenoisingState"""
+    import random as prng
+
+    num_steps = get_int_input(
+        f"Enter number of steps to rewind (current: {controller.rewind_steps}): ",
+        controller.rewind_steps,
+        generate_random=lambda: prng.randint(0, controller.timesteps.index(state.timestep_index)),
+    )
+    if num_steps is not None:
+        controller.rewind(num_steps)
+        interaction_context.clear_prediction_cache()
+        state = controller.current_state
+        nfo(f"Rewind step {num_steps} to {controller.current_index}")
+        return state
+    nfo("Invalid number of steps, keeping current value")
+    return state
+
+
+# Optionally recompute the *remaining* schedule with a different compression
+# remaining = controller.timesteps[controller.current_index + 1 :]
+# new_tail = time_shift(
+#    mu=controller.mu,
+#    sigma=controller.sigma,
+#    tensor_step=torch.tensor(remaining),
+#    steps=len(remaining),
+#    compress=0.9,               # e.g. stretch the tail a bit
+# )
+# controller.timesteps[controller.current_index + 1 :] = new_tail.tolist()

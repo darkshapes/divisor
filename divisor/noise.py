@@ -34,40 +34,17 @@ def get_noise(
     Flux1 shape: (num_samples, 16, 2 * ceil(height/16), 2 * ceil(width/16))
     Flux2 shape: (num_samples, 128, height // 16, width // 16)
     """
-    # Get the generator's device to ensure compatibility
+
     generator_device = rng._torch_generator.device if rng._torch_generator is not None else torch.device("cpu")
     rng._torch_generator.manual_seed(seed)  # type: ignore # reset seed
-
     if version_2:
-        # Flux2: (num_samples, 128, height // 16, width // 16)
-        shape = (
-            num_samples,
-            128,
-            height // 16,
-            width // 16,
-        )
+        shape = (num_samples, 128, height // 16, width // 16)
     else:
-        # Flux1: (num_samples, 16, 2 * ceil(height/16), 2 * ceil(width/16))
-        # allow for packing
-        shape = (
-            num_samples,
-            16,
-            2 * math.ceil(height / 16),
-            2 * math.ceil(width / 16),
-        )
+        shape = (num_samples, 16, 2 * math.ceil(height / 16), 2 * math.ceil(width / 16))
+    noise = torch.randn(shape, dtype=dtype, generator=rng._torch_generator, device=generator_device)
 
-    # Create tensor on generator's device first (required for MPS compatibility)
-    noise = torch.randn(
-        shape,
-        dtype=dtype,
-        generator=rng._torch_generator,
-        device=generator_device,
-    )
-
-    # Move to target device if different
     if device is not None and generator_device != device:
         noise = noise.to(device)
-
     return noise
 
 
@@ -83,11 +60,9 @@ def prepare_noise_for_model(
     device: torch.device | None = None,
     version_2: bool = False,
 ) -> Tensor:
-    """Generate noise and convert to 3D format for model input.
-
-    Generates 4D noise tensor and converts it from (batch, channels, height, width) format to
-    (batch, sequence_length, features) format based on model type.
-
+    """Generate noise and convert to 3D format for model input.\n
+    Generates 4D noise tensor and converts it from (batch, channels, height, width) format to\n
+    (batch, sequence_length, features) format based on model type.\n
     :param height: Height of the image
     :param width: Width of the image
     :param seed: Seed for random number generation
@@ -98,9 +73,8 @@ def prepare_noise_for_model(
     :param dtype: Data type of the noise (default: torch.bfloat16)
     :param device: Device to generate the noise on (default: None)
     :param version_2: Whether to use Flux2 format (default: False)
-    :returns: 3D tensor with shape (batch, sequence_length, features)
-    """
-    # Generate 4D noise tensor
+    :returns: 3D tensor with shape (batch, sequence_length, features)"""
+
     noise_4d = get_noise(
         num_samples=num_samples,
         height=height,
@@ -112,15 +86,12 @@ def prepare_noise_for_model(
     )
 
     if t5 is not None and clip is not None and prompt is not None:
-        # Flux1/XFlux1: Use prepare() to convert 4D noise to 3D format
         from divisor.flux1.sampling import prepare
 
         inp = prepare(t5, clip, noise_4d, prompt=prompt)
         return inp["img"]  # 3D format: (batch, sequence_length, features)
     else:
-        # Flux2: Use batched_prc_img to convert 4D noise to 3D format
         from divisor.flux2.sampling import batched_prc_img
 
-        # batched_prc_img expects (batch, channels, height, width) and returns (batch, sequence_length, features)
-        noise_3d, _ = batched_prc_img(noise_4d)  # Ignore x_ids as controller doesn't need them
+        noise_3d, _ = batched_prc_img(noise_4d)  # 4D -> 3D: Ignore x_ids as controller doesn't need them
         return noise_3d

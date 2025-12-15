@@ -4,11 +4,11 @@
   <img alt="Cryptic square shaped letters forming the word DIVISOR at a 45 degree slant" src="https://raw.githubusercontent.com/darkshapes/entity-statement/refs/heads/main/png/divisor/divisor_300.png">
 </picture><br><br>
 
-## Divisor <br>
+## divisor <br>
 
-Divisor is a framework for hands-on procedural generation. It offers precise control over advanced diffusion model processes, enabling faster and easier experimentation on neural networks with off-the-shelf computers. Requires minimum 8GB+ Video RAM on Nvidia or M-series GPU.
+divisor is a framework for hands-on procedural generation offering precise control over advanced diffusion model processes for faster and easier experimentation using off-the-shelf computers (minimum 8gb video ram on nvidia or m-series gpu)
 
-<sub>MacOS, Linux, Windows PC [[ UV](https://docs.astral.sh/uv/#installation) ] [ [Git on Windows](https://github.com/darkshapes/sdbx/wiki/_Setup-:-Git-%E2%80%90Windows-only%E2%80%90) ]</sub>
+<sub>macos, linux, windows pc [ [uv](https://docs.astral.sh/uv/#installation) ] [ [git for windows](https://github.com/darkshapes/sdbx/wiki/_Setup-:-Git-%E2%80%90Windows-only%E2%80%90) ]</sub>
 
 ```bash
 git clone https://github.com/darkshapes/divisor
@@ -16,13 +16,13 @@ cd divisor
 uv sync --dev
 ```
 
-<sub>MacOS/Linux</sub>
+<sub>macos/linux</sub>
 
 ```bash
 source .venv/bin/activate
 ```
 
-<sub>Windows</sub>
+<sub>windows</sub>
 
 ```powershell
 Set-ExecutionPolicy Bypass -Scope Process -Force; .venv\Scripts\Activate.ps1
