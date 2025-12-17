@@ -25,7 +25,7 @@ def main(
     ae_id: str = "model.vae.flux1-dev",
     width: int = 1360,
     height: int = 768,
-    guidance: float = 2.5,
+    guidance: float = 4,
     seed: int = rng.next_seed(),
     prompt: str = "",
     quantization: bool = False,

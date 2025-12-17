@@ -6,7 +6,15 @@ import torch
 from divisor.mmada.system_messages import THINKING_MODE_LM_PROMPT
 
 
-def get_num_transfer_tokens(mask_index, steps):
+def get_num_transfer_tokens(mask_index: torch.Tensor, steps: int) -> torch.Tensor:
+    """
+    In the reverse process, the interval [0, 1] is uniformly discretized into steps intervals.
+    Furthermore, because LLaDA employs a linear noise schedule (as defined in Eq. (8)),
+    the expected number of tokens transitioned at each step should be consistent.
+
+    This function is designed to precompute the number of tokens that need to be transitioned at each step.
+    """
+
     mask_num = mask_index.sum(dim=1, keepdim=True)
     # Ensure steps is at least 1 to avoid division by zero if mask_num is also 0 (though sum should be >=0)
     steps = max(1, int(steps))  # Ensure steps is a positive integer

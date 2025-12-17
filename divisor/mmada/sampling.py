@@ -10,20 +10,7 @@ import torch
 import torch.nn.functional as F
 from torchvision import transforms
 
-from divisor.contents import get_dtype
-
-
-def log(t, eps=1e-20):
-    return torch.log(t.clamp(min=eps))
-
-
-def gumbel_noise(t, generator=None):
-    noise = torch.zeros_like(t).uniform_(0, 1, generator=generator)
-    return -log(-log(noise))
-
-
-def gumbel_sample(t, temperature=1.0, dim=-1, generator=None):
-    return ((t / max(temperature, 1e-10)) + gumbel_noise(t, generator=generator)).argmax(dim=dim)
+from divisor.noise import log, gumbel_noise
 
 
 def top_k(logits, thres=0.9):
@@ -132,24 +119,6 @@ def image_transform(image, resolution=256, normalize=True):
     if normalize:
         image = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)(image)
     return image
-
-
-def add_gumbel_noise(logits, temperature):
-    """
-    Adds Gumbel noise to logits for stochastic sampling.
-    Equivalent to argmax(logits + temperature * G) where G ~ Gumbel(0,1).
-    This version is more numerically stable than a version involving exp() and division.
-    """
-    if abs(temperature) < 1e-9:  # Effectively zero temperature
-        return logits
-
-    max_device_precision = get_dtype(device, max_precision=True)
-    logits = logits.to(max_device_precision)
-    noise = torch.rand_like(logits, dtype=max_device_precision)
-    # Standard Gumbel noise: -log(-log(U)), U ~ Uniform(0,1) Add small epsilon for numerical stability inside logs
-
-    standard_gumbel_noise = -torch.log(-torch.log(noise + 1e-20) + 1e-20)
-    return logits + temperature * standard_gumbel_noise
 
 
 def prepare(model, tokenizer, prompt_text):

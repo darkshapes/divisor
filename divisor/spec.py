@@ -231,6 +231,29 @@ mmada_configs = {
             repo_id="Gen-Verse/MMaDA-8B-MixCoT",
             file_name="model.safetensors",
         ),
+        "lumina-dimoo": ModelSpec(
+            repo_id="Alpha-VLLM/Lumina-DiMOO",
+            file_name="model.safetensors",
+            init=InitialParamsMMaDA(
+                steps=128,
+                gen_length=1024,
+                block_length=256,
+                temperature=0.0,
+                cfg_scale=0.0,
+                remasking_strategy="low_confidence",
+                mask_id=126336,
+                max_position_embeddings=2048,
+                max_text_len=512,
+            ),
+            params=MMaDAParams(
+                vocab_size=50257,
+                llm_vocab_size=50257,
+                llm_model_path="",
+                codebook_size=8192,
+                num_vq_tokens=1024,
+                num_new_special_tokens=0,
+            ),
+        ),
     },
 }
 
