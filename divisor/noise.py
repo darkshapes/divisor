@@ -6,9 +6,11 @@
 import math
 from typing import Any, Optional
 
+from nnll.init_gpu import device
 import torch
 from torch import Tensor
 
+from divisor.contents import get_dtype
 from divisor.controller import rng
 
 
@@ -95,3 +97,49 @@ def prepare_noise_for_model(
 
         noise_3d, _ = batched_prc_img(noise_4d)  # 4D -> 3D: Ignore x_ids as controller doesn't need them
         return noise_3d
+
+
+def log(t, eps=1e-20):
+    return torch.log(t.clamp(min=eps))
+
+
+def gumbel_noise(t, generator=None):
+    noise = torch.zeros_like(t).uniform_(0, 1, generator=generator)
+    return -log(-log(noise))
+
+
+def gumbel_sample(t, temperature=1.0, dim=-1, generator=None):
+    return ((t / max(temperature, 1e-10)) + gumbel_noise(t, generator=generator)).argmax(dim=dim)
+
+
+def add_gumbel_noise(logits, temperature):
+    """
+    Adds Gumbel noise to logits for stochastic sampling.
+    Equivalent to argmax(logits + temperature * G) where G ~ Gumbel(0,1).
+    This version is more numerically stable than a version involving exp() and division.
+    """
+    if abs(temperature) < 1e-9:  # Effectively zero temperature
+        return logits
+
+    max_device_precision = get_dtype(device, max_precision=True)
+    logits = logits.to(max_device_precision)
+    noise = torch.rand_like(logits, dtype=max_device_precision)
+    # Standard Gumbel noise: -log(-log(U)), U ~ Uniform(0,1) Add small epsilon for numerical stability inside logs
+
+    standard_gumbel_noise = -torch.log(-torch.log(noise + 1e-20) + 1e-20)
+    return logits + temperature * standard_gumbel_noise
+
+
+def alt_gumbel_noise(logits, temperature):
+    """
+    The Gumbel max is a method for sampling categorical distributions.
+    arXiv:2409.02908 low-precision Gumbel Max improves MDM perplexity score but reduces generation quality.
+    Thus, we use float64... unless mps, in which case we must use float32
+    """
+    precision = get_dtype(device)
+    if temperature == 0:
+        return logits
+    logits = logits.to(precision)
+    noise = torch.rand_like(logits, dtype=precision)
+    gumbel_noise = (-torch.log(noise)) ** temperature
+    return logits.exp() / gumbel_noise

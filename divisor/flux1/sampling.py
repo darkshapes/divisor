@@ -12,6 +12,7 @@ from nnll.constants import ExtensionType
 from nnll.init_gpu import sync_torch
 from nnll.save_generation import name_save_file_as, save_with_hyperchain
 import torch
+
 from torch import Tensor
 
 from divisor.cli_menu import route_choices
@@ -24,12 +25,12 @@ from divisor.denoise_step import (
 )
 from divisor.flux1.model import Flux
 from divisor.flux1.text_embedder import HFEmbedder
+from divisor.interaction_context import InteractionContext
 from divisor.state import (
     DenoiseSettings,
     GetImagePredictionSettings,
     GetPredictionSettings,
 )
-from divisor.interaction_context import InteractionContext
 
 
 def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:
