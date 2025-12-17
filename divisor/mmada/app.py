@@ -12,7 +12,8 @@ from divisor.mmada.live_token import (
     get_highlighted_text_tuples,
     get_num_transfer_tokens,
 )
-from divisor.mmada.sampling import add_gumbel_noise, prepare
+from divisor.noise import add_gumbel_noise
+from divisor.mmada.sampling import prepare
 from divisor.mmada.system_messages import THINKING_MODE_LM_PROMPT
 from divisor.mmada.text_embedder import HFEmbedder
 from divisor.spec import (

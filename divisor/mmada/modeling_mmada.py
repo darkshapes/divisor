@@ -8,6 +8,7 @@ from nnll.init_gpu import device
 import numpy as np
 import torch
 import torch.nn.functional as F
+from nnll.console import nfo
 from transformers import PretrainedConfig
 from transformers.models.auto import AutoConfig, AutoModel, AutoModelForCausalLM
 
