@@ -3,7 +3,6 @@ import typing
 
 import einops
 import huggingface_hub
-from nnll.chip_stats import read_stats
 from nnll.init_gpu import device
 import omegaconf
 import torch
@@ -12,12 +11,16 @@ import torch.nn.functional as F
 import transformers
 from transformers.modeling_flash_attention_utils import is_flash_attn_available
 
+from divisor.contents import get_dtype
 from divisor.duo.configuration_duo import DUOConfig
-from divisor.mmada.modeling_llada import RotaryEmbedding, BufferCache
+from divisor.flux1.layers import SelfAttention
+from divisor.mmada.modeling_llada import BufferCache, RotaryEmbedding
 
-if read_stats().get("flash_attention", False):
+precision = get_dtype(device)
+if is_flash_attn_available():
     import flash_attn
     import flash_attn.layers.rotary
+
 
 # Flags required to enable jit fusion kernels
 torch._C._jit_set_profiling_mode(False)
@@ -102,16 +105,32 @@ def rotate_half(x):
 
 
 def split_and_apply_rotary_pos_emb(qkv, rotary_cos_sin):
-    with torch.cuda.amp.autocast(enabled=False):
-        cos, sin = rotary_cos_sin
-        cos = cos.to(qkv.dtype)
-        sin = sin.to(qkv.dtype)
-        cos = cos[0, :, 0, 0, : cos.shape[-1] // 2]
-        sin = sin[0, :, 0, 0, : sin.shape[-1] // 2]
-        q, k, v = qkv.chunk(3, dim=2)
-        q = flash_attn.layers.rotary.apply_rotary_emb_torch(q.squeeze(dim=2), cos, sin)
-        k = flash_attn.layers.rotary.apply_rotary_emb_torch(k.squeeze(dim=2), cos, sin)
-        v = v.squeeze(dim=2)
+    if device.type == "cuda":
+        context = torch.autocast(device_type=device.type, dtype=precision)
+    else:
+        from contextlib import nullcontext
+
+        context = nullcontext()
+    with context:
+        with context:
+            cos, sin = rotary_cos_sin
+            cos = cos.to(qkv.dtype)
+            sin = sin.to(qkv.dtype)
+            cos = cos[0, :, 0, 0, : cos.shape[-1] // 2]
+            sin = sin[0, :, 0, 0, : sin.shape[-1] // 2]
+            q, k, v = qkv.chunk(3, dim=2)
+            if is_flash_attn_available():
+                q = flash_attn.layers.rotary.apply_rotary_emb_torch(q.squeeze(dim=2), cos, sin)
+                k = flash_attn.layers.rotary.apply_rotary_emb_torch(k.squeeze(dim=2), cos, sin)
+                v = v.squeeze(dim=2)
+            else:
+                xq_ = q.float().reshape(*q.shape[:-1], -1, 1, 2)
+                xk_ = k.float().reshape(*k.shape[:-1], -1, 1, 2)
+                xq_out = freqs_cis[..., 0] * xq_[..., 0] + freqs_cis[..., 1] * xq_[..., 1]
+                xk_out = freqs_cis[..., 0] * xk_[..., 0] + freqs_cis[..., 1] * xk_[..., 1]
+                return xq_out.reshape(*q.shape).type_as(q), xk_out.reshape(*k.shape).type_as(k)
+
+                v = v.squeeze(dim=2)
     return q, k, v
 
 
@@ -140,7 +159,13 @@ class LayerNorm(nn.Module):
         self.dim = dim
 
     def forward(self, x):
-        with torch.cuda.amp.autocast(enabled=False):
+        if device.type == "cuda":
+            context = torch.autocast(device_type=device.type, dtype=precision)
+        else:
+            from contextlib import nullcontext
+
+            context = nullcontext()
+        with context:
             x = F.layer_norm(x.float(), [self.dim])
         return x * self.weight[None, None, :]
 
@@ -245,14 +270,25 @@ class DDiTBlockCausal(nn.Module):
 
         qkv = self.attn_qkv(x)
         qkv = einops.rearrange(qkv, "b s (three h d) -> b s three h d", three=3, h=self.n_heads)
-        with torch.cuda.amp.autocast(enabled=False):
+        if device.type == "cuda":
+            context = torch.autocast(device_type=device.type, dtype=precision)
+        else:
+            from contextlib import nullcontext
+
+            context = nullcontext()
+        with context:
             cos, sin = rotary_cos_sin
             qkv = apply_rotary_pos_emb(qkv, cos.to(qkv.dtype), sin.to(qkv.dtype))
-        qkv = einops.rearrange(qkv, "b s ... -> (b s) ...")
-        cu_seqlens = torch.arange(0, (batch_size + 1) * seq_len, step=seq_len, dtype=torch.int32, device=qkv.device)
-        x = flash_attn.flash_attn_interface.flash_attn_varlen_qkvpacked_func(qkv, cu_seqlens, seq_len, 0.0, causal=True)
 
-        x = einops.rearrange(x, "(b s) h d -> b s (h d)", b=batch_size)
+        if is_flash_attn_available():
+            qkv = einops.rearrange(qkv, "b s ... -> (b s) ...")
+            cu_seqlens = torch.arange(0, (batch_size + 1) * seq_len, step=seq_len, dtype=torch.int32, device=qkv.device)
+            x = flash_attn.flash_attn_interface.flash_attn_varlen_qkvpacked_func(qkv, cu_seqlens, seq_len, 0.0, causal=True)
+
+            x = einops.rearrange(x, "(b s) h d -> b s (h d)", b=batch_size)
+        else:
+            q, k, v = split_and_apply_rotary_pos_emb(qkv, rotary_cos_sin)
+            x = regular_attention_multi_headed(q, k, v)
 
         scale = torch.ones(1, device=x.device, dtype=x.dtype)
         x = bias_dropout_scale_fn(self.attn_out(x), None, scale, x_skip, self.dropout)
@@ -364,15 +400,16 @@ class DIT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
         dim = config.model.hidden_size
         cond_dim = config.model.cond_dim
         self.vocab_embed = EmbeddingLayer(dim, vocab_size)
-        model_config = DUOConfig()
+        self.model_config: ModelConfig = DUOConfig()
 
         if not self.causal:
             self.sigma_map = TimestepEmbedder(cond_dim)
+
         if is_flash_attn_available():
             self.rotary_emb = Rotary(dim // config.model.n_heads)
         else:
             self.__cache = BufferCache()
-            self.rotary_emb = RotaryEmbedding(model_config, self.__cache)
+            self.rotary_emb = RotaryEmbedding(self.model_config, self.__cache)
 
         blocks = []
         for _ in range(config.model.n_blocks):
@@ -401,7 +438,13 @@ class DIT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
 
         rotary_cos_sin = self.rotary_emb(x).to(x.device)
 
-        with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+        if device.type == "cuda":
+            context = torch.autocast(device_type=device.type, dtype=precision)
+        else:
+            from contextlib import nullcontext
+
+            context = nullcontext()
+        with context:
             for i in range(len(self.blocks)):
                 x = self.blocks[i](x, rotary_cos_sin, c=t_cond)
             x = self.output_layer(x, c=t_cond)
@@ -450,7 +493,14 @@ class HFDIT(torch.nn.Module):
             t_cond = F.silu(self.sigma_map(sigma))
 
         rotary_cos_sin = self.rotary_emb(x)
-        with torch.cuda.amp.autocast(dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float32):
+
+        if device.type == "cuda":
+            context = torch.autocast(device_type=device.type, dtype=precision)
+        else:
+            from contextlib import nullcontext
+
+            context = nullcontext()
+        with context:
             for i in range(len(self.blocks)):
                 x = self.blocks[i](x, rotary_cos_sin, c=t_cond)
                 if output_hidden_states:
