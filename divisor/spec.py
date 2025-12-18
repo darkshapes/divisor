@@ -254,6 +254,15 @@ mmada_configs = {
                 num_new_special_tokens=0,
             ),
         ),
+        "duo": ModelSpec(
+            repo_id="s-sahoo/DUO",
+            file_name="model.safetensors",
+            init=InitialParamsMMaDA(
+                steps=128,
+                gen_length=1024,
+                block_length=256,
+            ),
+        ),
     },
 }
 

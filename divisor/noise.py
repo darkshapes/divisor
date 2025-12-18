@@ -9,6 +9,7 @@ from typing import Any, Optional
 from nnll.init_gpu import device
 import torch
 from torch import Tensor
+import torch.nn.functional as F
 
 from divisor.contents import get_dtype
 from divisor.controller import rng
@@ -22,6 +23,7 @@ def get_noise(
     dtype: torch.dtype = torch.bfloat16,
     device: torch.device | None = None,
     version_2: bool = False,
+    perlin: bool = False,
 ) -> Tensor:
     """Generate noise tensor for Flux models.\n
     :param num_samples: Number of samples to generate
