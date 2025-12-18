@@ -104,6 +104,73 @@ def rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 
+def build_rotary_freqs(seq_len: int, head_dim: int, device: torch.device, dtype: torch.dtype):
+    """
+    Returns a tensor of shape (seq_len, head_dim, 2) that stores
+    (cosine, sine) for each position / head dimension pair.
+    The last dimension is split so that we can do a *real* complex multiplication
+    without ever constructing a complex dtype tensor.
+    """
+    # Compute the base frequencies (θ = 10000^{-2i/head_dim})
+    inv_freq = 1.0 / (10000 ** (torch.arange(0, head_dim, 2, device=device, dtype=dtype) / head_dim))
+    # Position indices
+    pos = torch.arange(seq_len, device=device, dtype=dtype).unsqueeze(1)  # (seq_len, 1)
+
+    # Outer product → angles (seq_len, head_dim/2)
+    angles = pos * inv_freq  # broadcasting
+
+    # 4Expand to full head_dim (cos, sin for even & odd indices)
+    #    We interleave the even/odd dimensions so that the final shape is (seq_len, head_dim)
+    cos = torch.cos(angles)  # (seq_len, head_dim/2)
+    sin = torch.sin(angles)  # (seq_len, head_dim/2)
+
+    # 5️⃣  Interleave to obtain (seq_len, head_dim)
+    #    e.g. [c0, s0, c1, s1, …] → we need two separate tensors  for the real‑imag parts
+    cos = torch.stack([cos, cos], dim=-1).flatten(-2)  # (seq_len, head_dim)
+    sin = torch.stack([sin, sin], dim=-1).flatten(-2)  # (seq_len, head_dim)
+
+    # 6️⃣  Pack as (cos, sin) in the last dimension → shape (seq_len, head_dim, 2)
+    freqs_cis = torch.stack([cos, sin], dim=-1)  # (seq_len, head_dim, 2)
+    return freqs_cis
+
+
+def apply_rotary_emb_from_cis(q: torch.Tensor, k: torch.Tensor, freqs_cis: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    q, k : (B, H, S, D)   – already reshaped for multi‑head attention
+    freqs_cis : (S, D, 2) – (cos, sin) for each position & head‑dim pair
+
+    Returns rotated (q, k) with the same shape.
+    """
+    # 1️⃣  Align dimensions: (1, 1, S, D, 2) so broadcasting works over B and H
+    freqs = freqs_cis.unsqueeze(0).unsqueeze(0)  # (1,1,S,D,2)
+
+    # 2️⃣  Split q/k into even/odd parts (real/imag) → shape (..., D,2)
+    #     The last dimension will hold (real, imag) for each head‑dim pair.
+    q_ = torch.stack([q[..., ::2], q[..., 1::2]], dim=-1)  #      (B,H,S,D/2,2)
+    k_ = torch.stack([k[..., ::2], k[..., 1::2]], dim=-1)  #      (B,H,S,D/2,2)
+
+    # 3️⃣  Perform the complex multiplication:
+    #     (a + i·b) * (c + i·d) = (a·c - b·d) + i·(a·d + b·c)
+    #     where (c,d) = (cos, sin) from freqs_cis.
+    #     Because we duplicated cos/sin for both even/odd dims, we can just use the same
+    #     freqs for every pair.
+    cos = freqs[..., 0]  # (1,1,S,D,1)
+    sin = freqs[..., 1]  # (1,1,S,D,1)
+
+    # real part
+    q_rot_real = q_[..., 0] * cos - q_[..., 1] * sin
+    k_rot_real = k_[..., 0] * cos - k_[..., 1] * sin
+    # imag part
+    q_rot_imag = q_[..., 0] * sin + q_[..., 1] * cos
+    k_rot_imag = k_[..., 0] * sin + k_[..., 1] * cos
+
+    # 4️⃣  Re‑interleave back to the original shape (B,H,S,D)
+    q_rot = torch.stack([q_rot_real, q_rot_imag], dim=-1).flatten(-2)  # (B,H,S,D)
+    k_rot = torch.stack([k_rot_real, k_rot_imag], dim=-1).flatten(-2)  # (B,H,S,D)
+
+    return q_rot, k_rot
+
+
 def split_and_apply_rotary_pos_emb(qkv, rotary_cos_sin):
     if device.type == "cuda":
         context = torch.autocast(device_type=device.type, dtype=precision)
@@ -260,41 +327,37 @@ class DDiTBlockCausal(nn.Module):
 
     def forward(self, x, rotary_cos_sin, **kwargs):
         del kwargs
-        batch_size, seq_len = x.shape[0], x.shape[1]
-
         bias_dropout_scale_fn = self._get_bias_dropout_scale()
-
-        # attention operation
         x_skip = x
-        x = self.norm1(x)
-
-        qkv = self.attn_qkv(x)
-        qkv = einops.rearrange(qkv, "b s (three h d) -> b s three h d", three=3, h=self.n_heads)
-        if device.type == "cuda":
-            context = torch.autocast(device_type=device.type, dtype=precision)
-        else:
-            from contextlib import nullcontext
-
-            context = nullcontext()
-        with context:
-            cos, sin = rotary_cos_sin
-            qkv = apply_rotary_pos_emb(qkv, cos.to(qkv.dtype), sin.to(qkv.dtype))
-
         if is_flash_attn_available():
+            batch_size, seq_len = x.shape[0], x.shape[1]
+            x = self.norm1(x)
+            qkv = self.attn_qkv(x)
+            qkv = einops.rearrange(qkv, "b s (three h d) -> b s three h d", three=3, h=self.n_heads)
+            with torch.autocast("cuda", enabled=False):
+                cos, sin = rotary_cos_sin
+                qkv = apply_rotary_pos_emb(qkv, cos.to(qkv.dtype), sin.to(qkv.dtype))
+
             qkv = einops.rearrange(qkv, "b s ... -> (b s) ...")
             cu_seqlens = torch.arange(0, (batch_size + 1) * seq_len, step=seq_len, dtype=torch.int32, device=qkv.device)
             x = flash_attn.flash_attn_interface.flash_attn_varlen_qkvpacked_func(qkv, cu_seqlens, seq_len, 0.0, causal=True)
 
             x = einops.rearrange(x, "(b s) h d -> b s (h d)", b=batch_size)
         else:
-            q, k, v = split_and_apply_rotary_pos_emb(qkv, rotary_cos_sin)
-            x = regular_attention_multi_headed(q, k, v)
+            batch_size, seq_len = x.shape[:2]
+            qkv = self.attn_qkv(x)
+            qkv = einops.rearrange(qkv, "b s (three h d) -> three b h s d", three=3, h=self.n_heads)
+            q, k, v = qkv[0], qkv[1], qkv[2]
+            freqs_cis = build_rotary_freqs(seq_len, self.n_heads * self.head_dim, device=x.device, dtype=x.dtype)
+            q, k = apply_rotary_emb_from_cis(q, k, freqs_cis)
+            attn_out = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True)
+            x = einops.rearrange(attn_out, "b h s d -> b s (h d)")
 
         scale = torch.ones(1, device=x.device, dtype=x.dtype)
         x = bias_dropout_scale_fn(self.attn_out(x), None, scale, x_skip, self.dropout)
 
         # mlp operation
-        x = bias_dropout_scale_fn(self.mlp(self.norm2(x)), None, scale, x, self.dropout)
+        x = bias_dropout_scale_fn(self.attn_out(x), None, scale, x, self.dropout)
         return x
 
 
@@ -400,7 +463,7 @@ class DIT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
         dim = config.model.hidden_size
         cond_dim = config.model.cond_dim
         self.vocab_embed = EmbeddingLayer(dim, vocab_size)
-        self.model_config: ModelConfig = DUOConfig()
+        self.model_config = DUOConfig()
 
         if not self.causal:
             self.sigma_map = TimestepEmbedder(cond_dim)
