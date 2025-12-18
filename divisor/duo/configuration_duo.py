@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # adapted from https://github.com/s-sahoo/duo
 
-from transformers import PretrainedConfig
+from transformers import PretrainedConfig, AutoConfig
 
 
 class DUOConfig(PretrainedConfig):
@@ -13,6 +13,7 @@ class DUOConfig(PretrainedConfig):
         self,
         vocab_size: int = 50258,
         model_length: int = 1024,
+        model_type: str = "DUO",
         causal: bool = False,
         hidden_dim: int = 768,
         cond_dim: int = 129,
@@ -32,3 +33,7 @@ class DUOConfig(PretrainedConfig):
         self.n_heads = n_heads
         self.dropout = dropout
         self.var_min = var_min
+        self.model_type = model_type
+
+
+AutoConfig.register("DUO", DUOConfig)

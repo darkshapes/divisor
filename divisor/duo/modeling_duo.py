@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import transformers
 from transformers.modeling_flash_attention_utils import is_flash_attn_available
+from transformers.models.auto.modeling_auto import AutoModelForMaskedLM
 
 from divisor.contents import get_dtype
 from divisor.duo.configuration_duo import DUOConfig
@@ -609,3 +610,6 @@ class DUO(transformers.PreTrainedModel):
             return logits, all_hidden_states
         else:
             return logits
+
+
+AutoModelForMaskedLM.register(DUOConfig, DUO)
