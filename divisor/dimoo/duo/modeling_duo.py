@@ -10,8 +10,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import transformers
+from transformers.modeling_flash_attention_utils import is_flash_attn_available
 
 from divisor.duo.configuration_duo import DUOConfig
+from divisor.mmada.modeling_llada import RotaryEmbedding, BufferCache
 
 if read_stats().get("flash_attention", False):
     import flash_attn
@@ -362,9 +364,15 @@ class DIT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
         dim = config.model.hidden_size
         cond_dim = config.model.cond_dim
         self.vocab_embed = EmbeddingLayer(dim, vocab_size)
+        model_config = DUOConfig()
+
         if not self.causal:
             self.sigma_map = TimestepEmbedder(cond_dim)
-        self.rotary_emb = Rotary(dim // config.model.n_heads)
+        if is_flash_attn_available():
+            self.rotary_emb = Rotary(dim // config.model.n_heads)
+        else:
+            self.__cache = BufferCache()
+            self.rotary_emb = RotaryEmbedding(model_config, self.__cache)
 
         blocks = []
         for _ in range(config.model.n_blocks):
