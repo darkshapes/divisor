@@ -196,7 +196,7 @@ def apply_rotary_emb_from_cis(q: torch.Tensor, k: torch.Tensor, freqs_cis: torch
 
 def split_and_apply_rotary_pos_emb(qkv, rotary_cos_sin, seq_len: int | None = None, n_heads: int | None = 12, head_dim: int | None = 768):
     if device.type == "cuda":
-        context = torch.autocast(device_type=device.type, dtype=precision)
+        context = torch.autocast(device_type=device.type, dtype=qkv.dtype)
     else:
         from contextlib import nullcontext
 
@@ -214,24 +214,28 @@ def split_and_apply_rotary_pos_emb(qkv, rotary_cos_sin, seq_len: int | None = No
                 k = flash_attn.layers.rotary.apply_rotary_emb_torch(k.squeeze(dim=2), cos, sin)
                 v = v.squeeze(dim=2)
             else:
-                if seq_len and n_heads and head_dim:
-                    # q, k, v have shape (b, s, 1, h, d) after chunking
-                    # apply_rotary_emb_from_cis expects (B, H, S, D), so we need to reshape
-                    q = q.squeeze(dim=2)  # (b, s, h, d)
-                    k = k.squeeze(dim=2)  # (b, s, h, d)
-                    # Permute to (b, h, s, d) for apply_rotary_emb_from_cis
-                    q = q.permute(0, 2, 1, 3)  # (b, h, s, d)
-                    k = k.permute(0, 2, 1, 3)  # (b, h, s, d)
-                    # Build freqs_cis with matching dtype
-                    freqs_cis = build_rotary_freqs(seq_len, head_dim, device=q.device, dtype=q.dtype)
-                    # Apply rotary embedding (returns tuple)
+                try:
+                    qkv = einops.rearrange(qkv, "b s (three h d) -> three b h s d", three=3, h=n_heads)
+                    q, k, v = qkv[0], qkv[1], qkv[2]
+                    freqs_cis = build_rotary_freqs(seq_len, n_heads * head_dim, device=q.device, dtype=q.dtype)
                     q, k = apply_rotary_emb_from_cis(q, k, freqs_cis)
-                    # Permute back to (b, s, h, d)
-                    q = q.permute(0, 2, 1, 3)  # (b, s, h, d)
-                    k = k.permute(0, 2, 1, 3)  # (b, s, h, d)
-                    v = v.squeeze(dim=2)  # (b, s, h, d)
-                else:
-                    raise ValueError("seq_len, n_heads, and head_dim must be provided for RoPE without flash attention")
+                    attn_out = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True)
+                    x = einops.rearrange(attn_out, "b h s d -> b s (h d)")
+                    self_attn = nn.Linear(dim, 3 * dim, bias=False)
+                    qkv = self_attn(x)
+                    qkv = einops.rearrange(qkv, "b s (three h d) -> three b h s d", three=3, h=n_heads)
+                    q, k, v = qkv[0], qkv[1], qkv[2]
+
+                except Exception as e:
+                    print(f"Error applying rotary embedding: {e}")
+                    print(f"q shape: {q.shape}")
+                    print(f"k shape: {k.shape}")
+                    # print(f"freqs_cis shape: {freqs_cis.shape}")
+                    # raise e
+                    import sys
+
+                    sys.exit(1)
+
     return q, k, v
 
 
@@ -242,7 +246,7 @@ def apply_rotary_pos_emb(qkv, cos, sin):
 
 
 def regular_attention_multi_headed(q, k, v):
-    # Assuming qkv is a tensor with shape [batch, seq_len, 3, num_heads, head_dim]
+    # Assuming qkv is a tensor with shape [batch, seq_len, num_heads, head_dim]
     # where the 3 represents Q, K, V packed in that order
     attention_output = F.scaled_dot_product_attention(query=q.transpose(1, 2), key=k.transpose(1, 2), value=v.transpose(1, 2), attn_mask=None, dropout_p=0.0, is_causal=False)
     # [batch_size, seq_len, num_heads, head_dim]
@@ -261,7 +265,7 @@ class LayerNorm(nn.Module):
 
     def forward(self, x):
         if device.type == "cuda":
-            context = torch.autocast(device_type=device.type, dtype=precision)
+            context = torch.autocast(device_type=device.type, dtype=x.dtype)
         else:
             from contextlib import nullcontext
 
@@ -509,11 +513,11 @@ class DIT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
         if not self.causal:
             self.sigma_map = TimestepEmbedder(cond_dim)
 
-        if is_flash_attn_available():
-            self.rotary_emb = Rotary(dim // config.model.n_heads)
-        else:
-            self.__cache = BufferCache()
-            self.rotary_emb = RotaryEmbedding(self.model_config, self.__cache)
+        # if is_flash_attn_available():
+        self.rotary_emb = Rotary(dim // config.model.n_heads)
+        # else:
+        # self.__cache = BufferCache()
+        # self.rotary_emb = RotaryEmbedding(self.model_config, self.__cache)
 
         blocks = []
         for _ in range(config.model.n_blocks):
@@ -543,7 +547,7 @@ class DIT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
         rotary_cos_sin = self.rotary_emb(x).to(x.device)
 
         if device.type == "cuda":
-            context = torch.autocast(device_type=device.type, dtype=precision)
+            context = torch.autocast(device_type=device.type, dtype=x.dtype)
         else:
             from contextlib import nullcontext
 
@@ -599,7 +603,7 @@ class HFDIT(torch.nn.Module):
         rotary_cos_sin = self.rotary_emb(x)
 
         if device.type == "cuda":
-            context = torch.autocast(device_type=device.type, dtype=precision)
+            context = torch.autocast(device_type=device.type, dtype=x.dtype)
         else:
             from contextlib import nullcontext
 
@@ -648,7 +652,7 @@ class DUO(transformers.PreTrainedModel):
         if timesteps is None and not self.config.causal:
             # Use model's device, not input_ids.device, since model may be on GPU
             model_device = next(self.parameters()).device
-            timesteps = torch.zeros((input_ids.shape[0],), device=model_device, dtype=precision)
+            timesteps = torch.zeros((input_ids.shape[0],), device=model_device, dtype=input_ids.dtype)
 
         logits, all_hidden_states = self.backbone(
             x=input_ids,
