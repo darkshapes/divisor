@@ -1,5 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# adapted from https://github.com/s-sahoo/duo
+
 import math
-import typing
+from typing import Callable, Optional, Union, Tuple
 
 import einops
 import huggingface_hub
@@ -22,6 +25,11 @@ if is_flash_attn_available():
     import flash_attn
     import flash_attn.layers.rotary
 
+if device.type == "cuda":
+    torch._C._jit_set_profiling_mode(False)
+    torch._C._jit_set_profiling_executor(False)
+    torch._C._jit_override_can_fuse_on_cpu(True)
+    torch._C._jit_override_can_fuse_on_gpu(True)
 
 # Flags required to enable jit fusion kernels
 torch._C._jit_set_profiling_mode(False)
@@ -30,9 +38,7 @@ torch._C._jit_override_can_fuse_on_cpu(True)
 torch._C._jit_override_can_fuse_on_gpu(True)
 
 
-def bias_dropout_add_scale(
-    x: torch.Tensor, bias: typing.Optional[torch.Tensor], scale: torch.Tensor, residual: typing.Optional[torch.Tensor], prob: float, training: bool
-) -> torch.Tensor:
+def bias_dropout_add_scale(x: torch.Tensor, bias: Optional[torch.Tensor], scale: torch.Tensor, residual: Optional[torch.Tensor], prob: float, training: bool) -> torch.Tensor:
     if bias is not None:
         out = scale * F.dropout(x + bias, p=prob, training=training)
     else:
@@ -55,21 +61,17 @@ def modulate(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor) -> torch
     return x * (1 + scale) + shift
 
 
-@torch.jit.script
-def bias_dropout_add_scale_fused_train(
-    x: torch.Tensor, bias: typing.Optional[torch.Tensor], scale: torch.Tensor, residual: typing.Optional[torch.Tensor], prob: float
-) -> torch.Tensor:
+# @torch.jit.script
+def bias_dropout_add_scale_fused_train(x: torch.Tensor, bias: Optional[torch.Tensor], scale: torch.Tensor, residual: Optional[torch.Tensor], prob: float) -> torch.Tensor:
     return bias_dropout_add_scale(x, bias, scale, residual, prob, True)
 
 
-@torch.jit.script
-def bias_dropout_add_scale_fused_inference(
-    x: torch.Tensor, bias: typing.Optional[torch.Tensor], scale: torch.Tensor, residual: typing.Optional[torch.Tensor], prob: float
-) -> torch.Tensor:
+# @torch.jit.script
+def bias_dropout_add_scale_fused_inference(x: torch.Tensor, bias: Optional[torch.Tensor], scale: torch.Tensor, residual: Optional[torch.Tensor], prob: float) -> torch.Tensor:
     return bias_dropout_add_scale(x, bias, scale, residual, prob, False)
 
 
-@torch.jit.script
+# @torch.jit.script
 def modulate_fused(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
     return modulate(x, shift, scale)
 
@@ -142,37 +144,57 @@ def apply_rotary_emb_from_cis(q: torch.Tensor, k: torch.Tensor, freqs_cis: torch
 
     Returns rotated (q, k) with the same shape.
     """
+    # Ensure dtype consistency for MPS compatibility
+    freqs_cis = freqs_cis.to(dtype=q.dtype)
+
     # 1️⃣  Align dimensions: (1, 1, S, D, 2) so broadcasting works over B and H
     freqs = freqs_cis.unsqueeze(0).unsqueeze(0)  # (1,1,S,D,2)
 
     # 2️⃣  Split q/k into even/odd parts (real/imag) → shape (..., D,2)
     #     The last dimension will hold (real, imag) for each head‑dim pair.
+    head_dim = q.shape[-1]
     q_ = torch.stack([q[..., ::2], q[..., 1::2]], dim=-1)  #      (B,H,S,D/2,2)
     k_ = torch.stack([k[..., ::2], k[..., 1::2]], dim=-1)  #      (B,H,S,D/2,2)
+
+    # Ensure q_ and k_ have consistent dtype
+    q_ = q_.to(dtype=q.dtype)
+    k_ = k_.to(dtype=k.dtype)
 
     # 3️⃣  Perform the complex multiplication:
     #     (a + i·b) * (c + i·d) = (a·c - b·d) + i·(a·d + b·c)
     #     where (c,d) = (cos, sin) from freqs_cis.
-    #     Because we duplicated cos/sin for both even/odd dims, we can just use the same
-    #     freqs for every pair.
-    cos = freqs[..., 0]  # (1,1,S,D,1)
-    sin = freqs[..., 1]  # (1,1,S,D,1)
+    #     Extract cos/sin and slice to match D/2 dimension
+    cos_full = freqs[..., 0]  # (1,1,S,D)
+    sin_full = freqs[..., 1]  # (1,1,S,D)
 
-    # real part
-    q_rot_real = q_[..., 0] * cos - q_[..., 1] * sin
-    k_rot_real = k_[..., 0] * cos - k_[..., 1] * sin
-    # imag part
-    q_rot_imag = q_[..., 0] * sin + q_[..., 1] * cos
-    k_rot_imag = k_[..., 0] * sin + k_[..., 1] * cos
+    # Slice to match the split dimension (D/2)
+    # Since freqs_cis is interleaved (cos, cos, sin, sin), we take every other element
+    cos = cos_full[..., ::2]  # (1,1,S,D/2) - take even indices
+    sin = sin_full[..., ::2]  # (1,1,S,D/2) - take even indices
+
+    # Ensure cos and sin match q_/k_ dtype (critical for MPS)
+    cos = cos.to(dtype=q.dtype)
+    sin = sin.to(dtype=q.dtype)
+
+    # real part - ensure result maintains dtype
+    q_rot_real = (q_[..., 0] * cos - q_[..., 1] * sin).to(dtype=q.dtype)
+    k_rot_real = (k_[..., 0] * cos - k_[..., 1] * sin).to(dtype=k.dtype)
+    # imag part - ensure result maintains dtype
+    q_rot_imag = (q_[..., 0] * sin + q_[..., 1] * cos).to(dtype=q.dtype)
+    k_rot_imag = (k_[..., 0] * sin + k_[..., 1] * cos).to(dtype=k.dtype)
 
     # 4️⃣  Re‑interleave back to the original shape (B,H,S,D)
     q_rot = torch.stack([q_rot_real, q_rot_imag], dim=-1).flatten(-2)  # (B,H,S,D)
     k_rot = torch.stack([k_rot_real, k_rot_imag], dim=-1).flatten(-2)  # (B,H,S,D)
 
+    # Ensure output dtype matches input dtype exactly (critical for MPS)
+    q_rot = q_rot.to(dtype=q.dtype)
+    k_rot = k_rot.to(dtype=k.dtype)
+
     return q_rot, k_rot
 
 
-def split_and_apply_rotary_pos_emb(qkv, rotary_cos_sin):
+def split_and_apply_rotary_pos_emb(qkv, rotary_cos_sin, seq_len: int | None = None, n_heads: int | None = 12, head_dim: int | None = 768):
     if device.type == "cuda":
         context = torch.autocast(device_type=device.type, dtype=precision)
     else:
@@ -192,13 +214,24 @@ def split_and_apply_rotary_pos_emb(qkv, rotary_cos_sin):
                 k = flash_attn.layers.rotary.apply_rotary_emb_torch(k.squeeze(dim=2), cos, sin)
                 v = v.squeeze(dim=2)
             else:
-                xq_ = q.float().reshape(*q.shape[:-1], -1, 1, 2)
-                xk_ = k.float().reshape(*k.shape[:-1], -1, 1, 2)
-                xq_out = freqs_cis[..., 0] * xq_[..., 0] + freqs_cis[..., 1] * xq_[..., 1]
-                xk_out = freqs_cis[..., 0] * xk_[..., 0] + freqs_cis[..., 1] * xk_[..., 1]
-                return xq_out.reshape(*q.shape).type_as(q), xk_out.reshape(*k.shape).type_as(k)
-
-                v = v.squeeze(dim=2)
+                if seq_len and n_heads and head_dim:
+                    # q, k, v have shape (b, s, 1, h, d) after chunking
+                    # apply_rotary_emb_from_cis expects (B, H, S, D), so we need to reshape
+                    q = q.squeeze(dim=2)  # (b, s, h, d)
+                    k = k.squeeze(dim=2)  # (b, s, h, d)
+                    # Permute to (b, h, s, d) for apply_rotary_emb_from_cis
+                    q = q.permute(0, 2, 1, 3)  # (b, h, s, d)
+                    k = k.permute(0, 2, 1, 3)  # (b, h, s, d)
+                    # Build freqs_cis with matching dtype
+                    freqs_cis = build_rotary_freqs(seq_len, head_dim, device=q.device, dtype=q.dtype)
+                    # Apply rotary embedding (returns tuple)
+                    q, k = apply_rotary_emb_from_cis(q, k, freqs_cis)
+                    # Permute back to (b, s, h, d)
+                    q = q.permute(0, 2, 1, 3)  # (b, s, h, d)
+                    k = k.permute(0, 2, 1, 3)  # (b, s, h, d)
+                    v = v.squeeze(dim=2)  # (b, s, h, d)
+                else:
+                    raise ValueError("seq_len, n_heads, and head_dim must be provided for RoPE without flash attention")
     return q, k, v
 
 
@@ -258,7 +291,7 @@ class TimestepEmbedder(nn.Module):
         self.frequency_embedding_size = frequency_embedding_size
 
     @staticmethod
-    def timestep_embedding(t, dim, max_period=10000):
+    def timestep_embedding(t, dim, dtype: torch.dtype, max_period=10000):
         """
         Create sinusoidal timestep embeddings.
         :param t: a 1-D Tensor of N indices, one per batch element.
@@ -269,7 +302,7 @@ class TimestepEmbedder(nn.Module):
         """
         # https://github.com/openai/glide-text2im/blob/main/glide_text2im/nn.py
         half = dim // 2
-        freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32, device=t.device) / half)
+        freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=dtype, device=t.device) / half)
         args = t[:, None].float() * freqs[None]
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
         if dim % 2:
@@ -277,7 +310,7 @@ class TimestepEmbedder(nn.Module):
         return embedding
 
     def forward(self, t):
-        t_freq = self.timestep_embedding(t, self.frequency_embedding_size)
+        t_freq = self.timestep_embedding(t, self.frequency_embedding_size, dtype=t.dtype)
         t_emb = self.mlp(t_freq)
         return t_emb
 
@@ -377,6 +410,10 @@ class DDiTBlock(nn.Module):
         self.mlp = nn.Sequential(nn.Linear(dim, mlp_ratio * dim, bias=True), nn.GELU(approximate="tanh"), nn.Linear(mlp_ratio * dim, dim, bias=True))
         self.dropout2 = nn.Dropout(dropout)
         self.dropout = dropout
+        model_config = DUOConfig()
+        self.__cache = BufferCache()
+        self.rotary_emb = RotaryEmbedding(model_config, self.__cache)
+        self.head_dim = dim // n_heads
 
         if self.adaLN:
             self.adaLN_modulation = nn.Linear(cond_dim, 6 * dim)
@@ -403,7 +440,10 @@ class DDiTBlock(nn.Module):
             x = modulate_fused(x, shift_msa, scale_msa)
 
         qkv = einops.rearrange(self.attn_qkv(x), "b s (three h d) -> b s three h d", three=3, h=self.n_heads)
-        q, k, v = split_and_apply_rotary_pos_emb(qkv, rotary_cos_sin)
+        alternate = None
+        if not is_flash_attn_available():
+            alternate = self.rotary_emb
+        q, k, v = split_and_apply_rotary_pos_emb(qkv, rotary_cos_sin, seq_len=x.shape[1], n_heads=self.n_heads, head_dim=self.head_dim)
 
         x = regular_attention_multi_headed(q, k, v)
 
@@ -592,12 +632,23 @@ class DUO(transformers.PreTrainedModel):
         self,
         input_ids: torch.LongTensor = None,
         timesteps: torch.FloatTensor = None,
-        output_hidden_states: typing.Optional[bool] = None,
-        return_dict: typing.Optional[bool] = None,
-    ) -> typing.Union[torch.Tensor, typing.Tuple, transformers.modeling_outputs.MaskedLMOutput]:
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[torch.Tensor, Tuple, transformers.modeling_outputs.MaskedLMOutput]:
         """HF-compatible forward method."""
         output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if input_ids is None:
+            raise ValueError("DUO.forward requires input_ids")
+
+        # DUO is a diffusion-style masked LM; non-causal mode requires a timestep
+        # conditioning vector. Provide a sensible default (t=0) for HF callers
+        # that only pass input_ids.
+        if timesteps is None and not self.config.causal:
+            # Use model's device, not input_ids.device, since model may be on GPU
+            model_device = next(self.parameters()).device
+            timesteps = torch.zeros((input_ids.shape[0],), device=model_device, dtype=precision)
 
         logits, all_hidden_states = self.backbone(
             x=input_ids,

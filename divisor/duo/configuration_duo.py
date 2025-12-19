@@ -21,6 +21,10 @@ class DUOConfig(PretrainedConfig):
         n_heads: int = 12,
         dropout: float = 0.1,
         var_min: bool = True,
+        rope_theta: float = 10000.0,
+        max_sequence_length: int = 1024,
+        init_device: str | None = None,
+        d_model: int = 768,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -34,6 +38,12 @@ class DUOConfig(PretrainedConfig):
         self.dropout = dropout
         self.var_min = var_min
         self.model_type = model_type
+        self.rope_theta = rope_theta
+        self.max_sequence_length = max_sequence_length
+        self.init_device = init_device
+        self.d_model = d_model
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 
 AutoConfig.register("DUO", DUOConfig)

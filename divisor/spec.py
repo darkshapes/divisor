@@ -65,6 +65,16 @@ class ModelSpec:
     init: InitialParamsFlux | InitialParamsMMaDA | None = None
 
 
+@dataclass
+class InitialParamsDUO:
+    """Default initialization parameters for DUO models."""
+
+
+@dataclass
+class DUOParams:
+    """Default parameters for DUO models."""
+
+
 flux_configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]] = {
     "model.dit.flux1-dev": {
         "*": ModelSpec(
@@ -257,11 +267,8 @@ mmada_configs = {
         "duo": ModelSpec(
             repo_id="s-sahoo/DUO",
             file_name="model.safetensors",
-            init=InitialParamsMMaDA(
-                steps=128,
-                gen_length=1024,
-                block_length=256,
-            ),
+            init=InitialParamsDUO,
+            params=DUOParams,
         ),
     },
 }
