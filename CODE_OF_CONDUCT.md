@@ -1,18 +1,18 @@
 ---
 title: "Code of Conduct"
-date-last-modified: 2027-07-28,
+date-last-modified: 2025-20-12,
 authors:
-  name: ["EXDYSA"],
+  name: ["˶𝞢⤬⫒ⵖsᐼ˶"],
   pronouns: ["she/her"]
   name: ["Marinus Savoritias"]
   pronouns: ["fae/faer, ve/veirs"]
 license: CC0-1.0
-version: 0.0.3
+version: 0.0.4
 ---
 
 # Code of Conduct Quick Reference
 
-Version = 0.0.2_2025-20-11
+Version = 0.0.4_2025-20-12
 
 ## Behavior Guide
 
