@@ -22,6 +22,7 @@ divisor = "divisor.app:main"
 dev = [
   "nnll[dev]",
   "pdoc>=16.0.0",
+  "ty>=0.0.5",
 ]
 [project.optional-dependencies]
 cuda = [
