@@ -13,10 +13,8 @@ from divisor.controller import rng
 from divisor.flux1.loading import load_ae, load_clip, load_flow_model, load_t5
 from divisor.flux1.sampling import denoise, get_schedule, prepare
 from divisor.noise import prepare_4d_noise_for_3d_model
-from divisor.spec import get_model_spec, InitialParamsFlux, flux_configs, ModelSpec
-from divisor.state import (
-    MenuState,
-)
+from divisor.spec import InitialParamsFlux, ModelSpec, flux_configs, get_model_spec
+from divisor.state import MenuState
 
 
 def parse_prompt(state: MenuState) -> MenuState | None:
