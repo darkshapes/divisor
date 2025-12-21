@@ -10,7 +10,7 @@ from nnll.init_gpu import device
 import torch
 from torch import Tensor
 
-from divisor.state import GetImagePredictionSettings, GetPredictionSettings
+from divisor.state import ImageEmbeddingState, TextEmbeddingState
 from divisor.variant import apply_variation_noise
 
 
@@ -139,7 +139,7 @@ def _is_flux2_model(model: Any) -> bool:
         return "Flux2" in model_class_name or "flux2" in model_class_name.lower()
 
 
-def create_get_prediction(pred_set: GetPredictionSettings, img_set: GetImagePredictionSettings) -> Callable[[Tensor, float, float, Optional[list[int]]], Tensor]:
+def create_get_prediction(pred_set: TextEmbeddingState, img_set: ImageEmbeddingState) -> Callable[[Tensor, float, float, Optional[list[int]]], Tensor]:
     """Create a function to generate model prediction with caching.\n
     :param config: GetPredictionSettings containing all configuration parameters
     :return: Function that generates predictions with caching"""

@@ -28,10 +28,10 @@ from divisor.contents import get_dtype
 from nnll.init_gpu import device
 from divisor.flux2.model import Flux2
 from divisor.state import (
-    DenoiseSettings,
-    DenoiseSettingsFlux2,
-    GetImagePredictionSettings,
-    GetPredictionSettings,
+    InferenceState,
+    InferenceStateFlux2,
+    ImageEmbeddingState,
+    TextEmbeddingState,
 )
 from divisor.interaction_context import InteractionContext
 
@@ -289,9 +289,9 @@ def compute_empirical_mu(image_seq_len: int, num_steps: int) -> float:
     return float(mu)
 
 
-def denoise(settings: DenoiseSettingsFlux2) -> Tensor:
+def denoise(settings: InferenceStateFlux2) -> Tensor:
     """Simple non-interactive denoising function for Flux2.\n
-    :param settings: SimpleDenoiseSettingsFlux2 containing all denoising configuration parameters
+    :param settings: InferenceStateFlux2 containing all denoising configuration parameters
     :returns: Denoised image tensor"""
     model = settings.model
     img = settings.img
@@ -331,11 +331,11 @@ def denoise(settings: DenoiseSettingsFlux2) -> Tensor:
 @torch.inference_mode()
 def denoise_interactive(
     model: Flux2,
-    settings: DenoiseSettings,
+    settings: InferenceState,
 ):
     """Interactive denoising using Flux2 model with optional ManualTimestepController.\n
     :param model: Flux2 model instance
-    :param settings: DenoiseSettings containing all denoising configuration parameters"""
+    :param settings: InferenceState containing all denoising configuration parameters"""
 
     # Extract settings for easier access
     img = settings.img
@@ -393,7 +393,7 @@ def denoise_interactive(
         text_embedder=text_embedder,
     )
 
-    pred_set = GetPredictionSettings(
+    pred_set = TextEmbeddingState(
         model_ref=model_ref,
         state=state,
         current_txt=current_txt,
@@ -402,7 +402,7 @@ def denoise_interactive(
         cached_prediction=cached_prediction,
         cached_prediction_state=cached_prediction_state,
     )
-    img_set = GetImagePredictionSettings(
+    img_set = ImageEmbeddingState(
         img_ids=img_ids,
         img=img,
         img_cond=None,  # img_cond not used in Flux2 (only img_cond_seq)

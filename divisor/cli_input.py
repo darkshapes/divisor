@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
-# <!-- // /*  d a r k s h a p e s */ -->
+# <!-- // /*  d a r k s h a p e s */ -->d
 
 """CLI helper functions for interactive input handling and state management."""
 
@@ -8,7 +8,7 @@ from typing import Callable, Optional
 from nnll.console import nfo
 
 from divisor.controller import ManualTimestepController
-from divisor.state import DenoisingState
+from divisor.state import MenuState
 
 
 def get_float_input(
@@ -55,22 +55,22 @@ def get_int_input(
 
 def handle_toggle(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     current_value: bool,
     setter_func: Callable[[bool], None],
     clear_prediction_cache: Optional[Callable[[], None]] = None,
     enabled_msg: str = "ENABLED",
     disabled_msg: str = "DISABLED",
-) -> DenoisingState:
+) -> MenuState:
     """Generic toggle handler.\n
     :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
+    :param state: Current input state
     :param current_value: Current boolean value
     :param setter_func: Controller setter method
     :param clear_prediction_cache: Optional function to clear cache
     :param enabled_msg: Message when enabled
     :param disabled_msg: Message when disabled
-    :returns: Updated DenoisingState
+    :returns: Updated input state
     """
     new_value = not current_value
     setter_func(new_value)
@@ -84,7 +84,7 @@ def handle_toggle(
 
 def handle_float_setting(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     prompt: str,
     current_value: float,
     setter_func: Callable[[float], None],
@@ -92,10 +92,10 @@ def handle_float_setting(
     default_value: float = 0.0,
     value_name: str = "value",
     format_str: str = ".4f",
-) -> DenoisingState:
+) -> MenuState:
     """Handle float setting with reset option.\n
     :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
+    :param state: Current input state
     :param prompt: Input prompt
     :param current_value: Current float value
     :param setter_func: Controller setter method
@@ -103,7 +103,7 @@ def handle_float_setting(
     :param default_value: Default value for empty input
     :param value_name: Name of the value for messages
     :param format_str: Format string for display
-    :returns: Updated DenoisingState
+    :returns: Updated input state
     """
     try:
         user_input = input(prompt).strip()

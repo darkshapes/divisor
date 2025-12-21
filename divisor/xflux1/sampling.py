@@ -21,18 +21,18 @@ from divisor.denoise_step import (
 from divisor.flux1.sampling import prepare, unpack
 from divisor.interaction_context import InteractionContext
 from divisor.state import (
-    AdditionalPredictionSettings,
-    DenoiseSettings,
-    GetImagePredictionSettings,
-    GetPredictionSettings,
+    StepStateXFlux1,
+    InferenceState,
+    ImageEmbeddingState,
+    TextEmbeddingState,
 )
 from divisor.xflux1.model import XFlux
 
 
 def create_get_prediction_xflux1(
-    pred_set: GetPredictionSettings,
-    img_set: GetImagePredictionSettings,
-    add_set: AdditionalPredictionSettings,
+    pred_set: TextEmbeddingState,
+    img_set: ImageEmbeddingState,
+    add_set: StepStateXFlux1,
 ) -> Callable[[Tensor, float, float, list[int] | None], Tensor]:
     """Create a function to generate model prediction with caching for XFlux1.\n
     :param config: GetPredictionSettings containing all configuration parameters
@@ -158,11 +158,11 @@ def create_get_prediction_xflux1(
 @torch.inference_mode()
 def denoise(
     model: XFlux,
-    settings: DenoiseSettings,
+    settings: InferenceState,
 ):
     """Denoise using XFlux model with optional ManualTimestepController.\n
     :param model: XFlux model instance
-    :param settings: DenoiseSettings containing all denoising configuration parameters"""
+    :param settings: Denoising state containing all denoising configuration parameters"""
 
     # Extract settings for easier access
     img = settings.img
@@ -244,7 +244,7 @@ def denoise(
 
     recompute_text_embeddings = create_recompute_text_embeddings(img, t5, clip, current_txt, current_txt_ids, current_vec, current_prompt, clear_prediction_cache, is_flux2=False)
 
-    pred_set = GetPredictionSettings(
+    pred_set = TextEmbeddingState(
         model_ref=model_ref,
         state=state,
         current_txt=current_txt,
@@ -258,7 +258,7 @@ def denoise(
         current_neg_vec=current_neg_vec,  # type: ignore
         true_gs=true_gs,
     )
-    img_set = GetImagePredictionSettings(
+    img_set = ImageEmbeddingState(
         img_ids=img_ids,
         img=img,
         img_cond=None,
@@ -269,7 +269,7 @@ def denoise(
         ip_scale=ip_scale,
         neg_ip_scale=neg_ip_scale,
     )
-    add_set = AdditionalPredictionSettings(
+    add_set = StepStateXFlux1(
         timestep_to_start_cfg=timestep_to_start_cfg,
         current_timestep_index=current_timestep_index,
     )

@@ -11,7 +11,7 @@ from torch import Tensor
 
 
 @dataclass
-class TimestepState:
+class StepState:
     """Runtime state that changes at each denoising step."""
 
     current_timestep: float
@@ -27,16 +27,15 @@ class TimestepState:
         timestep_index: int | None = None,
         total_timesteps: int | None = None,
         previous_timestep: float | None = None,
-    ) -> "TimestepState":
-        """Create a new TimestepState with updated runtime fields.
+    ) -> "StepState":
+        """Create a new class with updated runtime fields.
 
         :param current_timestep: Current timestep value (if None, keeps existing)
         :param current_sample: Current sample tensor (if None, keeps existing)
         :param timestep_index: Current timestep index (if None, keeps existing)
         :param total_timesteps: Total number of timesteps (if None, keeps existing)
         :param previous_timestep: Previous timestep value (if None, keeps existing)
-        :returns: New TimestepState with updated fields
-        """
+        :returns: New class with updated fields"""
         return replace(
             self,
             current_timestep=current_timestep if current_timestep is not None else self.current_timestep,
@@ -48,58 +47,53 @@ class TimestepState:
 
 
 @dataclass
-class DenoisingState:
-    """State of the denoising process at a given timestep.
-
+class MenuState:
+    """State of the input at a given timestep.\n
     This is the single source of truth for denoising configuration and runtime state.
     Use from_cli_args() to create from command-line arguments, and with_runtime_state()
-    to update runtime fields during denoising.
-    """
+    to update runtime fields during denoising."""
 
-    # Runtime state (changes every step)
-    timestep_state: TimestepState
-
-    # Configuration (set at start, may change via controller)
-    guidance: float
-    layer_dropout: List[int] | None = None
-    width: int = 1024
+    step_state: StepState  # Runtime state (changes every step)
+    guidance: float  # Configuration (set at start, may change via controller)
+    num_steps: int
+    deterministic: bool = False
     height: int = 1024
-    seed: int = 0
-    prompt: str | None = None
-    num_steps: int | None = None
+    layer_dropout: List[int] | None = None
     neg_prompt: str | None = None
-    vae_shift_offset: float = 0.0
-    vae_scale_offset: float = 0.0
+    prompt: str | None = None
+    seed: int = 0
     use_previous_as_mask: bool = False
+    vae_scale_offset: float = 0.0
+    vae_shift_offset: float = 0.0
     variation_seed: int = 0
     variation_strength: float = 0.0
-    deterministic: bool = False
+    width: int = 1024
 
     # Convenience properties for backward compatibility
     @property
     def current_timestep(self) -> float:
         """Current timestep value."""
-        return self.timestep_state.current_timestep
+        return self.step_state.current_timestep
 
     @property
     def current_sample(self) -> torch.Tensor:
         """Current sample tensor."""
-        return self.timestep_state.current_sample
+        return self.step_state.current_sample
 
     @property
     def timestep_index(self) -> int:
         """Current timestep index."""
-        return self.timestep_state.timestep_index
+        return self.step_state.timestep_index
 
     @property
     def total_timesteps(self) -> int:
         """Total number of timesteps."""
-        return self.timestep_state.total_timesteps
+        return self.step_state.total_timesteps
 
     @property
     def previous_timestep(self) -> float | None:
         """Previous timestep value."""
-        return self.timestep_state.previous_timestep
+        return self.step_state.previous_timestep
 
     @classmethod
     def from_cli_args(
@@ -114,8 +108,8 @@ class DenoisingState:
         current_sample: torch.Tensor | None = None,
         timesteps: List[float] | None = None,
         **kwargs,
-    ) -> "DenoisingState":
-        """Create DenoisingState from CLI arguments.
+    ) -> "MenuState":
+        """Create input state from CLI arguments.
 
         :param prompt: Text prompt
         :param width: Image width
@@ -127,11 +121,10 @@ class DenoisingState:
         :param current_sample: Initial sample tensor (if available, otherwise empty tensor)
         :param timesteps: List of timesteps (if available, used to determine total_timesteps)
         :param kwargs: Additional fields to set (e.g., deterministic, vae_shift_offset, etc.)
-        :returns: DenoisingState initialized from CLI args
-        """
+        :returns: Input state initialized from CLI args"""
         total_timesteps = len(timesteps) if timesteps else num_steps
 
-        timestep_state = TimestepState(
+        step_state = StepState(
             current_timestep=0.0,
             previous_timestep=None,
             current_sample=current_sample if current_sample is not None else torch.empty(0),
@@ -140,7 +133,7 @@ class DenoisingState:
         )
 
         return cls(
-            timestep_state=timestep_state,
+            step_state=step_state,
             guidance=guidance,
             width=width,
             height=height,
@@ -159,31 +152,27 @@ class DenoisingState:
         timestep_index: int,
         total_timesteps: int | None = None,
         previous_timestep: float | None = None,
-    ) -> "DenoisingState":
-        """Create a new DenoisingState with updated runtime state.
-
-        Delegates to TimestepState.with_runtime_state() and replaces the timestep.
-
+    ) -> "MenuState":
+        """Create a new input state with updated runtime state and timestep state.\n
         :param current_timestep: Current timestep value
         :param current_sample: Current sample tensor
         :param timestep_index: Current timestep index
         :param total_timesteps: Total number of timesteps (if changed)
         :param previous_timestep: Previous timestep value
-        :returns: New DenoisingState with updated runtime fields
-        """
-        new_timestep = self.timestep_state.with_runtime_state(
+        :returns: New input state with updated runtime fields"""
+        new_timestep = self.step_state.with_runtime_state(
             current_timestep=current_timestep,
             current_sample=current_sample,
             timestep_index=timestep_index,
             total_timesteps=total_timesteps,
             previous_timestep=previous_timestep,
         )
-        return replace(self, timestep_state=new_timestep)
+        return replace(self, step_state=new_timestep)
 
 
 @dataclass
-class GetImagePredictionSettings:
-    """Image-related configuration for get_prediction function creation."""
+class ImageEmbeddingState:
+    """Image-related configuration for prompt function creation."""
 
     img_ids: Tensor
     img: Tensor
@@ -197,8 +186,8 @@ class GetImagePredictionSettings:
 
 
 @dataclass
-class GetPredictionSettings:
-    """Base configuration class for get_prediction function creation."""
+class TextEmbeddingState:
+    """Base configuration class for text prompt function creation."""
 
     model_ref: List[Any]
     state: Any
@@ -215,7 +204,7 @@ class GetPredictionSettings:
 
 
 @dataclass
-class AdditionalPredictionSettings:
+class StepStateXFlux1:
     """Additional configuration for XFlux1-specific prediction settings."""
 
     timestep_to_start_cfg: int
@@ -223,15 +212,16 @@ class AdditionalPredictionSettings:
 
 
 @dataclass
-class DenoiseSettings:
-    """Base configuration class for denoise function parameters."""
+class InferenceState:
+    """Base configuration class for denoise function parameters.\n
+    Single source of truth for tensor-related operations"""
 
     # Model and core inputs (required)
     img: Tensor
     img_ids: Tensor
     txt: Tensor
     txt_ids: Tensor
-    state: Any  # DenoisingState
+    state: MenuState
     ae: Any  # AutoEncoder
     timesteps: List[float]
     vec: Tensor | None = None  # CLIP embeddings (Flux1/XFlux1)
@@ -259,8 +249,8 @@ class DenoiseSettings:
 
 
 @dataclass
-class DenoiseSettingsFlux2:
-    """Configuration for simple (non-interactive) Flux2 denoising."""
+class InferenceStateFlux2:
+    """Configuration for simple (non-interactive) Flux2 denoising tensor operations."""
 
     model: Any  # Flux2
     img: Tensor

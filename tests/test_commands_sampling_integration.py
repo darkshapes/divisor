@@ -21,7 +21,7 @@ from divisor.keybinds import (
     toggle_buffer_mask,
     toggle_deterministic,
 )
-from divisor.state import DenoiseSettings, DenoisingState, TimestepState
+from divisor.state import InferenceState, MenuState, StepState
 
 
 class TestCommandsSamplingIntegration:
@@ -32,15 +32,15 @@ class TestCommandsSamplingIntegration:
         """Create a mock controller for testing."""
         controller = Mock(spec=ManualTimestepController)
         controller.is_complete = False
-        timestep_state = TimestepState(
+        step_state = StepState(
             current_timestep=0.5,
             previous_timestep=0.6,
             current_sample=torch.randn(1, 16, 8, 8),
             timestep_index=0,
             total_timesteps=10,
         )
-        controller.current_state = DenoisingState(
-            timestep_state=timestep_state,
+        controller.current_state = MenuState(
+            step_state=step_state,
             guidance=4.0,
             layer_dropout=None,
             width=512,
@@ -159,7 +159,7 @@ class TestCommandsSamplingIntegration:
         )
 
         with patch("divisor.keybinds.get_int_input", return_value=999):
-            with patch("divisor.keybinds.prepare_noise_for_model", return_value=torch.randn(1, 16, 32, 32)):
+            with patch("divisor.keybinds.prepare_4d_noise_for_3d_model", return_value=torch.randn(1, 16, 32, 32)):
                 result = change_seed(mock_controller, initial_state, interaction_context)
 
                 # Verify set_seed was called with correct value
@@ -354,17 +354,15 @@ class TestCommandsSamplingIntegration:
         txt_ids = torch.zeros(1, 77, 3)
         vec = torch.randn(1, 77, 768)
 
-        from divisor.state import TimestepState
-
-        timestep_state = TimestepState(
+        step_state = StepState(
             current_timestep=0.0,
             previous_timestep=None,
             current_sample=img,
             timestep_index=0,
             total_timesteps=10,
         )
-        state = DenoisingState(
-            timestep_state=timestep_state,
+        state = MenuState(
+            step_state=step_state,
             guidance=4.0,
             layer_dropout=[1, 2],
             width=512,
@@ -397,7 +395,7 @@ class TestCommandsSamplingIntegration:
                 patch("divisor.flux1.sampling.sync_torch"),
                 patch("divisor.flux1.sampling.nfo"),
             ):
-                settings = DenoiseSettings(
+                settings = InferenceState(
                     img=img,
                     img_ids=img_ids,
                     txt=txt,
@@ -443,15 +441,15 @@ class TestCommandsSamplingIntegration:
         txt_ids = torch.zeros(1, 77, 3)
         vec = torch.randn(1, 77, 768)
 
-        timestep_state = TimestepState(
+        step_state = StepState(
             current_timestep=0.0,
             previous_timestep=None,
             current_sample=img,
             timestep_index=0,
             total_timesteps=2,
         )
-        state = DenoisingState(
-            timestep_state=timestep_state,
+        state = MenuState(
+            step_state=step_state,
             guidance=5.0,
             layer_dropout=None,
             width=512,
@@ -575,15 +573,15 @@ class TestCommandsSamplingIntegration:
         mock_ae.encoder = Mock()
         mock_ae.encoder.parameters.return_value = iter([mock_encoder_param])
 
-        timestep_state = TimestepState(
+        step_state = StepState(
             current_timestep=0.5,
             previous_timestep=0.6,
             current_sample=img,
             timestep_index=5,
             total_timesteps=10,
         )
-        state = DenoisingState(
-            timestep_state=timestep_state,
+        state = MenuState(
+            step_state=step_state,
             guidance=4.0,
             layer_dropout=None,
             width=512,
@@ -622,7 +620,7 @@ class TestCommandsSamplingIntegration:
                     patch("divisor.flux1.sampling.sync_torch"),
                     patch("divisor.flux1.sampling.nfo"),
                 ):
-                    settings = DenoiseSettings(
+                    settings = InferenceState(
                         img=img,
                         img_ids=img_ids,
                         txt=txt,
