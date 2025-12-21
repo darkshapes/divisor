@@ -34,12 +34,11 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           uv python install 3.13
           uv python pin 3.13
-          uv venv $HOME/.venv
           uv sync --group dev
 
       - name: Run tests
         env:
           HF_HOME: ${{ runner.temp }}/hf_cache
         run: |
-          source $HOME/.venv/bin/activate
+          source .venv/bin/activate
           pytest -v
