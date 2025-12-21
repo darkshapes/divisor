@@ -23,22 +23,17 @@ jobs:
         run: |
           sudo apt-get update
 
-      - name: Set up Python (with pip cache)
+
+      - name: Run Python Tests
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
-          cache: "pip"
-
-      - name: Create venv & install deps
+          python-version: 3.13
+      - name: Install dependencies and run tests
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           uv python install 3.13
           uv python pin 3.13
           uv sync --group dev
-
-      - name: Run tests
-        env:
-          HF_HOME: ${{ runner.temp }}/hf_cache
-        run: |
           source .venv/bin/activate
-          pytest -v
+          pytest -rPvv
+
