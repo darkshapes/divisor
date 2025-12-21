@@ -23,7 +23,7 @@ from divisor.flux2.sampling import (
 )
 from divisor.noise import get_noise
 from divisor.spec import flux_configs, get_model_spec, ModelSpec
-from divisor.state import DenoiseSettings, DenoisingState
+from divisor.state import InferenceState, MenuState
 
 
 def main(
@@ -83,11 +83,11 @@ def main(
         model = torch.compile(model)  # type: ignore[assignment]
         is_compiled = True
 
-    ae = load_ae(ae_spec, configs=flux_configs, device=torch.device("cpu") if offload else device)
+    ae = load_ae(ae_spec, device=torch.device("cpu") if offload else device)
     ae.eval()
     mistral.eval()
 
-    state = DenoisingState.from_cli_args(
+    state = MenuState.from_cli_args(
         prompt=prompt,
         width=width,
         height=height,
@@ -179,7 +179,7 @@ def main(
 
             x = denoise_interactive(
                 model,  # type: ignore
-                DenoiseSettings(
+                InferenceState(
                     img=x,
                     img_ids=x_ids,
                     txt=ctx,

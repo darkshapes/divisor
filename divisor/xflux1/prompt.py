@@ -15,7 +15,7 @@ from divisor.flux1.prompt import parse_prompt
 from divisor.flux1.sampling import get_schedule, prepare
 from divisor.noise import get_noise
 from divisor.spec import InitialParamsFlux, ModelSpec, flux_configs, get_model_spec
-from divisor.state import DenoisingState
+from divisor.state import MenuState
 from divisor.xflux1.sampling import denoise
 
 
@@ -85,10 +85,10 @@ def main(
         model = torch.compile(model)  # type: ignore[assignment]
         is_compiled = True
 
-    ae = load_ae(ae_spec, configs=flux_configs, device=torch.device("cpu") if offload else device)
+    ae = load_ae(ae_spec, device=torch.device("cpu") if offload else device)
 
     # Create initial state from CLI args
-    state = DenoisingState.from_cli_args(
+    state = MenuState.from_cli_args(
         prompt=prompt,
         width=width,
         height=height,
@@ -158,9 +158,9 @@ def main(
                 is_compiled = True
 
         # denoise initial noise
-        from divisor.state import DenoiseSettings
+        from divisor.state import InferenceState
 
-        settings = DenoiseSettings(
+        settings = InferenceState(
             img=inp["img"],
             img_ids=inp["img_ids"],
             txt=inp["txt"],

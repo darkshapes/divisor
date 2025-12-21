@@ -33,9 +33,8 @@ def get_noise(
     :param model_type: Model type - "flux1" or "flux2" (default: "flux1")
     :returns: Noise tensor with shape appropriate for the model type
 
-    Flux1 shape: (num_samples, 16, 2 * ceil(height/16), 2 * ceil(width/16))
-    Flux2 shape: (num_samples, 128, height // 16, width // 16)
-    """
+    Flux1 shape: (num_samples, 16, 2 * ceil(height/16), 2 * ceil(width/16))\n
+    Flux2 shape: (num_samples, 128, height // 16, width // 16)\n"""
 
     generator_device = rng._torch_generator.device if rng._torch_generator is not None else torch.device("cpu")
     rng._torch_generator.manual_seed(seed)  # type: ignore # reset seed
@@ -50,7 +49,7 @@ def get_noise(
     return noise
 
 
-def prepare_noise_for_model(
+def prepare_4d_noise_for_3d_model(
     height: int,
     width: int,
     seed: int,
@@ -113,11 +112,9 @@ def gumbel_sample(t, temperature=1.0, dim=-1, generator=None):
 
 
 def add_gumbel_noise(logits, temperature):
-    """
-    Adds Gumbel noise to logits for stochastic sampling.
-    Equivalent to argmax(logits + temperature * G) where G ~ Gumbel(0,1).
-    This version is more numerically stable than a version involving exp() and division.
-    """
+    """Adds Gumbel noise to logits for stochastic sampling.\n
+    Equivalent to argmax(logits + temperature * G) where G ~ Gumbel(0,1).\n
+    This version is more numerically stable than a version involving exp() and division."""
     if abs(temperature) < 1e-9:  # Effectively zero temperature
         return logits
 
@@ -130,12 +127,10 @@ def add_gumbel_noise(logits, temperature):
     return logits + temperature * standard_gumbel_noise
 
 
-def alt_gumbel_noise(logits, temperature):
-    """
-    The Gumbel max is a method for sampling categorical distributions.
-    arXiv:2409.02908 low-precision Gumbel Max improves MDM perplexity score but reduces generation quality.
-    Thus, we use float64... unless mps, in which case we must use float32
-    """
+def add_unstable_gumbel_noise(logits, temperature):
+    """The Gumbel max is a method for sampling categorical distributions.\n
+    arXiv:2409.02908 low-precision Gumbel Max improves MDM perplexity score but reduces generation quality.\n
+    Thus, we use float64... unless mps, in which case we must use float32"""
     precision = get_dtype(device)
     if temperature == 0:
         return logits

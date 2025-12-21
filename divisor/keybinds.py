@@ -8,8 +8,8 @@ Usage:
 ```
 @choice("g", "Guidance")
 def change_guidance(controller: ManualTimestepController,
-state: DenoisingState,
-clear_prediction_cache: Callable[[], None],) -> DenoisingState:
+state: MenuState,
+clear_prediction_cache: Callable[[], None],) -> MenuState:
 
     ...
 
@@ -37,8 +37,8 @@ from divisor.cli_input import (
 )
 from divisor.controller import ManualTimestepController, update_state_and_cache
 from divisor.interaction_context import InteractionContext
-from divisor.noise import prepare_noise_for_model
-from divisor.state import DenoisingState
+from divisor.noise import prepare_4d_noise_for_3d_model
+from divisor.state import MenuState
 
 
 def choice(key: str, description: str) -> Callable[[Callable], Callable]:
@@ -60,10 +60,10 @@ _CHOICE_REGISTRY: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 @choice("", "Advance (Enter)")
 def _advance(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     interaction_context: InteractionContext,
-) -> DenoisingState:
-    """Advance one step (default action when the user presses Enter)."""
+) -> MenuState:
+    """Advance one step (default action when Enter is pressed)."""
     nfo("Advancing...")
     interaction_context.clear_prediction_cache()
     controller.step()
@@ -73,9 +73,9 @@ def _advance(
 @choice("g", "Guidance")
 def change_guidance(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     interaction_context: InteractionContext,
-) -> DenoisingState:
+) -> MenuState:
     """Handle guidance value change.\n"""
     new_guidance = get_float_input(
         f"Enter new guidance value (current: {state.guidance:.2f}): ",
@@ -97,15 +97,14 @@ def change_guidance(
 @choice("l", "Layer Dropout")
 def change_layer_dropout(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     interaction_context: InteractionContext,
-) -> DenoisingState:
+) -> MenuState:
     """Handle layer dropout change.\n
     :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
+    :param state: Current input state
     :param interaction_context: InteractionContext arguments
-    :returns: Updated DenoisingState
-    """
+    :returns: Updated input state"""
     try:
         dropout_input = input("Enter layer indices to drop (comma-separated, or 'none' to clear): ").strip()
         if dropout_input.lower() == "none" or dropout_input == "":
@@ -126,14 +125,14 @@ def change_layer_dropout(
 @choice("r", "Resolution")
 def change_resolution(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     interaction_context: InteractionContext,
-) -> DenoisingState:
+) -> MenuState:
     """Handle resolution change.\n
     :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
+    :param state: Current input state
     :param clear_prediction_cache: Function to clear prediction cache
-    :returns: Updated DenoisingState"""
+    :returns: Updated input state"""
 
     try:
         if state.width is None or state.height is None:
@@ -173,18 +172,18 @@ def change_resolution(
 @choice("s", "Seed")
 def change_seed(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     interaction_context: InteractionContext,
-) -> DenoisingState:
+) -> MenuState:
     """Handle seed change.\n
     :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
+    :param state: Current menu state
     :param rng: Random number generator instance
     :param clear_prediction_cache: Function to clear prediction cache
     :param t5: Optional T5 embedder instance (required for Flux1/XFlux1 to prepare sample)
     :param clip: Optional CLIP embedder instance (required for Flux1/XFlux1 to prepare sample)
-    :returns: Updated DenoisingState
-    """
+    :returns: Updated menu state"""
+
     current_seed = state.seed if state.seed is not None else 0
     if new_seed := get_int_input(
         f"Enter new seed number (current: {current_seed}, or press Enter for random): ",
@@ -192,7 +191,7 @@ def change_seed(
         generate_random=lambda: interaction_context.rng.next_seed(),
     ):
         controller.set_seed(new_seed)
-        new_sample = prepare_noise_for_model(
+        new_sample = prepare_4d_noise_for_3d_model(
             height=state.height,  # type: ignore
             width=state.width,  # type: ignore
             seed=new_seed,
@@ -213,14 +212,14 @@ def change_seed(
 @choice("b", "Buffer Mask")
 def toggle_buffer_mask(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     interaction_context: InteractionContext,
-) -> DenoisingState:
+) -> MenuState:
     """Handle buffer mask toggle.\n
     :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
-    :returns: Updated DenoisingState
-    """
+    :param state: Current input state
+    :returns: Updated input state"""
+
     return handle_toggle(
         controller,
         state,
@@ -234,16 +233,16 @@ def toggle_buffer_mask(
 @choice("a", "Autoencoder Offset")
 def change_vae_offset(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     interaction_context: InteractionContext,
-) -> DenoisingState:
+) -> MenuState:
     """Handle VAE shift/scale offset change.\n
     :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
+    :param state: Current input state
     :param ae: Optional AutoEncoder instance
     :param clear_prediction_cache: Function to clear prediction cache
-    :returns: Updated DenoisingState
-    """
+    :returns: Updated input state"""
+
     if interaction_context.ae is None:
         nfo("AutoEncoder not available, cannot set VAE offset")
         return state
@@ -277,15 +276,14 @@ def change_vae_offset(
 @choice("d", "Deterministic")
 def toggle_deterministic(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     interaction_context: InteractionContext,
-) -> DenoisingState:
+) -> MenuState:
     """Handle deterministic mode toggle.\n
     :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
+    :param state: Current input state
     :param clear_prediction_cache: Function to clear prediction cache
-    :returns: Updated DenoisingState
-    """
+    :returns: Updated input state"""
 
     deterministic = not state.deterministic
     interaction_context.rng.random_mode(reproducible=deterministic)
@@ -305,15 +303,15 @@ def toggle_deterministic(
 @choice("p", "Prompt")
 def change_prompt(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     interaction_context: InteractionContext,
-) -> DenoisingState:
+) -> MenuState:
     """Handle prompt change.\n
     :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
+    :param state: Current input state
     :param clear_prediction_cache: Function to clear prediction cache
     :param recompute_text_embeddings: Optional function to recompute text embeddings
-    :returns: Updated DenoisingState"""
+    :returns: Updated input state"""
 
     current_prompt = state.prompt if state.prompt is not None else ""
     new_prompt = input(f"Enter new prompt (current: {current_prompt}): ").strip()
@@ -335,12 +333,11 @@ def change_prompt(
 @choice("e", "Edit Mode")
 def edit_mode(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     interaction_context: InteractionContext,
 ) -> None:
     """Handle edit mode (debugger breakpoint).\n
-    :param clear_prediction_cache: Function to clear prediction cache
-    """
+    :param clear_prediction_cache: Function to clear prediction cache"""
     nfo("Entering edit mode (use c/cont to exit)...")
     breakpoint()
     interaction_context.clear_prediction_cache()
@@ -349,14 +346,14 @@ def edit_mode(
 @choice("j", "Jump to Step")
 def jump_to_step(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     interaction_context: InteractionContext,
-) -> DenoisingState:
+) -> MenuState:
     """Run the controller forward until a user‑specified step index.\n
     :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState (unused – we return the controller’s final state)
+    :param state: Current input state (unused – we return the controller’s final state)
     :param clear_prediction_cache: Routine to nvalidate cache prediction.
-    :returns: DenoisingState post jump (or the current state if the target is out of range)."""
+    :returns: Input state post jump (or the current state if the target is out of range)."""
 
     target_str = input(f"Jump to step (0‑{controller.current_index} …{len(controller.timesteps) - 1}): ").strip()
     if not target_str.isdigit():
@@ -383,16 +380,15 @@ def jump_to_step(
 @choice("v", "Variation")
 def change_variation(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     interaction_context: InteractionContext,
-) -> DenoisingState:
+) -> MenuState:
     """Handle variation seed/strength change.\n
     :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
+    :param state: Current input state
     :param variation_rng: Variation random number generator instance
     :param clear_prediction_cache: Function to clear prediction cache
-    :returns: Updated DenoisingState
-    """
+    :returns: Updated input state"""
     try:
         var_input = input(
             f"Variation (current integer seed: {state.variation_seed}, float strength: {state.variation_strength:.3f}. type a number, leave empty for random seed, or use 0.0 to disable): "
@@ -433,14 +429,14 @@ def change_variation(
 @choice("w", "Rewind")
 def rewind(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     interaction_context: InteractionContext,
-) -> DenoisingState:
+) -> MenuState:
     """Rewind the controller by a specified number of steps.\n
     :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
+    :param state: Current input state
     :param clear_prediction_cache: Function to clear prediction cache
-    :returns: Updated DenoisingState"""
+    :returns: Updated input state"""
     import random as prng
 
     num_steps = get_int_input(
@@ -461,10 +457,10 @@ def rewind(
 # Optionally recompute the *remaining* schedule with a different compression
 # remaining = controller.timesteps[controller.current_index + 1 :]
 # new_tail = time_shift(
-#    mu=controller.mu,
-#    sigma=controller.sigma,
-#    tensor_step=torch.tensor(remaining),
-#    steps=len(remaining),
-#    compress=0.9,               # e.g. stretch the tail a bit
+#    schedule_mu=controller.mu,
+#    schedule_sigma=controller.sigma,
+#    original_timestep_tensor=torch.tensor(remaining),
+#    desired_step_count=len(remaining),
+#    compression_factor=0.9,               # e.g. stretch the tail a bit
 # )
 # controller.timesteps[controller.current_index + 1 :] = new_tail.tolist()

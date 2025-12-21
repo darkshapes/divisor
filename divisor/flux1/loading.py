@@ -173,7 +173,6 @@ def load_flow_model(
 
 def load_ae(
     model_spec: ModelSpec,
-    configs: dict[str, dict[str, ModelSpec | CompatibilitySpec]],
     device: torch.device = device,
 ) -> AutoEncoder1 | AutoEncoder2 | AutoencoderTiny:
     """Load the autoencoder model.\n

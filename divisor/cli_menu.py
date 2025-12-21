@@ -11,19 +11,19 @@ from nnll.console import nfo
 from divisor.controller import ManualTimestepController
 from divisor.interaction_context import InteractionContext
 from divisor.keybinds import _CHOICE_REGISTRY
-from divisor.state import DenoisingState
+from divisor.state import MenuState
 
 
 def _format_menu_line(
     key: str,
     entry: dict,
-    state: DenoisingState,
+    state: MenuState,
 ) -> str:
     """
     Build a printable menu line for a registry entry.\n
     param key: Shortcut key used in the menu (e.g. ``"g"`` for guidance).
     param entry: Registry entry containing at least a ``desc`` string and optionally a `state_keys`` list that maps to attributes on ``state``.
-    param state: The current :class:`~divisor.state.DenoisingState` instance.
+    param state: The current input state instance.
     returns: Formatted line ready for ``nfo`` output."""
     import torch
 
@@ -47,15 +47,15 @@ def _format_menu_line(
 
 def route_choices(
     controller: ManualTimestepController,
-    state: DenoisingState,
+    state: MenuState,
     interaction_context: InteractionContext,
     **kwargs: Any,
-) -> DenoisingState:
+) -> MenuState:
     """Process user choice input and return updated state.\n
     :param controller: ManualTimestepController instance
-    :param state: Current DenoisingState
+    :param state: Current input state
     :param interaction_context: InteractionContext instance
-    :returns: Updated DenoisingState
+    :returns: Updated input state
     """
 
     step = state.timestep_index
@@ -90,7 +90,7 @@ def route_choices(
         return controller.current_state
     elif choice in menu_keybinds:
         result = menu_keybinds[choice]()
-        state = result if isinstance(result, DenoisingState) else state
+        state = result if isinstance(result, MenuState) else state
     else:
         nfo("Invalid choice, please try again")
 

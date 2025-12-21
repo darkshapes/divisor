@@ -27,9 +27,9 @@ from divisor.flux1.model import Flux
 from divisor.flux1.text_embedder import HFEmbedder
 from divisor.interaction_context import InteractionContext
 from divisor.state import (
-    DenoiseSettings,
-    GetImagePredictionSettings,
-    GetPredictionSettings,
+    InferenceState,
+    ImageEmbeddingState,
+    TextEmbeddingState,
 )
 
 
@@ -73,13 +73,13 @@ def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[st
     }
 
 
-def time_shift(mu: float, sigma: float, t: Tensor) -> Tensor:
+def time_shift(schedule_mu: float, schedule_sigma: float, original_timestep_tensor: Tensor) -> Tensor:
     """Adjustable noise schedule. Compress or stretch any schedule to match a dynamic step sequence length.\n
-    :param mu: Original schedule parameter.
-    :param sigma: Original schedule parameter.
-    :param t: Tensor of original timesteps in [0,1].
+    :param schedule_mu: Original schedule parameter.
+    :param schedule_sigma: Original schedule parameter.
+    :param original_timestep_tensor: Tensor of original timesteps in [0,1].
     :returns: Adjusted timestep tensor."""
-    return math.exp(mu) / (math.exp(mu) + (1 / t - 1) ** sigma)
+    return math.exp(schedule_mu) / (math.exp(schedule_mu) + (1 / original_timestep_tensor - 1) ** schedule_sigma)
 
 
 def get_lin_function(x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: float = 1.15) -> Callable[[float], float]:
@@ -117,11 +117,11 @@ def get_schedule(
 @torch.inference_mode()
 def denoise(
     model: Flux,
-    settings: DenoiseSettings,
+    settings: InferenceState,
 ):
     """Denoise using Flux model with optional ManualTimestepController.\n
     :param model: Flux model instance
-    :param settings: DenoiseSettings containing all denoising configuration parameters"""
+    :param settings: InferenceState containing all denoising configuration parameters"""
 
     # Extract settings for easier access
     img = settings.img
@@ -147,7 +147,6 @@ def denoise(
     neg_vec = settings.neg_vec
     true_gs = settings.true_gs
 
-    # this is ignored for schnell
     current_layer_dropout = [initial_layer_dropout]
     previous_step_tensor: list[Optional[Tensor]] = [None]  # Store previous step's tensor for masking
     cached_prediction: list[Optional[Tensor]] = [None]  # Cache prediction to avoid duplicate model calls
@@ -155,19 +154,14 @@ def denoise(
     controller_ref: list[Optional["ManualTimestepController"]] = [None]  # Reference to controller for closure access
 
     model_ref: list[Flux] = [model]
-    # Ensure model is on the correct device (fixes meta device issue)
     target_device = img.device
-    # Safely get model device, handling Mock objects in tests
     try:
         model_device = next(model.parameters()).device
     except (TypeError, StopIteration, AttributeError):
-        # Fallback for Mock objects or models without parameters
-        # Assume model is already on correct device if we can't determine it
-        model_device = target_device
+        model_device = target_device  # Assume model is already on correct device if we can't determine it
     if model_device != target_device:
         model_ref[0] = model.to_empty(device=target_device)
 
-    # Store embeddings in mutable containers so they can be updated when prompt changes
     current_txt: list[Tensor] = [txt]
     current_txt_ids: list[Tensor] = [txt_ids]
     assert vec is not None, "vec (CLIP embeddings) is required for Flux1"
@@ -190,7 +184,7 @@ def denoise(
         img, t5, clip, current_txt, current_txt_ids, current_vec, current_prompt, clear_prediction_cache, is_flux2=False
     )
 
-    pred_set = GetPredictionSettings(
+    pred_set = TextEmbeddingState(
         model_ref=model_ref,
         state=state,
         current_txt=current_txt,
@@ -204,7 +198,7 @@ def denoise(
         current_neg_vec=current_neg_vec,  # pyright: ignore[reportArgumentType]
         true_gs=int(true_gs) if true_gs is not None else None,
     )
-    img_set = GetImagePredictionSettings(
+    img_set = ImageEmbeddingState(
         img_ids=img_ids,
         img=img,
         img_cond=img_cond,
