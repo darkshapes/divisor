@@ -32,7 +32,6 @@ def main(
 
     from divisor.acestep.pipeline_ace_step import ACEStepPipeline
     from divisor.acestep.ui.components import create_main_demo_ui
-    from divisor.acestep.data_sampler import DataSampler
 
     model_demo = ACEStepPipeline(
         checkpoint_dir=checkpoint_path,
@@ -41,12 +40,9 @@ def main(
         cpu_offload=cpu_offload,
         overlapped_decode=overlapped_decode,
     )
-    data_sampler = DataSampler()
 
     demo = create_main_demo_ui(
         text2music_process_func=model_demo.__call__,
-        sample_data_func=data_sampler.sample,
-        load_data_func=data_sampler.load_json,
     )
 
     demo.launch(server_name=server_name, server_port=port, share=share)

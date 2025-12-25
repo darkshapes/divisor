@@ -90,8 +90,6 @@ def dump_func(*args):
 def create_text2music_ui(
     gr,
     text2music_process_func,
-    sample_data_func=None,
-    load_data_func=None,
 ):
     with gr.Row(equal_height=True):
         # Get base output directory from environment variable, defaulting to CWD-relative 'outputs'.
@@ -841,71 +839,71 @@ def create_text2music_ui(
                 (json_data["ref_audio_input"] if "ref_audio_input" in json_data else None),
             )
 
-        def sample_data(lora_name_or_path_):
-            json_data = sample_data_func(lora_name_or_path_)
-            return json2output(json_data)
+        # def sample_data(lora_name_or_path_):
+        #     json_data = sample_data_func(lora_name_or_path_)
+        #     return json2output(json_data)
 
-        sample_bnt.click(
-            sample_data,
-            inputs=[lora_name_or_path],
-            outputs=[
-                audio_duration,
-                prompt,
-                lyrics,
-                infer_step,
-                guidance_scale,
-                scheduler_type,
-                cfg_type,
-                omega_scale,
-                manual_seeds,
-                guidance_interval,
-                guidance_interval_decay,
-                min_guidance_scale,
-                use_erg_tag,
-                use_erg_lyric,
-                use_erg_diffusion,
-                oss_steps,
-                guidance_scale_text,
-                guidance_scale_lyric,
-                audio2audio_enable,
-                ref_audio_strength,
-                ref_audio_input,
-            ],
-        )
+        # sample_bnt.click(
+        #     sample_data,
+        #     inputs=[lora_name_or_path],
+        #     outputs=[
+        #         audio_duration,
+        #         prompt,
+        #         lyrics,
+        #         infer_step,
+        #         guidance_scale,
+        #         scheduler_type,
+        #         cfg_type,
+        #         omega_scale,
+        #         manual_seeds,
+        #         guidance_interval,
+        #         guidance_interval_decay,
+        #         min_guidance_scale,
+        #         use_erg_tag,
+        #         use_erg_lyric,
+        #         use_erg_diffusion,
+        #         oss_steps,
+        #         guidance_scale_text,
+        #         guidance_scale_lyric,
+        #         audio2audio_enable,
+        #         ref_audio_strength,
+        #         ref_audio_input,
+        #     ],
+        # )
 
-        def load_data(json_file):
-            if isinstance(output_file_dir, str):
-                json_file = os.path.join(output_file_dir, json_file)
-            json_data = load_data_func(json_file)
-            return json2output(json_data)
+        # def load_data(json_file):
+        #     if isinstance(output_file_dir, str):
+        #         json_file = os.path.join(output_file_dir, json_file)
+        #     # json_data = load_data_func(json_file)
+        #     # return json2output(json_data)
 
-        load_bnt.click(
-            fn=load_data,
-            inputs=[output_files],
-            outputs=[
-                audio_duration,
-                prompt,
-                lyrics,
-                infer_step,
-                guidance_scale,
-                scheduler_type,
-                cfg_type,
-                omega_scale,
-                manual_seeds,
-                guidance_interval,
-                guidance_interval_decay,
-                min_guidance_scale,
-                use_erg_tag,
-                use_erg_lyric,
-                use_erg_diffusion,
-                oss_steps,
-                guidance_scale_text,
-                guidance_scale_lyric,
-                audio2audio_enable,
-                ref_audio_strength,
-                ref_audio_input,
-            ],
-        )
+        # load_bnt.click(
+        #     fn=load_data,
+        #     inputs=[output_files],
+        #     outputs=[
+        #         audio_duration,
+        #         prompt,
+        #         lyrics,
+        #         infer_step,
+        #         guidance_scale,
+        #         scheduler_type,
+        #         cfg_type,
+        #         omega_scale,
+        #         manual_seeds,
+        #         guidance_interval,
+        #         guidance_interval_decay,
+        #         min_guidance_scale,
+        #         use_erg_tag,
+        #         use_erg_lyric,
+        #         use_erg_diffusion,
+        #         oss_steps,
+        #         guidance_scale_text,
+        #         guidance_scale_lyric,
+        #         audio2audio_enable,
+        #         ref_audio_strength,
+        #         ref_audio_input,
+        #     ],
+        # )
 
     text2music_bnt.click(
         fn=text2music_process_func,
@@ -941,8 +939,6 @@ def create_text2music_ui(
 
 def create_main_demo_ui(
     text2music_process_func=dump_func,
-    sample_data_func=dump_func,
-    load_data_func=dump_func,
 ):
     with gr.Blocks(
         title="ACE-Step Model 1.0 DEMO",
@@ -956,8 +952,6 @@ def create_main_demo_ui(
             create_text2music_ui(
                 gr=gr,
                 text2music_process_func=text2music_process_func,
-                sample_data_func=sample_data_func,
-                load_data_func=load_data_func,
             )
     return demo
 
