@@ -16,15 +16,22 @@ class DataSampler:
         self.zh_rap_lora_input_params_files += list(Path(ZH_RAP_LORA_ROOT_DIR).glob("*.json"))
 
     def load_json(self, file_path):
+        """Load a JSON file located under this sampler's root directory.
+        The given file_path may be a simple filename or a relative path, but it is
+        always resolved relative to self.root_dir_path and must not escape that root.
+        interpret the incoming path relative to the configured root directory.
+        This prevents callers from supplying absolute paths or traversing outside
+        of self.root_dir_path using constructs like "../"."""
+
         file_path_obj = Path(file_path)
         if file_path_obj.is_absolute():
             raise ValueError(f"Absolute paths are not allowed: {file_path}")
-        resolved_path = file_path_obj.resolve()
+        combined_path = (self.root_dir_path / file_path_obj).resolve()
         try:
-            resolved_path.relative_to(self.root_dir_path)
+            combined_path.relative_to(self.root_dir_path)
         except ValueError:
             raise ValueError(f"Access to file outside of root directory is not allowed: {file_path}")
-        with resolved_path.open("r", encoding="utf-8") as f:
+        with combined_path.open("r", encoding="utf-8") as f:
             return json.load(f)
 
     def sample(self, lora_name_or_path=None):
