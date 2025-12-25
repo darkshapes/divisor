@@ -820,7 +820,7 @@ class LangSegment:
                 1,
                 (
                     TAG_S2,
-                    re.compile(r"([\(（{](?:\s*\w*\d\w*\s*)+[}）\)])"),
+                    re.compile(r"([\(（{][^}）\)]*?\d[^}）\)]*?[}）\])"),
                     self._process_pinyin,
                 ),  # Chinese Pinyin Tag.
             )
