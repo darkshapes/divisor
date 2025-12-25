@@ -15,10 +15,8 @@ from divisor.flux1.autoencoder import AutoEncoderParams as AutoEncoder1Params
 from divisor.flux1.model import FluxLoraWrapper, FluxParams
 from divisor.flux2.autoencoder import AutoEncoderParams as AutoEncoder2Params
 from divisor.flux2.model import Flux2Params
-from divisor.flux2.model import Flux2
 from divisor.xflux1.model import XFluxParams
-from divisor.xflux1.model import XFlux
-from divisor.mmada.modeling_mmada import MMadaConfig as MMaDAParams, MMadaModelLM
+from divisor.mmada.modeling_mmada import MMadaConfig as MMaDAParams
 
 
 @dataclass
@@ -53,8 +51,32 @@ class InitialParamsMMaDA:
 
 
 @dataclass
+class InitialParamsAceStep:
+    infer_steps: int
+    guidance_scale: float
+    scheduler_type: str
+    cfg_type: str
+
+
+@dataclass
 class AutoencoderTinyParams:
     """"""
+
+
+@dataclass
+class AceStepParams:
+    """"""
+
+    attention_head_dim: int
+    in_channels: int
+    inner_dim: int
+    max_position: int
+    mlp_ratio: float
+    num_attention_heads: int
+    num_layers: int
+    rope_theta: float
+    speaker_embedding_dim: int
+    text_embedding_dim: int
 
 
 @dataclass
@@ -257,6 +279,33 @@ mmada_configs = {
     },
 }
 
+acestep_configs = {
+    "model.dit.acestep": {
+        "*": ModelSpec(
+            repo_id="ACE-Step/ACE-Step-v1-3.5B",
+            file_name="ace_step_transformer/diffusion_pytest_model.safetensors",
+            init=InitialParamsAceStep(
+                infer_steps=60,
+                guidance_scale=15.0,
+                scheduler_type="euler",
+                cfg_type="apg",
+            ),
+            params=AceStepParams(
+                attention_head_dim=128,
+                in_channels=8,
+                inner_dim=2560,
+                max_position=32768,
+                mlp_ratio=2.5,
+                num_attention_heads=20,
+                num_layers=24,
+                rope_theta=1000000.0,
+                speaker_embedding_dim=512,
+                text_embedding_dim=768,
+            ),
+        )
+    }
+}
+
 
 def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> dict:
     """Optionally expand the state dict to match the model's parameters shapes.\n
@@ -335,3 +384,5 @@ def get_model_spec(mir_id: str, configs: dict[str, dict[str, ModelSpec | Compati
 mmada_map = build_available_models(mmada_configs)
 
 flux_map = build_available_models(flux_configs)
+
+acestep_map = build_available_models(acestep_configs)

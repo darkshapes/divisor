@@ -27,25 +27,25 @@ import torchaudio
 from tqdm import tqdm
 from transformers import AutoTokenizer, UMT5EncoderModel
 
-from acestep.apg_guidance import (
+from divisor.acestep.apg_guidance import (
     MomentumBuffer,
     apg_forward,
     cfg_double_condition_forward,
     cfg_forward,
     cfg_zero_star,
 )
-from acestep.cpu_offload import cpu_offload
-from acestep.language_segmentation import LangSegment, language_filters
-from acestep.models.ace_step_transformer import ACEStepTransformer2DModel
-from acestep.models.lyrics_utils.lyric_tokenizer import VoiceBpeTokenizer
-from acestep.music_dcae.music_dcae_pipeline import MusicDCAE
-from acestep.schedulers.scheduling_flow_match_euler_discrete import (
+from divisor.acestep.cpu_offload import cpu_offload
+from divisor.acestep.language_segmentation import LangSegment, language_filters
+from divisor.acestep.models.ace_step_transformer import ACEStepTransformer2DModel
+from divisor.acestep.models.lyrics_utils.lyric_tokenizer import VoiceBpeTokenizer
+from divisor.acestep.music_dcae.music_dcae_pipeline import MusicDCAE
+from divisor.acestep.schedulers.scheduling_flow_match_euler_discrete import (
     FlowMatchEulerDiscreteScheduler,
 )
-from acestep.schedulers.scheduling_flow_match_heun_discrete import (
+from divisor.acestep.schedulers.scheduling_flow_match_heun_discrete import (
     FlowMatchHeunDiscreteScheduler,
 )
-from acestep.schedulers.scheduling_flow_match_pingpong import FlowMatchPingPongScheduler
+from divisor.acestep.schedulers.scheduling_flow_match_pingpong import FlowMatchPingPongScheduler
 
 if device.type == "cuda":
     torch.backends.cudnn.benchmark = False
@@ -1220,7 +1220,7 @@ class ACEStepPipeline:
 
     def save_wav_file(self, target_wav, idx, save_path=None, sample_rate=48000, format="wav"):
         if save_path is None:
-            logger.warning("save_path is None, using default path ./outputs/")
+            nfo("save_path is None, using default path ./outputs/")
             base_path = "./outputs"
             ensure_directory_exists(base_path)
             output_path_wav = f"{base_path}/output_{time.strftime('%Y%m%d%H%M%S')}_{idx}." + format
@@ -1321,7 +1321,7 @@ class ACEStepPipeline:
             task = "audio2audio"
 
         if not self.loaded:
-            logger.warning("Checkpoint not loaded, loading checkpoint...")
+            nfo("Checkpoint not loaded, loading checkpoint...")
             if self.quantized:
                 self.load_quantized_checkpoint(self.checkpoint_dir)
             else:

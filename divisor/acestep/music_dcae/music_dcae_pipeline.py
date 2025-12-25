@@ -17,7 +17,7 @@ from diffusers.configuration_utils import ConfigMixin, register_to_config
 from tqdm import tqdm
 
 try:
-    from acestep.music_dcae.music_vocoder import ADaMoSHiFiGANV1
+    from divisor.acestep.music_dcae.music_vocoder import ADaMoSHiFiGANV1
 except ImportError:
     from music_vocoder import ADaMoSHiFiGANV1
 

@@ -64,7 +64,7 @@ from collections import defaultdict
 # For probability normalization in library use, the user must instantiate their own . An example of such usage is as follows:
 from py3langid.langid import LanguageIdentifier, MODEL_FILE
 
-from acestep.language_segmentation.utils.num import num2str
+from divisor.acestep.language_segmentation.utils.num import num2str
 
 # -----------------------------------
 # 更新日志：新版本分词更加精准。
@@ -133,7 +133,6 @@ from acestep.language_segmentation.utils.num import num2str
 # 【SSML】<date>=按日期发音。支持 2024年08月24, 2024/8/24, 2024-08, 08-24, 24 等输入。
 # ===========================================================================================================
 class LangSSML:
-
     def __init__(self):
         # 纯数字
         self._zh_numerals_number = {
@@ -211,9 +210,7 @@ class LangSSML:
                 nonZero(minutes, "分", f_currency),
                 nonZero(seconds, "秒", f_currency),
             )
-        hours_minutes_seconds = re.sub(
-            r"([点|分|秒])+", r"\1", f"{hours}{minutes}{seconds}"
-        )
+        hours_minutes_seconds = re.sub(r"([点|分|秒])+", r"\1", f"{hours}{minutes}{seconds}")
         output_date = f"{year_month_day}{hours_minutes_seconds}"
         return output_date
 
@@ -226,10 +223,7 @@ class LangSSML:
         output = ""
         for item in arrs:
             if re.match(pattern, item):
-                output += "".join(
-                    zh_numerals[digit] if digit in zh_numerals else ""
-                    for digit in str(item)
-                )
+                output += "".join(zh_numerals[digit] if digit in zh_numerals else "" for digit in str(item))
             else:
                 output += item
         output = output.replace(".", "点")
@@ -263,9 +257,7 @@ class LangSSML:
 
 
 class LangSegment:
-
     def __init__(self):
-
         self.langid = LanguageIdentifier.from_pickled_model(MODEL_FILE, norm_probs=True)
 
         self._text_cache = None
@@ -380,9 +372,7 @@ class LangSegment:
             self._lang_count = defaultdict(int)
         lang_count = self._lang_count
         if not "|" in language:
-            lang_count[language] += (
-                int(len(text) * 2) if language == "zh" else len(text)
-            )
+            lang_count[language] += int(len(text) * 2) if language == "zh" else len(text)
         self._lang_count = lang_count
 
     def _clear_text_number(self, text):
@@ -411,7 +401,7 @@ class LangSegment:
                 preData["text"] = text
                 return preData
             elif pre_is_number == True:
-                text = f'{preData["text"]}{text}'
+                text = f"{preData['text']}{text}"
                 words.pop()
         elif is_number == True:
             priority_language = self._get_filters_string()[:2]
@@ -419,15 +409,7 @@ class LangSegment:
                 language = priority_language
         data = {"lang": language, "text": text, "score": score, "symbol": symbol}
         filters = self.Langfilters
-        if (
-            filters is None
-            or len(filters) == 0
-            or "?" in language
-            or language in filters
-            or language in filters[0]
-            or filters[0] == "*"
-            or filters[0] in "alls-mixs-autos"
-        ):
+        if filters is None or len(filters) == 0 or "?" in language or language in filters or language in filters[0] or filters[0] == "*" or filters[0] in "alls-mixs-autos":
             words.append(data)
             self._statistics(data["lang"], data["text"])
         return data
@@ -463,14 +445,10 @@ class LangSegment:
                     preResult["symbol"],
                 )
         pre_lang = preResult["lang"] if preResult else None
-        if ("|" in language) and (
-            pre_lang and not pre_lang in language and not "…" in language
-        ):
+        if ("|" in language) and (pre_lang and not pre_lang in language and not "…" in language):
             language = language.split("|")[0]
         if "|" in language:
-            self._text_waits.append(
-                {"lang": language, "text": text, "score": score, "symbol": symbol}
-            )
+            self._text_waits.append({"lang": language, "text": text, "score": score, "symbol": symbol})
         else:
             self._saveData(words, language, text, score, symbol)
         return False
@@ -512,11 +490,7 @@ class LangSegment:
     def _lang_classify(self, cleans_text):
         language, score = self.langid.classify(cleans_text)
         # fix: Huggingface is np.float32
-        if (
-            score is not None
-            and isinstance(score, np.generic)
-            and hasattr(score, "item")
-        ):
+        if score is not None and isinstance(score, np.generic) and hasattr(score, "item"):
             score = score.item()
         score = round(score, 3)
         return language, score
@@ -541,16 +515,9 @@ class LangSegment:
             EOS = index >= (lines_max - 1)
             nextId = index + 1
             nextText = lines[nextId] if not EOS else ""
-            nextPunc = (
-                len(re.sub(regex_pattern, "", re.sub(r"\n+", "", nextText)).strip())
-                == 0
-            )
-            textPunc = (
-                len(re.sub(regex_pattern, "", re.sub(r"\n+", "", text)).strip()) == 0
-            )
-            if not EOS and (
-                textPunc == True or (len(nextText.strip()) >= 0 and nextPunc == True)
-            ):
+            nextPunc = len(re.sub(regex_pattern, "", re.sub(r"\n+", "", nextText)).strip()) == 0
+            textPunc = len(re.sub(regex_pattern, "", re.sub(r"\n+", "", text)).strip()) == 0
+            if not EOS and (textPunc == True or (len(nextText.strip()) >= 0 and nextPunc == True)):
                 lines[nextId] = f"{text}{nextText}"
                 continue
             number_tags = re.compile(r"(⑥\d{6,}⑥)")
@@ -563,16 +530,12 @@ class LangSegment:
                 continue
             language, score = self._lang_classify(cleans_text)
             prev_language, prev_text = self._get_prev_data(words)
-            if language != LANG_ZH and all(
-                "\u4e00" <= c <= "\u9fff" for c in re.sub(r"\s", "", cleans_text)
-            ):
+            if language != LANG_ZH and all("\u4e00" <= c <= "\u9fff" for c in re.sub(r"\s", "", cleans_text)):
                 language, score = LANG_ZH, 1
             if len(cleans_text) <= 5 and self._is_chinese(cleans_text):
                 filters_string = self._get_filters_string()
                 if score < self.LangPriorityThreshold and len(filters_string) > 0:
-                    index_ja, index_zh = filters_string.find(
-                        LANG_JA
-                    ), filters_string.find(LANG_ZH)
+                    index_ja, index_zh = filters_string.find(LANG_JA), filters_string.find(LANG_ZH)
                     if index_ja != -1 and index_ja < index_zh:
                         language = LANG_JA
                     elif index_zh != -1 and index_zh < index_ja:
@@ -584,22 +547,11 @@ class LangSegment:
                 elif EOS and LANG_EOS:
                     language = LANG_ZH if len(cleans_text) <= 1 else language
                 else:
-                    LANG_UNKNOWN = (
-                        LANG_ZH_JA
-                        if language == LANG_ZH
-                        or (len(cleans_text) <= 2 and prev_language == LANG_ZH)
-                        else LANG_JA_ZH
-                    )
+                    LANG_UNKNOWN = LANG_ZH_JA if language == LANG_ZH or (len(cleans_text) <= 2 and prev_language == LANG_ZH) else LANG_JA_ZH
                     match_end, match_char = self._match_ending(text, -1)
-                    referen = (
-                        prev_language in LANG_UNKNOWN or LANG_UNKNOWN in prev_language
-                        if prev_language
-                        else False
-                    )
+                    referen = prev_language in LANG_UNKNOWN or LANG_UNKNOWN in prev_language if prev_language else False
                     if match_char in "。.":
-                        language = (
-                            prev_language if referen and len(words) > 0 else language
-                        )
+                        language = prev_language if referen and len(words) > 0 else language
                     else:
                         language = f"{LANG_UNKNOWN}|…"
             text, *_ = re.subn(number_tags, self._restore_number, text)
@@ -781,7 +733,7 @@ class LangSegment:
             else:
                 pre_data = new_word[-1]
                 if cur_data["lang"] == pre_data["lang"]:
-                    pre_data["text"] = f'{pre_data["text"]}{cur_data["text"]}'
+                    pre_data["text"] = f"{pre_data['text']}{cur_data['text']}"
                 else:
                     new_word.append(cur_data)
         return new_word
@@ -817,11 +769,7 @@ class LangSegment:
         # 实验性：法语字符支持。Prise en charge des caractères français
         RE_FR = "" if not enablePreview else "àáâãäåæçèéêëìíîïðñòóôõöùúûüýþÿ"
         # 实验性：越南语字符支持。Hỗ trợ ký tự tiếng Việt
-        RE_VI = (
-            ""
-            if not enablePreview
-            else "đơưăáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựôâêơưỷỹ"
-        )
+        RE_VI = "" if not enablePreview else "đơưăáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựôâêơưỷỹ"
         # -------------------------------------------------------------------------------------------------------
         # Basic options:
         process_list = [
@@ -852,9 +800,7 @@ class LangSegment:
             ),  # Number words, Universal in all languages, Ignore it.
             (
                 TAG_EN,
-                re.compile(
-                    re.sub(r"LANGUAGE", f"a-zA-Z{RE_FR}{RE_VI}", TAG_BASE.pattern)
-                ),
+                re.compile(re.sub(r"LANGUAGE", f"a-zA-Z{RE_FR}{RE_VI}", TAG_BASE.pattern)),
                 self._process_english,
             ),  # English words + Other language support.
             (
@@ -864,9 +810,7 @@ class LangSegment:
             ),  # Regular quotes
             (
                 TAG_P2,
-                re.compile(
-                    r"([\n]*[【《（(“‘])([^【《（(“‘’”)）》】]{3,})([’”)）》】][\W\s]*[\n]{,1})"
-                ),
+                re.compile(r"([\n]*[【《（(“‘])([^【《（(“‘’”)）》】]{3,})([’”)）》】][\W\s]*[\n]{,1})"),
                 self._process_quotes,
             ),  # Special quotes, There are left and right.
         ]
@@ -895,23 +839,15 @@ class LangSegment:
                 continue
             cur_data = cur_word[0] if len(cur_word) > 0 else None
             pre_data = words[-1] if len(words) > 0 else None
-            if (
-                cur_data
-                and pre_data
-                and cur_data["lang"] == pre_data["lang"]
-                and cur_data["symbol"] == False
-                and pre_data["symbol"]
-            ):
-                cur_data["text"] = f'{pre_data["text"]}{cur_data["text"]}'
+            if cur_data and pre_data and cur_data["lang"] == pre_data["lang"] and cur_data["symbol"] == False and pre_data["symbol"]:
+                cur_data["text"] = f"{pre_data['text']}{cur_data['text']}"
                 words.pop()
             words += cur_word
         if self.isLangMerge == True:
             words = self._merge_results(words)
         lang_count = self._lang_count
         if lang_count and len(lang_count) > 0:
-            lang_count = dict(
-                sorted(lang_count.items(), key=lambda x: x[1], reverse=True)
-            )
+            lang_count = dict(sorted(lang_count.items(), key=lambda x: x[1], reverse=True))
             lang_count = list(lang_count.items())
             self._lang_count = lang_count
         return words
@@ -943,12 +879,8 @@ class LangSegment:
             return [("zh", 0)]
         lang_counts = defaultdict(int)
         for d in text_langs:
-            lang_counts[d["lang"]] += (
-                int(len(d["text"]) * 2) if d["lang"] == "zh" else len(d["text"])
-            )
-        lang_counts = dict(
-            sorted(lang_counts.items(), key=lambda x: x[1], reverse=True)
-        )
+            lang_counts[d["lang"]] += int(len(d["text"]) * 2) if d["lang"] == "zh" else len(d["text"])
+        lang_counts = dict(sorted(lang_counts.items(), key=lambda x: x[1], reverse=True))
         lang_counts = list(lang_counts.items())
         self._lang_count = lang_counts
         return lang_counts
@@ -990,7 +922,6 @@ def printList(langlist):
 
 
 def main():
-
     # -----------------------------------
     # 更新日志：新版本分词更加精准。
     # Changelog: The new version of the word segmentation is more accurate.

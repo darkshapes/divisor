@@ -11,7 +11,11 @@ requires-python = ">=3.13"
 dependencies = [
     "fire>=0.7.1",
     "gradio>=5.23.1",
+    "hangul-romanize>=0.1.0",
     "nnll[full]",
+    "py3langid>=0.3.0",
+    "pypinyin>=0.55.0",
+    "torchcodec>=0.9.1",
     "transformers",
 ]
 [project.scripts]
