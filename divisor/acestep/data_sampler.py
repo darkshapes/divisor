@@ -17,6 +17,8 @@ class DataSampler:
 
     def load_json(self, file_path):
         file_path_obj = Path(file_path)
+        if file_path_obj.is_absolute():
+            raise ValueError(f"Absolute paths are not allowed: {file_path}")
         resolved_path = file_path_obj.resolve()
         try:
             resolved_path.relative_to(self.root_dir_path)
