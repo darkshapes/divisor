@@ -1,0 +1,47 @@
+{
+    "format": "wav",
+    "lora_name_or_path": "none",
+    "lora_weight": 1,
+    "task": "text2music",
+    "prompt": "black music, funk, metal, punk, soul, rock guitar, drums, bass, keyboard, percussion, groove, dynamic",
+    "lyrics": "[verse]\nLook in my eyes, what do you see?\nThe cult of personality\nI know your anger, I know your dreams\nI've been everything you wanna be\nOh, I'm the cult of personality\n\n[verse]\nLike Mussolini and Kennedy\nI'm the cult of personality\nThe cult of personality\nThe cult of personality\n\n[chorus]\nNeon lights, a Nobel Prize\nWhen a mirror speaks, the reflection lies\nYou won't have to follow me\nOnly you can set me free\n\n[verse]\nI sell the things you need to be\nI'm the smiling face on your TV\nOh, I'm the cult of personality\nI exploit you, still you love me\nI tell you one and one makes three\nOh, I'm the cult of personality\n\n[verse]\nLike Joseph Stalin and Gandhi\nOh, I'm the cult of personality\nThe cult of personality\nThe cult of personality\n\n[chorus]\nNeon lights, Nobel Prize\nWhen a leader speaks, that leader dies\nYou won't have to follow me\nOnly you can set you free\n\n[verse]\nYou gave me fortune, you gave me fame\nYou gave me power in your God's name\nI'm every person you need to be\nOh, I'm the cult\nOf person-ality\n\n[verse]\nI'm the cult of, I'm the cult of\nI'm the cult of, I'm the cult of\nI'm the cult of, I'm the cult of\nI'm the cult of, I'm the cult of personality\n",
+    "audio_duration": 74.17270751800783,
+    "infer_step": 60,
+    "guidance_scale": 15,
+    "scheduler_type": "euler",
+    "cfg_type": "apg",
+    "omega_scale": 10,
+    "guidance_interval": 0.5,
+    "guidance_interval_decay": 0,
+    "min_guidance_scale": 3,
+    "use_erg_tag": true,
+    "use_erg_lyric": false,
+    "use_erg_diffusion": true,
+    "oss_steps": [],
+    "timecosts": {
+        "preprocess": 0.09366297721862793,
+        "diffusion": 43.67449593544006,
+        "latent2audio": 4.103964805603027
+    },
+    "actual_seeds": [
+        1710170859
+    ],
+    "retake_seeds": [
+        3550653202
+    ],
+    "retake_variance": 0.5,
+    "guidance_scale_text": 0,
+    "guidance_scale_lyric": 0,
+    "repaint_start": 0,
+    "repaint_end": 0,
+    "edit_n_min": 0.0,
+    "edit_n_max": 1.0,
+    "edit_n_avg": 1,
+    "src_audio_path": null,
+    "edit_target_prompt": null,
+    "edit_target_lyrics": null,
+    "audio2audio_enable": false,
+    "ref_audio_strength": 0.5,
+    "ref_audio_input": null,
+    "audio_path": "./outputs/output_20251225003049_0.wav"
+}

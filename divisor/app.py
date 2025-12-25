@@ -12,17 +12,16 @@ import sys
 
 from fire import Fire
 
-from divisor.spec import flux_map
-from divisor.spec import mmada_map
+from divisor.spec import flux_map, mmada_map, acestep_map
 
-model_args = flux_map | mmada_map
+model_args = flux_map | mmada_map | acestep_map
 
 
 def main():
     """Main entry point that routes to appropriate inference function."""
     parser = argparse.ArgumentParser(description="Divisor Multimodal CLI")
     parser.usage = "divisor --model-type dev --quantization <args>"
-    parser.epilog = """Valid arguments : 
+    parser.epilog = """Valid arguments :
     --ae_id, --width, --height, --guidance, --seed, --prompt,
     --tiny, --device, --num_steps, --loop,
     --offload, --compile, --verbose
@@ -49,7 +48,7 @@ def main():
         from divisor.mmada.gradio import main
 
         remaining_argv = [""]  # Gradio app doesn't need arguments
-    else:
+    elif args.model_type in flux_map:
         model_id = args.model_type
         if args.model_type == "flux2-dev":
             from divisor.flux2.prompt import main
@@ -59,6 +58,8 @@ def main():
             else:
                 from divisor.flux1.prompt import main
         remaining_argv = ["--mir-id", model_args[model_id]] + remaining_argv  # change to     model_args[model_id]
+    else:
+        from divisor.acestep.gradio import main
 
     sys.argv = [sys.argv[0]] + remaining_argv
     Fire(main)
