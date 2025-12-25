@@ -6,15 +6,23 @@ import random
 DEFAULT_ROOT_DIR = "examples/default/input_params"
 ZH_RAP_LORA_ROOT_DIR = "examples/zh_rap_lora/input_params"
 
+
 class DataSampler:
     def __init__(self, root_dir=DEFAULT_ROOT_DIR):
-        self.root_dir = root_dir
-        self.input_params_files = list(Path(self.root_dir).glob("*.json"))
+        self.root_dir_path = Path(root_dir).resolve()
+        self.root_dir = str(self.root_dir_path)
+        self.input_params_files = list(self.root_dir_path.glob("*.json"))
         self.zh_rap_lora_input_params_files = list(Path(ZH_RAP_LORA_ROOT_DIR).glob("*.json"))
         self.zh_rap_lora_input_params_files += list(Path(ZH_RAP_LORA_ROOT_DIR).glob("*.json"))
 
     def load_json(self, file_path):
-        with open(file_path, "r", encoding="utf-8") as f:
+        file_path_obj = Path(file_path)
+        resolved_path = file_path_obj.resolve()
+        try:
+            resolved_path.relative_to(self.root_dir_path)
+        except ValueError:
+            raise ValueError(f"Access to file outside of root directory is not allowed: {file_path}")
+        with resolved_path.open("r", encoding="utf-8") as f:
             return json.load(f)
 
     def sample(self, lora_name_or_path=None):
