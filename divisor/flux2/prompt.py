@@ -4,12 +4,10 @@
 
 from dataclasses import replace
 
-from PIL import Image
+import torch
 from fire import Fire
 from nnll.console import nfo
-from divisor.registry import device
-import torch
-
+from PIL import Image
 
 from divisor.controller import rng
 from divisor.flux1.loading import load_ae, load_flow_model, load_mistral_small_embedder
@@ -22,7 +20,8 @@ from divisor.flux2.sampling import (
     get_schedule,
 )
 from divisor.noise import get_noise
-from divisor.spec import flux_configs, get_model_spec, ModelSpec
+from divisor.registry import gfx_device, gfx_dtype, empty_cache
+from divisor.spec import ModelSpec, flux_configs, get_model_spec
 from divisor.state import InferenceState, MenuState
 
 
@@ -35,7 +34,7 @@ def main(
     seed: int = rng.next_seed(),
     prompt: str = "",
     quantization: bool = False,
-    device: torch.device = device,
+    device: torch.device = gfx_device,
     num_steps: int = 50,
     upsample_prompt: bool = False,
     loop: bool = False,
@@ -57,7 +56,7 @@ def main(
     :param guidance: guidance value used for guidance distillation
     """
 
-    precision = gfx.dtype()
+    precision = gfx_dtype
     prompt_parts = prompt.split("|")
     if len(prompt_parts) == 1:
         prompt = prompt_parts[0]
@@ -168,7 +167,7 @@ def main(
                 else:
                     mistral = None
                     del mistral
-                gfx.empty_cache()
+                empty_cache
                 if is_compiled:
                     raise RuntimeError("Cannot use offload=True with compile=True. Compile after model is on device, or disable compilation when offloading.")
                 model = model.to(device)  # type: ignore[attr-defined]

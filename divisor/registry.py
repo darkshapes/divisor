@@ -5,9 +5,17 @@ from typing import Any
 
 from nnll.init_gpu import Gfx
 
-gfx = Gfx
-device = gfx.device()
-dtype = gfx.dtype()
+
+def _init_gfx() -> Gfx:
+    """Initialise (and cache) a single :class:`~nnll.init_gpu.Gfx` instance."""
+    return Gfx(full_precision=False)
+
+
+gfx: Gfx = _init_gfx()
+gfx_device = gfx.device
+gfx_dtype = gfx.dtype
+gfx_sync = gfx.sync
+empty_cache = gfx.empty_cache
 
 
 def get_lora_rank(checkpoint):
@@ -45,3 +53,21 @@ def build_available_models(configs: dict[str, Any]) -> dict[str, str]:
                 model_args[key] = model
 
     return model_args
+
+
+if __name__ == "__main__":
+    import typing as _t
+
+    def _debug_dump() -> dict[str, _t.Any]:
+        """
+        Return a dictionary with the most important registry values.
+        Useful when debugging import‑order issues.
+        """
+        return {
+            "gfx": gfx,
+            "device": gfx_device,
+            "device_repr": repr(gfx_device),
+            "device.type": gfx_device.type,
+        }
+
+    print(_debug_dump())

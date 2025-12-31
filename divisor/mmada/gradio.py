@@ -3,7 +3,7 @@
 
 import gradio as gr
 from nnll.console import nfo
-from divisor.registry import device
+from divisor.registry import gfx_device
 
 from divisor.flux1.loading import load_mmada_model
 from divisor.mmada import app
@@ -113,7 +113,7 @@ with gr.Blocks(css=css_styles) as demo:
         default_model_id = model_choices[0]
         try:
             model_spec = get_model_spec(default_model_id, mmada_configs)
-            load_mmada_model(model_spec, device=device)
+            load_mmada_model(model_spec, device=gfx_device)
             status = f"Model '{default_model_id}' loaded successfully."
         except Exception as e:
             status = f"Error loading model '{default_model_id}': {str(e)}"
@@ -144,7 +144,7 @@ with gr.Blocks(css=css_styles) as demo:
 
 
 def main():
-    nfo(f"Starting Gradio App. Attempting to use device: {device.type}")
+    nfo(f"Starting Gradio App. Attempting to use device: {gfx_device.type}")
     demo.launch(share=True)
 
 

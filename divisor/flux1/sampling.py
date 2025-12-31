@@ -23,7 +23,7 @@ from divisor.denoise_step import (
 from divisor.flux1.model import Flux
 from divisor.flux1.text_embedder import HFEmbedder
 from divisor.interaction_context import InteractionContext
-from divisor.registry import gfx
+from divisor.registry import gfx_sync
 from divisor.save import SaveFile
 from divisor.state import (
     ImageEmbeddingState,
@@ -134,7 +134,7 @@ def denoise(
     img_cond = settings.img_cond
     img_cond_seq = settings.img_cond_seq
     img_cond_seq_ids = settings.img_cond_seq_ids
-    from divisor.registry import device as default_device
+    from divisor.registry import gfx_device as default_device
 
     denoise_device = settings.device if settings.device is not None else default_device
     initial_layer_dropout = settings.initial_layer_dropout
@@ -279,7 +279,7 @@ def denoise(
             # Unpack requires float32, but we'll convert back to correct dtype after
             intermediate = unpack(intermediate.float(), state.height, state.width)
 
-            gfx.sync()
+            gfx_sync
             t1 = time.perf_counter()
 
             nfo(f"Step time: {t1 - t0:.1f}s")

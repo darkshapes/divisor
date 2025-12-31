@@ -18,7 +18,7 @@ from divisor.dimoo.config import SPECIAL_TOKENS
 from divisor.dimoo.prompt_utils import generate_text_prompt
 from divisor.dimoo.text_understanding_generator import generate_text_understanding
 from divisor.mmada.modeling_llada import LLaDAModelLM
-from divisor.registry import device
+from divisor.registry import gfx_device
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 

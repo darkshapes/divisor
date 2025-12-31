@@ -44,15 +44,15 @@ from divisor.acestep.schedulers.scheduling_flow_match_heun_discrete import (
     FlowMatchHeunDiscreteScheduler,
 )
 from divisor.acestep.schedulers.scheduling_flow_match_pingpong import FlowMatchPingPongScheduler
-from divisor.registry import device, gfx
+from divisor.registry import gfx_device, empty_cache
 
-if device.type == "cuda":
+if gfx_device.type == "cuda":
     torch.backends.cudnn.benchmark = False
     torch.set_float32_matmul_precision("high")
     torch.backends.cudnn.deterministic = True
     torch.backends.cuda.matmul.allow_tf32 = False
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-elif device.type == "mps":
+elif gfx_device.type == "mps":
     os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = "/opt/homebrew/lib"
 
 SUPPORT_LANGUAGES = {
@@ -115,13 +115,13 @@ class ACEStepPipeline:
         self.lora_path = "none"
         self.lora_weight = 1
         self.dtype = torch.bfloat16 if dtype == "bfloat16" else torch.float32
-        if device.type == "mps":
+        if gfx_device.type == "mps":
             if self.dtype == torch.bfloat16:
                 self.dtype = torch.float16
 
         if "ACE_PIPELINE_DTYPE" in os.environ and len(os.environ["ACE_PIPELINE_DTYPE"]):
             self.dtype = getattr(torch, os.environ["ACE_PIPELINE_DTYPE"])
-        self.device = device
+        self.device: torch.device = gfx_device
         self.loaded = False
         self.torch_compile = torch_compile
         self.cpu_offload = cpu_offload
@@ -1474,7 +1474,7 @@ class ACEStepPipeline:
         )
 
         # Clean up memory after generation
-        gfx.empty_cache()
+        empty_cache
 
         end_time = time.time()
         latent2audio_time_cost = end_time - start_time

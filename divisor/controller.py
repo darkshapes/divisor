@@ -6,21 +6,21 @@ Interactive denoising with manual timestep control.
 Allows users to manually increment through timesteps one at a time.
 """
 
-from dataclasses import asdict
 import json
+from dataclasses import asdict
 from typing import Any, Callable, Optional
 
+import torch
 from nnll.console import nfo
 from nnll.hyperchain import HyperChain
-from divisor.registry import device
 from nnll.random import RNGState
-import torch
 
 from divisor.interaction_context import InteractionContext
+from divisor.registry import gfx_device
 from divisor.state import MenuState, StepState
 
-rng = RNGState(device=device.type)
-variation_rng = RNGState(device=device.type)
+rng = RNGState(device=gfx_device.type)
+variation_rng = RNGState(device=gfx_device.type)
 
 
 def time_shift(

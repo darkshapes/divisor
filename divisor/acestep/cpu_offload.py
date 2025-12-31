@@ -4,7 +4,7 @@
 import torch
 import functools
 from typing import Callable, TypeVar
-from divisor.registry import gfx
+from divisor.registry import gfx_sync, empty_cache
 
 
 class CpuOffloader:
@@ -21,8 +21,8 @@ class CpuOffloader:
     def __exit__(self, *args):
         if not hasattr(self.model, "torchao_quantized"):
             self.model.to("cpu")
-        gfx.sync()
-        gfx.cache()
+        gfx_sync
+        empty_cache
 
 
 T = TypeVar("T")

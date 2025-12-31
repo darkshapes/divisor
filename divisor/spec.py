@@ -10,7 +10,7 @@ from typing import Any
 from nnll.console import nfo
 import torch
 
-from divisor.contents import build_available_models
+from divisor.registry import build_available_models
 from divisor.flux1.autoencoder import AutoEncoderParams as AutoEncoder1Params
 from divisor.flux1.model import FluxLoraWrapper, FluxParams
 from divisor.flux2.autoencoder import AutoEncoderParams as AutoEncoder2Params

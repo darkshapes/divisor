@@ -31,7 +31,7 @@ from transformers.models.auto import AutoModel
 from transformers.cache_utils import Cache
 from contextlib import nullcontext
 
-from divisor.registry import device
+from divisor.registry import gfx_device
 
 if sys.version_info.minor > 8:
     from collections.abc import MutableMapping
@@ -195,7 +195,7 @@ def _non_meta_init_device(config: ModelConfig) -> torch.device:
     if config.init_device is not None and config.init_device != "meta":
         return torch.device(config.init_device)
     else:
-        return device
+        return gfx_device
 
 
 class Dropout(nn.Dropout):
@@ -262,7 +262,7 @@ class LayerNormBase(nn.Module):
             torch.nn.init.zeros_(self.bias)  # type: ignore
 
 
-def get_autocast_context(device: torch.device = device) -> torch.autocast | nullcontext:
+def get_autocast_context(device: torch.device = gfx_device) -> torch.autocast | nullcontext:
     if device.type == "cuda" or device.type == "cpu":
         context = torch.autocast(device_type=device.type, enabled=False)
     else:
@@ -617,7 +617,7 @@ class LLaDABlock(nn.Module):
         # `is_autocast_cpu_enabled()` for CPU autocast.
         # See https://github.com/pytorch/pytorch/issues/110966.
         if torch.is_autocast_enabled():
-            target_dtype = torch.get_autocast_dtype(device.type)
+            target_dtype = torch.get_autocast_dtype(gfx_device.type)
         if bias.dtype != target_dtype:
             bias = bias.to(target_dtype)
             ensure_finite_(bias, check_neg_inf=True, check_pos_inf=False)
@@ -1018,7 +1018,7 @@ class LLaDAModel(nn.Module):
         if not (0 < self.config.block_group_size <= self.config.n_layers and self.config.n_layers % self.config.block_group_size == 0):
             raise Exception("n layers must be divisible by block group size")
 
-        if self.config.init_device == "cuda" or device.type == "cuda":
+        if self.config.init_device == "cuda" or gfx_device.type == "cuda":
             torch.backends.cuda.enable_flash_sdp(True)
             torch.backends.cuda.enable_mem_efficient_sdp(False)  # this is super slow so make sure torch won't use it
 

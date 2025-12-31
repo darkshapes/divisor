@@ -4,16 +4,16 @@
 
 from dataclasses import replace
 
+import torch
 from fire import Fire
 from nnll.console import nfo
-from divisor.registry import device
-import torch
 
 from divisor.controller import rng
 from divisor.flux1.loading import load_ae, load_clip, load_flow_model, load_t5
 from divisor.flux1.prompt import parse_prompt
 from divisor.flux1.sampling import get_schedule, prepare
 from divisor.noise import get_noise
+from divisor.registry import empty_cache, gfx_device
 from divisor.spec import InitialParamsFlux, ModelSpec, flux_configs, get_model_spec
 from divisor.state import MenuState
 from divisor.xflux1.sampling import denoise
@@ -29,7 +29,7 @@ def main(
     seed: int = rng.next_seed(),
     prompt: str = "",
     quantization: bool = False,
-    device: torch.device = device,
+    device: torch.device = gfx_device,
     num_steps: int = 50,
     loop: bool = False,
     offload: bool = False,
@@ -125,7 +125,7 @@ def main(
         # prepare input
         if offload:
             ae = ae.cpu()
-            gfx.empty_cache()
+            empty_cache
 
             t5, clip = t5.to(device), clip.to(device)
         inp = prepare(t5, clip, x, prompt=state.prompt)
@@ -140,7 +140,7 @@ def main(
         # offload TEs to CPU, load model to gpu
         if offload:
             t5, clip = t5.cpu(), clip.cpu()
-            gfx.empty_cache()
+            empty_cache
             # Move model to device
             if is_compiled:
                 # Can't move compiled models, so recompile after moving

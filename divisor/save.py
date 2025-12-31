@@ -2,7 +2,7 @@
 # <!-- // /*  d a r k s h a p e s */ -->
 
 from pathlib import Path
-from nnll.save_generation import name_save_file_as, save_with_metadata
+from nnll.save_generation import name_save_file_as, save_output
 from nnll.constants import ExtensionType
 from nnll.hyperchain import HyperChain
 from PIL import Image
@@ -38,4 +38,4 @@ class SaveFile:
             extension=self.extension,
             save_folder_path=self.save_folder_path,
         )
-        save_with_metadata(file_path_named, self.intermediate_image, str(self.hyperchain))
+        save_output(file_path_named, self.intermediate_image, str(self.hyperchain))

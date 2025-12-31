@@ -391,7 +391,7 @@ class TestCommandsSamplingIntegration:
             # Mock other dependencies
             with (
                 patch("divisor.flux1.sampling.SaveFile"),
-                patch("divisor.flux1.sampling.gfx.sync"),
+                patch("divisor.flux1.sampling.gfx_sync"),
                 patch("divisor.flux1.sampling.nfo"),
             ):
                 settings = InferenceState(
@@ -492,7 +492,7 @@ class TestCommandsSamplingIntegration:
 
             with (
                 patch("divisor.flux1.sampling.SaveFile"),
-                patch("divisor.flux1.sampling.gfx.sync"),
+                patch("divisor.flux1.sampling.gfx_sync"),
                 patch("divisor.flux1.sampling.nfo"),
                 patch("divisor.flux1.sampling.route_choices", return_value=state),
             ):
@@ -614,7 +614,7 @@ class TestCommandsSamplingIntegration:
 
                 with (
                     patch("divisor.flux1.sampling.SaveFile"),
-                    patch("divisor.flux1.sampling.gfx.sync"),
+                    patch("divisor.flux1.sampling.gfx_sync"),
                     patch("divisor.flux1.sampling.nfo"),
                 ):
                     settings = InferenceState(

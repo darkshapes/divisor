@@ -17,7 +17,7 @@ from divisor.denoise_step import (
 )
 from divisor.flux1.sampling import prepare, unpack
 from divisor.interaction_context import InteractionContext
-from divisor.registry import device, gfx
+from divisor.registry import gfx_device, gfx_sync
 from divisor.save import SaveFile
 from divisor.state import (
     ImageEmbeddingState,
@@ -79,7 +79,7 @@ def create_get_prediction_xflux1(
             model_dtype = next(pred_set.model_ref[0].parameters()).dtype
         except (TypeError, StopIteration, AttributeError):
             model_dtype = sample.dtype
-        use_autocast = device.type == "cuda"
+        use_autocast = gfx_device.type == "cuda"
 
         if not use_autocast:
             sample = sample.to(dtype=model_dtype)
@@ -346,9 +346,9 @@ def denoise(
             # Unpack requires float32, but we'll convert back to correct dtype after
             intermediate = unpack(intermediate.float(), state.height, state.width)
 
-            from divisor.registry import device as default_device
+            from divisor.registry import gfx_device as default_device
 
-            gfx.sync()
+            gfx_sync
             t1 = time.perf_counter()
 
             nfo(f"Step time: {t1 - t0:.1f}s")

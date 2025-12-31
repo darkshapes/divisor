@@ -5,7 +5,7 @@
 from functools import partial
 import math
 
-from divisor.registry import device
+from divisor.registry import gfx_device
 import torch
 import torch.nn.functional as F
 from torchvision import transforms

@@ -26,8 +26,8 @@ from divisor.flux2.model import Flux2, Flux2Params
 from divisor.flux2.text_encoder import Mistral3SmallEmbedder
 from divisor.mmada.modeling_mmada import MMadaConfig as MMaDAParams
 from divisor.mmada.modeling_mmada import MMadaModelLM as MMaDAModelLM
-from divisor.registry import dtype, device
-from divisor.spec import CompatibilitySpec, ModelSpec, optionally_expand_state_dict
+from divisor.registry import gfx_device, gfx_dtype
+from divisor.spec import ModelSpec, optionally_expand_state_dict
 from divisor.xflux1.model import XFlux, XFluxParams
 
 
@@ -115,7 +115,7 @@ def load_lora_weights(
     model: FluxLoraWrapper,
     lora_repo_id: str,
     lora_filename: str,
-    device: str | torch.device = device,
+    device: str | torch.device = gfx_device,
     verbose: bool = True,
 ) -> None:
     """Load LoRA weights into a FluxLoraWrapper model.\n
@@ -134,7 +134,7 @@ def load_lora_weights(
 
 def load_flow_model(
     model_spec: ModelSpec,
-    device: torch.device = device,
+    device: torch.device = gfx_device,
     verbose: bool = True,
     lora_repo_id: str | None = None,
     lora_filename: str | None = None,
@@ -176,7 +176,7 @@ def load_flow_model(
 
 def load_ae(
     model_spec: ModelSpec,
-    device: torch.device = device,
+    device: torch.device = gfx_device,
 ) -> AutoEncoder1 | AutoEncoder2 | AutoencoderTiny:
     """Load the autoencoder model.\n
     :param mir_id: Model ID (e.g., "model.vae.flux1-dev" or "model.taesd.flux1-dev")
@@ -206,7 +206,7 @@ def load_ae(
 
 def load_mmada_model(
     model_spec: ModelSpec,
-    device: torch.device = device,
+    device: torch.device = gfx_device,
 ) -> MMaDAModelLM:
     """Load a MMaDA model\n
     :param model_spec: ModelSpec object containing model details
@@ -216,7 +216,7 @@ def load_mmada_model(
     :returns: Loaded MMaDA model
     :raises: TypeError if model_spec.params is not a MMaDAParams
     """
-    precision = dtype()
+    precision = gfx_dtype
     if isinstance(model_spec.params, MMaDAParams):
         model_spec.params.llm_model_path = model_spec.repo_id
         model = MMaDAModelLM.from_pretrained(model_spec.repo_id, dtype=precision)  # type: ignore
@@ -227,14 +227,14 @@ def load_mmada_model(
     raise TypeError(f"MMaDA params not found for: {model_spec.repo_id} with params type {type(model_spec.params).__name__}")
 
 
-def load_t5(device: str | torch.device = device, max_length: int = 512) -> HFEmbedder:
+def load_t5(device: str | torch.device = gfx_device, max_length: int = 512) -> HFEmbedder:
     # max length 64, 128, 256 and 512 should work (if your sequence is short enough)
     return HFEmbedder("google/t5-v1_1-xxl", max_length=max_length, dtype=torch.bfloat16).to(device)
 
 
-def load_clip(device: str | torch.device = device) -> HFEmbedder:
+def load_clip(device: str | torch.device = gfx_device) -> HFEmbedder:
     return HFEmbedder("openai/clip-vit-large-patch14", max_length=77, dtype=torch.bfloat16).to(device)
 
 
-def load_mistral_small_embedder(device: str | torch.device = device) -> Mistral3SmallEmbedder:
+def load_mistral_small_embedder(device: str | torch.device = gfx_device) -> Mistral3SmallEmbedder:
     return Mistral3SmallEmbedder().to(device)

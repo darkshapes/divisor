@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from divisor.registry import dtype, device
+from divisor.registry import gfx_dtype, gfx_device
 from divisor.mmada.live_token import get_num_transfer_tokens
 from divisor.noise import add_gumbel_noise
 
@@ -45,7 +45,7 @@ def generate_text_understanding(
         code_start: Prediction text token satrt index
     """
     device = next(model.parameters()).device or device
-    precision = dtype()
+    precision = gfx_dtype
     x = prompt
 
     prompt_index = x != mask_id

@@ -6,7 +6,7 @@ from pathlib import Path
 from PIL import Image
 from einops import rearrange
 from nnll.console import nfo
-from divisor.registry import device
+from divisor.registry import gfx_dtype
 import torch
 import torch.nn as nn
 from transformers import AutoProcessor, Mistral3ForConditionalGeneration
@@ -26,7 +26,7 @@ from divisor.flux2.system_messages import (
 OUTPUT_LAYERS = [10, 20, 30]
 MAX_LENGTH = 512
 UPSAMPLING_MAX_IMAGE_SIZE = 768**2
-precision: torch.dtype = gfx.dtype()
+precision: torch.dtype = gfx_dtype
 
 
 class Mistral3SmallEmbedder(nn.Module):
