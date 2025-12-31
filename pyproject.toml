@@ -22,6 +22,7 @@ dependencies = [
     "torchcodec>=0.9.1",
     "transformers",
     "pdoc>=16.0.0",
+    "opencc>=1.1.9",
 ]
 [project.scripts]
 dvzr = "divisor.app:main"
