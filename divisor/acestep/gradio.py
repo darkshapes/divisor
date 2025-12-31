@@ -1,10 +1,6 @@
-"""
-ACE-Step: A Step Towards Music Generation Foundation Model
+# SPDX-License-Identifier:Apache-2.0
+# adapted from https://github.com/ace-step/ACE-Step
 
-https://github.com/ace-step/ACE-Step
-
-Apache 2.0 License
-"""
 
 import os
 

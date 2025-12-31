@@ -2,11 +2,11 @@
 # Adapted from https://github.com/Gen-Verse/MMaDA
 
 from nnll.console import nfo
-from nnll.init_gpu import device
+from divisor.registry import device
 import torch
 import torch.nn.functional as F
 
-from divisor.contents import get_dtype
+
 from divisor.flux1.loading import load_mmada_model
 from divisor.mmada.live_token import (
     get_highlighted_text_tuples,
@@ -41,7 +41,7 @@ def generate_viz_wrapper_lm(
     remasking_strategy,
     thinking_mode_lm,
 ):
-    precision = get_dtype(device)
+    precision = gfx.dtype()
     model_spec: ModelSpec = get_model_spec(mir_id, mmada_configs)
     if not isinstance(model_spec.params, MMaDAParams) or not isinstance(model_spec.init, InitialParamsMMaDA):
         raise TypeError(

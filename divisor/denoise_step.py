@@ -6,7 +6,7 @@
 from typing import Any, Callable, Optional
 
 from einops import repeat
-from nnll.init_gpu import device
+from divisor.registry import device
 import torch
 from torch import Tensor
 

@@ -2,7 +2,7 @@
 # Adapted from https://github.com/Gen-Verse/MMaDA
 # Adapted from https://github.com/black-forest-labs/flux
 
-from nnll.init_gpu import device
+from divisor.registry import device
 import torch
 from transformers import AutoTokenizer
 

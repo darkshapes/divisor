@@ -6,7 +6,7 @@ from dataclasses import replace
 
 from fire import Fire
 from nnll.console import nfo
-from nnll.init_gpu import clear_cache, device
+from divisor.registry import device
 import torch
 
 from divisor.controller import rng
@@ -125,7 +125,7 @@ def main(
         # prepare input
         if offload:
             ae = ae.cpu()
-            clear_cache()
+            gfx.empty_cache()
 
             t5, clip = t5.to(device), clip.to(device)
         inp = prepare(t5, clip, x, prompt=state.prompt)
@@ -140,7 +140,7 @@ def main(
         # offload TEs to CPU, load model to gpu
         if offload:
             t5, clip = t5.cpu(), clip.cpu()
-            clear_cache()
+            gfx.empty_cache()
             # Move model to device
             if is_compiled:
                 # Can't move compiled models, so recompile after moving

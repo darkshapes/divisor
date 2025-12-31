@@ -390,9 +390,8 @@ class TestCommandsSamplingIntegration:
 
             # Mock other dependencies
             with (
-                patch("divisor.flux1.sampling.name_save_file_as"),
-                patch("divisor.flux1.sampling.save_with_hyperchain"),
-                patch("divisor.flux1.sampling.sync_torch"),
+                patch("divisor.flux1.sampling.SaveFile"),
+                patch("divisor.flux1.sampling.gfx.sync"),
                 patch("divisor.flux1.sampling.nfo"),
             ):
                 settings = InferenceState(
@@ -492,9 +491,8 @@ class TestCommandsSamplingIntegration:
             MockController.return_value = mock_controller_instance
 
             with (
-                patch("divisor.flux1.sampling.name_save_file_as"),
-                patch("divisor.flux1.sampling.save_with_hyperchain"),
-                patch("divisor.flux1.sampling.sync_torch"),
+                patch("divisor.flux1.sampling.SaveFile"),
+                patch("divisor.flux1.sampling.gfx.sync"),
                 patch("divisor.flux1.sampling.nfo"),
                 patch("divisor.flux1.sampling.route_choices", return_value=state),
             ):
@@ -615,9 +613,8 @@ class TestCommandsSamplingIntegration:
                 mock_process.return_value = state
 
                 with (
-                    patch("divisor.flux1.sampling.name_save_file_as"),
-                    patch("divisor.flux1.sampling.save_with_hyperchain"),
-                    patch("divisor.flux1.sampling.sync_torch"),
+                    patch("divisor.flux1.sampling.SaveFile"),
+                    patch("divisor.flux1.sampling.gfx.sync"),
                     patch("divisor.flux1.sampling.nfo"),
                 ):
                     settings = InferenceState(

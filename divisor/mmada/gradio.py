@@ -3,7 +3,7 @@
 
 import gradio as gr
 from nnll.console import nfo
-from nnll.init_gpu import device
+from divisor.registry import device
 
 from divisor.flux1.loading import load_mmada_model
 from divisor.mmada import app

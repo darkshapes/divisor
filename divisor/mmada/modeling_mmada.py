@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from PIL import Image
-from nnll.init_gpu import device
+from divisor.registry import device
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -12,7 +12,7 @@ from nnll.console import nfo
 from transformers import PretrainedConfig
 from transformers.models.auto import AutoConfig, AutoModel, AutoModelForCausalLM
 
-from divisor.contents import get_dtype
+
 from divisor.mmada.live_token import get_num_transfer_tokens
 from divisor.mmada.modeling_llada import LLaDAModelLM
 from divisor.mmada.sampling import cosine_schedule, mask_by_random_topk
@@ -382,7 +382,7 @@ class MMadaModelLM(LLaDAModelLM):
 
         # print(f"num_blocks: {num_blocks}, steps: {steps}")
         # num_transfer_tokens = get_num_transfer_tokens(prompt_index, steps)
-        precision = get_dtype(device)
+        precision = gfx.dtype()
         for num_block in range(num_blocks):
             block_mask_index = x[:, idx.shape[1] + num_block * block_length : idx.shape[1] + (num_block + 1) * block_length :] == mask_id
             num_transfer_tokens = get_num_transfer_tokens(block_mask_index, steps)
@@ -487,7 +487,7 @@ class MMadaModelLM(LLaDAModelLM):
         assert steps % num_blocks == 0
         steps = steps // num_blocks
 
-        precision = get_dtype(device)
+        precision = gfx.dtype()
         for num_block in range(num_blocks):
             block_mask_index = x[:, idx.shape[1] + num_block * block_length : idx.shape[1] + (num_block + 1) * block_length :] == mask_id
             num_transfer_tokens = get_num_transfer_tokens(block_mask_index, steps)

@@ -7,10 +7,10 @@ from dataclasses import replace
 from PIL import Image
 from fire import Fire
 from nnll.console import nfo
-from nnll.init_gpu import clear_cache, device
+from divisor.registry import device
 import torch
 
-from divisor.contents import get_dtype
+
 from divisor.controller import rng
 from divisor.flux1.loading import load_ae, load_flow_model, load_mistral_small_embedder
 from divisor.flux1.prompt import parse_prompt
@@ -57,7 +57,7 @@ def main(
     :param guidance: guidance value used for guidance distillation
     """
 
-    precision = get_dtype(device)
+    precision = gfx.dtype()
     prompt_parts = prompt.split("|")
     if len(prompt_parts) == 1:
         prompt = prompt_parts[0]
@@ -168,7 +168,7 @@ def main(
                 else:
                     mistral = None
                     del mistral
-                clear_cache()
+                gfx.empty_cache()
                 if is_compiled:
                     raise RuntimeError("Cannot use offload=True with compile=True. Compile after model is on device, or disable compilation when offloading.")
                 model = model.to(device)  # type: ignore[attr-defined]

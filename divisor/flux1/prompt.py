@@ -6,7 +6,7 @@ from dataclasses import replace
 
 from fire import Fire
 from nnll.console import nfo
-from nnll.init_gpu import clear_cache, device
+from divisor.registry import device, gfx
 import torch
 
 from divisor.controller import rng
@@ -186,7 +186,7 @@ def main(
 
         if offload:
             ae = ae.cpu()
-            clear_cache()
+            gfx.empty_cache()
 
             t5, clip = t5.to(device), clip.to(device)
         x_3d = prepare_4d_noise_for_3d_model(
@@ -211,7 +211,7 @@ def main(
         # offload TEs to CPU, load model to gpu
         if offload:
             t5, clip = t5.cpu(), clip.cpu()
-            clear_cache()
+            gfx.empty_cache()
             if is_compiled:
                 raise RuntimeError("Can't move compiled models. Compile on target device, or disable compilation when offloading.")
             model = model.to(device)  # type: ignore[attr-defined]

@@ -6,26 +6,29 @@
 import os
 from pathlib import Path
 
+import torch
 from diffusers.models.autoencoders.autoencoder_tiny import AutoencoderTiny
 from huggingface_hub import snapshot_download
 from nnll.console import nfo
-from nnll.init_gpu import device
 from safetensors.torch import load_file as load_sft
-import torch
 
-from divisor.flux1.autoencoder import AutoEncoder as AutoEncoder1, AutoEncoderParams
+from divisor.flux1.autoencoder import AutoEncoder as AutoEncoder1
+from divisor.flux1.autoencoder import AutoEncoderParams
 from divisor.flux1.model import Flux, FluxLoraWrapper
 from divisor.flux1.text_embedder import HFEmbedder
 from divisor.flux2.autoencoder import (
     AutoEncoder as AutoEncoder2,
+)
+from divisor.flux2.autoencoder import (
     AutoEncoderParams as AutoEncoder2Params,
 )
 from divisor.flux2.model import Flux2, Flux2Params
 from divisor.flux2.text_encoder import Mistral3SmallEmbedder
-from divisor.spec import ModelSpec, CompatibilitySpec, optionally_expand_state_dict
+from divisor.mmada.modeling_mmada import MMadaConfig as MMaDAParams
+from divisor.mmada.modeling_mmada import MMadaModelLM as MMaDAModelLM
+from divisor.registry import dtype, device
+from divisor.spec import CompatibilitySpec, ModelSpec, optionally_expand_state_dict
 from divisor.xflux1.model import XFlux, XFluxParams
-from divisor.contents import get_dtype
-from divisor.mmada.modeling_mmada import MMadaConfig as MMaDAParams, MMadaModelLM as MMaDAModelLM
 
 
 def print_load_warning(missing: list[str], unexpected: list[str]) -> None:
@@ -213,7 +216,7 @@ def load_mmada_model(
     :returns: Loaded MMaDA model
     :raises: TypeError if model_spec.params is not a MMaDAParams
     """
-    precision = get_dtype(device)
+    precision = dtype()
     if isinstance(model_spec.params, MMaDAParams):
         model_spec.params.llm_model_path = model_spec.repo_id
         model = MMaDAModelLM.from_pretrained(model_spec.repo_id, dtype=precision)  # type: ignore

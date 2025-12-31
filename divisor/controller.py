@@ -12,7 +12,7 @@ from typing import Any, Callable, Optional
 
 from nnll.console import nfo
 from nnll.hyperchain import HyperChain
-from nnll.init_gpu import device
+from divisor.registry import device
 from nnll.random import RNGState
 import torch
 
