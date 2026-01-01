@@ -2,27 +2,26 @@
 # <!-- // /*  d a r k s h a p e s */ -->
 
 from typing import Any
-import torch
-from nnll.init_gpu import device
+
+from nnll.init_gpu import Gfx
+
+
+def _init_gfx() -> Gfx:
+    """Initialise (and cache) a single :class:`~nnll.init_gpu.Gfx` instance."""
+    return Gfx(full_precision=False)
+
+
+gfx: Gfx = _init_gfx()
+gfx_device = gfx.device
+gfx_dtype = gfx.dtype
+gfx_sync = gfx.sync
+empty_cache = gfx.empty_cache
 
 
 def get_lora_rank(checkpoint):
     for k in checkpoint.keys():
         if k.endswith(".down.weight"):
             return checkpoint[k].shape[0]
-
-
-def get_dtype(device: torch.device = device, max_precision: bool = False) -> torch.dtype:
-    """Assign dtype based on accelerator availablilty\n
-    :param device: Device to get the dtype for
-    :param max_precision: If True, return the maximum precision dtype for the given device
-    :returns: Dtype for the given device"""
-    dtype_by_device = {
-        "cuda": torch.bfloat16 if not max_precision else torch.float64,
-        "mps": torch.bfloat16 if not max_precision else torch.float32,
-        "cpu": torch.float32,
-    }
-    return dtype_by_device[device.type]
 
 
 def populate_model_choices(configs: dict[str, Any]) -> list[str]:
@@ -54,3 +53,21 @@ def build_available_models(configs: dict[str, Any]) -> dict[str, str]:
                 model_args[key] = model
 
     return model_args
+
+
+if __name__ == "__main__":
+    import typing as _t
+
+    def _debug_dump() -> dict[str, _t.Any]:
+        """
+        Return a dictionary with the most important registry values.
+        Useful when debugging import‑order issues.
+        """
+        return {
+            "gfx": gfx,
+            "device": gfx_device,
+            "device_repr": repr(gfx_device),
+            "device.type": gfx_device.type,
+        }
+
+    print(_debug_dump())

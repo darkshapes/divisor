@@ -6,12 +6,9 @@ import math
 import time
 from typing import Callable, Optional
 
+import torch
 from einops import rearrange, repeat
 from nnll.console import nfo
-from nnll.constants import ExtensionType
-from nnll.init_gpu import sync_torch
-from nnll.save_generation import name_save_file_as, save_with_hyperchain
-import torch
 
 from torch import Tensor
 
@@ -26,9 +23,11 @@ from divisor.denoise_step import (
 from divisor.flux1.model import Flux
 from divisor.flux1.text_embedder import HFEmbedder
 from divisor.interaction_context import InteractionContext
+from divisor.registry import gfx_sync
+from divisor.save import SaveFile
 from divisor.state import (
-    InferenceState,
     ImageEmbeddingState,
+    InferenceState,
     TextEmbeddingState,
 )
 
@@ -135,7 +134,7 @@ def denoise(
     img_cond = settings.img_cond
     img_cond_seq = settings.img_cond_seq
     img_cond_seq_ids = settings.img_cond_seq_ids
-    from nnll.init_gpu import device as default_device
+    from divisor.registry import gfx_device as default_device
 
     denoise_device = settings.device if settings.device is not None else default_device
     initial_layer_dropout = settings.initial_layer_dropout
@@ -234,7 +233,6 @@ def denoise(
 
     # Interactive loop
     while not controller.is_complete:
-        file_path_named = name_save_file_as(ExtensionType.WEBP)
         state = controller.current_state
 
         # Check if prompt changed and recompute embeddings if needed
@@ -281,7 +279,7 @@ def denoise(
             # Unpack requires float32, but we'll convert back to correct dtype after
             intermediate = unpack(intermediate.float(), state.height, state.width)
 
-            sync_torch(denoise_device)
+            gfx_sync
             t1 = time.perf_counter()
 
             nfo(f"Step time: {t1 - t0:.1f}s")
@@ -313,12 +311,10 @@ def denoise(
                     intermediate_image = ae.decode(intermediate)
                 if state.seed is not None:
                     controller.store_state_in_chain(current_seed=state.seed)
-                save_with_hyperchain(
-                    file_path_named,
-                    intermediate_image,
-                    controller.hyperchain,
-                    ExtensionType.WEBP,
-                )
+                with SaveFile() as saver:
+                    saver.intermediate_image = intermediate_image  # set up image
+                    saver.hyperchain = (controller.hyperchain,)  # set up hyperchain
+                    saver.with_hyperchain()
 
     return controller.current_sample
 

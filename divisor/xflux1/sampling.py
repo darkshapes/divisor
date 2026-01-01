@@ -4,11 +4,8 @@
 import time
 from typing import Callable
 
-from nnll.console import nfo
-from nnll.constants import ExtensionType
-from nnll.init_gpu import device, sync_torch
-from nnll.save_generation import name_save_file_as, save_with_hyperchain
 import torch
+from nnll.console import nfo
 from torch import Tensor
 
 from divisor.cli_menu import route_choices
@@ -20,10 +17,12 @@ from divisor.denoise_step import (
 )
 from divisor.flux1.sampling import prepare, unpack
 from divisor.interaction_context import InteractionContext
+from divisor.registry import gfx_device, gfx_sync
+from divisor.save import SaveFile
 from divisor.state import (
-    StepStateXFlux1,
-    InferenceState,
     ImageEmbeddingState,
+    InferenceState,
+    StepStateXFlux1,
     TextEmbeddingState,
 )
 from divisor.xflux1.model import XFlux
@@ -80,7 +79,7 @@ def create_get_prediction_xflux1(
             model_dtype = next(pred_set.model_ref[0].parameters()).dtype
         except (TypeError, StopIteration, AttributeError):
             model_dtype = sample.dtype
-        use_autocast = device.type == "cuda"
+        use_autocast = gfx_device.type == "cuda"
 
         if not use_autocast:
             sample = sample.to(dtype=model_dtype)
@@ -298,7 +297,6 @@ def denoise(
 
     # Interactive loop
     while not controller.is_complete:
-        file_path_named = name_save_file_as(ExtensionType.WEBP)
         state = controller.current_state
 
         # Update timestep index for CFG check
@@ -348,9 +346,9 @@ def denoise(
             # Unpack requires float32, but we'll convert back to correct dtype after
             intermediate = unpack(intermediate.float(), state.height, state.width)
 
-            from nnll.init_gpu import device as default_device
+            from divisor.registry import gfx_device as default_device
 
-            sync_torch(default_device)
+            gfx_sync
             t1 = time.perf_counter()
 
             nfo(f"Step time: {t1 - t0:.1f}s")
@@ -382,11 +380,9 @@ def denoise(
                     intermediate_image = ae.decode(intermediate)
                 if state.seed is not None:
                     controller.store_state_in_chain(current_seed=state.seed)
-                save_with_hyperchain(
-                    file_path_named,
-                    intermediate_image,
-                    controller.hyperchain,
-                    ExtensionType.WEBP,
-                )
+                with SaveFile() as saver:
+                    saver.intermediate_image = intermediate_image  # set up image
+                    saver.hyperchain = (controller.hyperchain,)  # set up hyperchain
+                    saver.with_hyperchain()
 
     return controller.current_sample

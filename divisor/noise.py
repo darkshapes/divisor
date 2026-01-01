@@ -6,12 +6,11 @@
 import math
 from typing import Any, Optional
 
-from nnll.init_gpu import device
 import torch
 from torch import Tensor
 
-from divisor.contents import get_dtype
 from divisor.controller import rng
+from divisor.registry import gfx_dtype
 
 
 def get_noise(
@@ -118,7 +117,7 @@ def add_gumbel_noise(logits, temperature):
     if abs(temperature) < 1e-9:  # Effectively zero temperature
         return logits
 
-    max_device_precision = get_dtype(device, max_precision=True)
+    max_device_precision = gfx_dtype(full_precision=True)
     logits = logits.to(max_device_precision)
     noise = torch.rand_like(logits, dtype=max_device_precision)
     # Standard Gumbel noise: -log(-log(U)), U ~ Uniform(0,1) Add small epsilon for numerical stability inside logs
@@ -131,7 +130,7 @@ def add_unstable_gumbel_noise(logits, temperature):
     """The Gumbel max is a method for sampling categorical distributions.\n
     arXiv:2409.02908 low-precision Gumbel Max improves MDM perplexity score but reduces generation quality.\n
     Thus, we use float64... unless mps, in which case we must use float32"""
-    precision = get_dtype(device)
+    precision = gfx_dtype
     if temperature == 0:
         return logits
     logits = logits.to(precision)

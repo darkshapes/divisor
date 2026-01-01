@@ -5,7 +5,7 @@
 from functools import partial
 import math
 
-from nnll.init_gpu import device
+from divisor.registry import gfx_device
 import torch
 import torch.nn.functional as F
 from torchvision import transforms

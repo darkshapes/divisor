@@ -6,7 +6,7 @@
 from typing import Any, Callable, Optional
 
 from einops import repeat
-from nnll.init_gpu import device
+from divisor.registry import gfx_device
 import torch
 from torch import Tensor
 
@@ -193,7 +193,7 @@ def create_get_prediction(pred_set: TextEmbeddingState, img_set: ImageEmbeddingS
         except (TypeError, StopIteration, AttributeError):
             # Fallback: use sample dtype if we can't get model dtype (for Mock objects in tests)
             model_dtype = sample.dtype
-        use_autocast = device.type == "cuda"
+        use_autocast = gfx_device.type == "cuda"
 
         # Ensure sample is in correct dtype before any operations
         if not use_autocast:

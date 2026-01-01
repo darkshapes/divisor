@@ -9,14 +9,20 @@ description = "fragment / denoise / process"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "ffmpeg>=1.4",
     "fire>=0.7.1",
     "gradio>=5.23.1",
     "hangul-romanize>=0.1.0",
+    "librosa>=0.11.0",
     "nnll[full]",
+    "num2words>=0.5.14",
     "py3langid>=0.3.0",
     "pypinyin>=0.55.0",
+    "spacy>=3.8.11",
     "torchcodec>=0.9.1",
     "transformers",
+    "pdoc>=16.0.0",
+    "opencc>=1.1.9",
 ]
 [project.scripts]
 dvzr = "divisor.app:main"
@@ -25,8 +31,9 @@ divisor = "divisor.app:main"
 [dependency-groups]
 dev = [
   "nnll[dev]",
-  "pdoc>=16.0.0",
-  "ty>=0.0.5",
+  "pyright>=1.1.407",
+  "pytest>=9.0.2",
+  "ruff>=0.14.10",
 ]
 [project.optional-dependencies]
 cuda = [

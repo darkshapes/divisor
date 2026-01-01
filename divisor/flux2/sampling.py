@@ -9,9 +9,6 @@ from typing import Optional
 from PIL import Image
 from einops import rearrange
 from nnll.console import nfo
-from nnll.constants import ExtensionType
-from nnll.init_gpu import sync_torch
-from nnll.save_generation import name_save_file_as, save_with_hyperchain
 import torch
 from torch import Tensor
 import torchvision
@@ -24,8 +21,8 @@ from divisor.denoise_step import (
     create_get_prediction,
     create_recompute_text_embeddings,
 )
-from divisor.contents import get_dtype
-from nnll.init_gpu import device
+from divisor.registry import gfx_device, gfx_dtype, gfx_sync
+from divisor.save import SaveFile
 from divisor.flux2.model import Flux2
 from divisor.state import (
     InferenceState,
@@ -75,7 +72,7 @@ def scatter_ids(x: Tensor, x_ids: Tensor) -> list[Tensor]:
 
 
 def encode_image_refs(ae, img_ctx: list[Image.Image]):
-    precision = get_dtype(device)
+    precision = gfx_dtype
     scale = 10
 
     if len(img_ctx) > 1:
@@ -94,7 +91,7 @@ def encode_image_refs(ae, img_ctx: list[Image.Image]):
 
     # Encode each reference image
     encoded_refs = []
-    torch_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("mps")
+    torch_device = gfx_device
     for img in img_ctx_prep:
         encoded = ae.encode(img[None].to(torch_device))[0]
         encoded_refs.append(encoded)
@@ -347,7 +344,7 @@ def denoise_interactive(
     timesteps = settings.timesteps
     img_cond_seq = settings.img_cond_seq
     img_cond_seq_ids = settings.img_cond_seq_ids
-    from nnll.init_gpu import device as default_device
+    from divisor.registry import gfx_device as default_device
 
     denoise_device = settings.device if settings.device is not None else default_device
     initial_layer_dropout = settings.initial_layer_dropout
@@ -444,7 +441,6 @@ def denoise_interactive(
 
     # Interactive loop
     while not controller.is_complete:
-        file_path_named = name_save_file_as(ExtensionType.WEBP)
         state = controller.current_state
 
         # Check if prompt changed and recompute embeddings if needed
@@ -498,7 +494,7 @@ def denoise_interactive(
                 if intermediate.dim() == 5:
                     intermediate = intermediate[:, :, 0, :, :]  # Take first time slice
 
-            sync_torch(denoise_device)
+            gfx_sync
             t1 = time.perf_counter()
 
             nfo(f"Step time: {t1 - t0:.1f}s")
@@ -526,12 +522,10 @@ def denoise_interactive(
                     intermediate_image = ae.decode(intermediate)
                 if state.seed is not None:
                     controller.store_state_in_chain(current_seed=state.seed)
-                save_with_hyperchain(
-                    file_path_named,
-                    intermediate_image,
-                    controller.hyperchain,
-                    ExtensionType.WEBP,
-                )
+                with SaveFile() as saver:
+                    saver.intermediate_image = intermediate_image  # set up image
+                    saver.hyperchain = (controller.hyperchain,)  # set up hyperchain
+                    saver.with_hyperchain()
 
     return controller.current_sample
 

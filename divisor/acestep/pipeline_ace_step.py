@@ -1,9 +1,8 @@
+# SPDX-License-Identifier:Apache-2.0
+# adapted from https://github.com/ace-step/ACE-Step
+
 """
 ACE-Step: A Step Towards Music Generation Foundation Model
-
-https://github.com/ace-step/ACE-Step
-
-Apache 2.0 License
 """
 
 import json
@@ -14,6 +13,8 @@ import re
 import time
 from typing import Literal
 
+import torch
+import torchaudio
 from diffusers.pipelines.stable_diffusion_3.pipeline_stable_diffusion_3 import (
     retrieve_timesteps,
 )
@@ -21,9 +22,6 @@ from diffusers.utils.peft_utils import set_weights_and_activate_adapters
 from diffusers.utils.torch_utils import randn_tensor
 from huggingface_hub import snapshot_download
 from nnll.console import nfo
-from nnll.init_gpu import clear_cache, device
-import torch
-import torchaudio
 from tqdm import tqdm
 from transformers import AutoTokenizer, UMT5EncoderModel
 
@@ -46,14 +44,15 @@ from divisor.acestep.schedulers.scheduling_flow_match_heun_discrete import (
     FlowMatchHeunDiscreteScheduler,
 )
 from divisor.acestep.schedulers.scheduling_flow_match_pingpong import FlowMatchPingPongScheduler
+from divisor.registry import gfx_device, empty_cache
 
-if device.type == "cuda":
+if gfx_device.type == "cuda":
     torch.backends.cudnn.benchmark = False
     torch.set_float32_matmul_precision("high")
     torch.backends.cudnn.deterministic = True
     torch.backends.cuda.matmul.allow_tf32 = False
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-elif device.type == "mps":
+elif gfx_device.type == "mps":
     os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = "/opt/homebrew/lib"
 
 SUPPORT_LANGUAGES = {
@@ -116,13 +115,13 @@ class ACEStepPipeline:
         self.lora_path = "none"
         self.lora_weight = 1
         self.dtype = torch.bfloat16 if dtype == "bfloat16" else torch.float32
-        if device.type == "mps":
+        if gfx_device.type == "mps":
             if self.dtype == torch.bfloat16:
                 self.dtype = torch.float16
 
         if "ACE_PIPELINE_DTYPE" in os.environ and len(os.environ["ACE_PIPELINE_DTYPE"]):
             self.dtype = getattr(torch, os.environ["ACE_PIPELINE_DTYPE"])
-        self.device = device
+        self.device: torch.device = gfx_device
         self.loaded = False
         self.torch_compile = torch_compile
         self.cpu_offload = cpu_offload
@@ -205,8 +204,8 @@ class ACEStepPipeline:
         if self.torch_compile:
             if export_quantized_weights:
                 from torch.ao.quantization import (
-                    quantize_,
                     Int4WeightOnlyConfig,
+                    quantize_,
                 )
 
                 group_size = 128
@@ -1475,7 +1474,7 @@ class ACEStepPipeline:
         )
 
         # Clean up memory after generation
-        clear_cache()
+        empty_cache
 
         end_time = time.time()
         latent2audio_time_cost = end_time - start_time

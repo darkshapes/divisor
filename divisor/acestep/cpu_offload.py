@@ -1,6 +1,10 @@
+# SPDX-License-Identifier:Apache-2.0
+# adapted from https://github.com/ace-step/ACE-Step
+
 import torch
 import functools
 from typing import Callable, TypeVar
+from divisor.registry import gfx_sync, empty_cache
 
 
 class CpuOffloader:
@@ -8,21 +12,21 @@ class CpuOffloader:
         self.model = model
         self.original_device = device
         self.original_dtype = model.dtype
-    
+
     def __enter__(self):
-        if not hasattr(self.model,"torchao_quantized"):
+        if not hasattr(self.model, "torchao_quantized"):
             self.model.to(self.original_device, dtype=self.original_dtype)
         return self.model
-    
+
     def __exit__(self, *args):
-        if not hasattr(self.model,"torchao_quantized"):
+        if not hasattr(self.model, "torchao_quantized"):
             self.model.to("cpu")
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
+        gfx_sync
+        empty_cache
 
 
-T = TypeVar('T')
+T = TypeVar("T")
+
 
 def cpu_offload(model_attr: str):
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
@@ -35,9 +39,10 @@ def cpu_offload(model_attr: str):
             device = self.device
             # Get the model from the class attribute
             model = getattr(self, model_attr)
-            
+
             with CpuOffloader(model, device):
                 return func(self, *args, **kwargs)
-                        
+
         return wrapper
+
     return decorator

@@ -2,11 +2,11 @@
 # Adapted from https://github.com/Gen-Verse/MMaDA
 
 from nnll.console import nfo
-from nnll.init_gpu import device
+from divisor.registry import gfx_device, gfx_dtype
 import torch
 import torch.nn.functional as F
 
-from divisor.contents import get_dtype
+
 from divisor.flux1.loading import load_mmada_model
 from divisor.mmada.live_token import (
     get_highlighted_text_tuples,
@@ -41,7 +41,7 @@ def generate_viz_wrapper_lm(
     remasking_strategy,
     thinking_mode_lm,
 ):
-    precision = get_dtype(device)
+    precision = gfx_dtype
     model_spec: ModelSpec = get_model_spec(mir_id, mmada_configs)
     if not isinstance(model_spec.params, MMaDAParams) or not isinstance(model_spec.init, InitialParamsMMaDA):
         raise TypeError(
@@ -52,7 +52,7 @@ def generate_viz_wrapper_lm(
     else:
         mask_id = model_spec.init.mask_id
         max_position_embeddings = model_spec.init.max_position_embeddings
-        model = load_mmada_model(model_spec, device=device)
+        model = load_mmada_model(model_spec, device=gfx_device)
         hf = HFEmbedder(model_spec.repo_id, max_length=max_position_embeddings)
     if thinking_mode_lm:
         prompt_text = THINKING_MODE_LM_PROMPT + prompt_text
@@ -62,7 +62,7 @@ def generate_viz_wrapper_lm(
     prompt_len = input_ids.shape[1]
     raw_prompt_attention_mask = None
 
-    x = torch.full((batch_size, prompt_len + gen_length), mask_id, dtype=torch.long, device=device)
+    x = torch.full((batch_size, prompt_len + gen_length), mask_id, dtype=torch.long, device=gfx_device)
     x[:, :prompt_len] = input_ids.clone()
     nfo(f"Starting generation: Prompt ({prompt_len} tokens) + Initial Masks")
     # yield get_highlighted_text_tuples(x, input_ids, prompt_len, TOKENIZER, MASK_ID, raw_prompt_attention_mask), "Starting generation: Prompt + Initial Masks"

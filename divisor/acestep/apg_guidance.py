@@ -1,3 +1,6 @@
+# SPDX-License-Identifier:Apache-2.0
+# code from https://github.com/ace-step/ACE-Step
+
 import torch
 
 
@@ -25,9 +28,7 @@ def project(
     v1 = torch.nn.functional.normalize(v1, dim=dims)
     v0_parallel = (v0 * v1).sum(dim=dims, keepdim=True) * v1
     v0_orthogonal = v0 - v0_parallel
-    return v0_parallel.to(dtype).to(device_type), v0_orthogonal.to(dtype).to(
-        device_type
-    )
+    return v0_parallel.to(dtype).to(device_type), v0_orthogonal.to(dtype).to(device_type)
 
 
 def apg_forward(
@@ -67,15 +68,10 @@ def cfg_double_condition_forward(
     guidance_scale_text,
     guidance_scale_lyric,
 ):
-    return (
-        (1 - guidance_scale_text) * uncond_output
-        + (guidance_scale_text - guidance_scale_lyric) * only_text_cond_output
-        + guidance_scale_lyric * cond_output
-    )
+    return (1 - guidance_scale_text) * uncond_output + (guidance_scale_text - guidance_scale_lyric) * only_text_cond_output + guidance_scale_lyric * cond_output
 
 
 def optimized_scale(positive_flat, negative_flat):
-
     # Calculate dot production
     dot_product = torch.sum(positive_flat * negative_flat, dim=1, keepdim=True)
 
@@ -104,7 +100,5 @@ def cfg_zero_star(
     if (i <= zero_steps) and use_zero_init:
         noise_pred = noise_pred_with_cond * 0.0
     else:
-        noise_pred = noise_pred_uncond * alpha + guidance_scale * (
-            noise_pred_with_cond - noise_pred_uncond * alpha
-        )
+        noise_pred = noise_pred_uncond * alpha + guidance_scale * (noise_pred_with_cond - noise_pred_uncond * alpha)
     return noise_pred
