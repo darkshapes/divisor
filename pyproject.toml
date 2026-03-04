@@ -1,50 +1,78 @@
+# SPDX-License-Identifier: MPL-2.0 AND LicenseRef-Commons-Clause-License-Condition-1.0
+# <!-- // /*  d a r k s h a p e s */ -->
+
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
+authors = [{ name = "darkshapes", email = "91800957+exdysa@users.noreply.github.com" }]
 name = "divisor"
-version = "0.1.4"
 description = "fragment / denoise / process"
+version = "0.1.4"
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.13"
+keywords = ["ML", "AI", "TUI", "no-code", "diffusion", "LLM", "torch"]
+classifiers = [
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Intended Audience :: End Users/Desktop",
+  "Intended Audience :: Other Audience",
+  "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Scientific/Engineering :: Image Processing",
+  "Topic :: Multimedia",
+  "Topic :: Multimedia :: Graphics",
+  "Topic :: Multimedia :: Graphics :: Editors",
+  "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+  "Topic :: Multimedia :: Graphics :: Presentation",
+  "Topic :: Multimedia :: Graphics :: Viewers",
+  "Topic :: Multimedia :: Sound/Audio",
+  "Topic :: Multimedia :: Sound/Audio :: Conversion",
+  "Topic :: Multimedia :: Sound/Audio :: Editors",
+  "Topic :: Multimedia :: Sound/Audio :: Mixers",
+  "Topic :: Multimedia :: Sound/Audio :: Players",
+  "Topic :: Multimedia :: Video",
+  "Topic :: Multimedia :: Video :: Capture",
+  "Topic :: Multimedia :: Video :: Conversion",
+  "Topic :: Multimedia :: Video :: Display",
+  "Topic :: Multimedia :: Video :: Non-Linear Editor",
+
+]
+
 dependencies = [
-    "ffmpeg>=1.4",
-    "fire>=0.7.1",
-    "gradio>=5.23.1",
-    "hangul-romanize>=0.1.0",
-    "librosa>=0.11.0",
-    "nnll[full]",
-    "num2words>=0.5.14",
-    "py3langid>=0.3.0",
-    "pypinyin>=0.55.0",
-    "spacy>=3.8.11",
-    "torchcodec>=0.9.1",
-    "transformers",
-    "pdoc>=16.0.0",
-    "opencc>=1.1.9",
+  "ffmpeg>=1.4",
+  "fire>=0.7.1",
+  "gradio<6",
+  "hangul-romanize>=0.1.0",
+  "librosa>=0.11.0",
+  "nnll[full]",
+  "num2words>=0.5.14",
+  "py3langid>=0.3.0",
+  "pypinyin>=0.55.0",
+  "spacy>=3.8.11",
+  "torchcodec>=0.9.1",
+  "transformers",
+  "pdoc>=16.0.0",
+  "opencc>=1.1.9",
 ]
 [project.scripts]
 dvzr = "divisor.app:main"
 divisor = "divisor.app:main"
 
 [dependency-groups]
-dev = [
-  "nnll[dev]",
-  "pyright>=1.1.407",
-  "pytest>=9.0.2",
-  "ruff>=0.14.10",
-]
+dev = ["nnll[dev]", "pyright>=1.1.407", "pytest>=9.0.2", "ruff>=0.14.10"]
 [project.optional-dependencies]
-cuda = [
-  "jetengine @ git+https://github.com/Labman42/JetEngine.git ; sys_platform != 'darwin'",
-]
+cuda = ["jetengine @ git+https://github.com/Labman42/JetEngine.git ; sys_platform != 'darwin'"]
 [tool.pyright]
 include = ["divisor"]
 exclude = [
   "**/__pycache__", # cache directories
   "./typings",      # generated type stubs
 ]
+
 [tool.setuptools]
 packages = ["divisor"]
 
@@ -65,8 +93,8 @@ nnll = { git = "https://github.com/darkshapes/nnll" }
 jetengine = { git = "https://github.com/Labman42/JetEngine.git" }
 
 [tool.ruff]
-line-length    = 160
-include        = ["*.py"]
+line-length = 160
+include = ["*.py"]
 extend-exclude = ["**/__pycache__", "./typings"]
 
 [tool.ruff.lint]
@@ -74,5 +102,5 @@ ignore = ["E731"]
 
 [tool.pylint]
 max-line-length = 140
-ignore-paths    = ["^tests/.*$", "test_.*$"]
-disable         = ["C0415"]
+ignore-paths = ["^tests/.*$", "test_.*$"]
+disable = ["C0415"]
