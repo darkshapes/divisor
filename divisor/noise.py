@@ -117,7 +117,7 @@ def add_gumbel_noise(logits, temperature):
     if abs(temperature) < 1e-9:  # Effectively zero temperature
         return logits
 
-    max_device_precision = gfx_dtype(full_precision=True)
+    max_device_precision = gfx_dtype
     logits = logits.to(max_device_precision)
     noise = torch.rand_like(logits, dtype=max_device_precision)
     # Standard Gumbel noise: -log(-log(U)), U ~ Uniform(0,1) Add small epsilon for numerical stability inside logs
