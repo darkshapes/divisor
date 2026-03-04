@@ -134,6 +134,6 @@ def prepare(model, tokenizer, prompt_text):
         padding_side="left",
         truncation=True,
         max_length=model.config.max_position_embeddings if hasattr(model.config, "max_position_embeddings") else 2048,
-    )["input_ids"].to(device)
+    )["input_ids"].to(gfx_device)
 
     return input_ids
