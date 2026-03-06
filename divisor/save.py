@@ -9,9 +9,9 @@ from PIL import Image
 
 
 class SaveFile:
-    intermediate_image: Image
+    intermediate_image: Image.Image
     hyperchain: HyperChain
-    extension: ExtensionType = ExtensionType.WEBP
+    extension: ExtensionType | set[str] = ExtensionType.WEBP
     save_folder_path: Path = Path(__file__).resolve().parent.parent / ".output"
 
     def __enter__(self) -> "SaveFile":
@@ -38,4 +38,9 @@ class SaveFile:
             extension=self.extension,
             save_folder_path=self.save_folder_path,
         )
-        save_output(file_path_named, self.intermediate_image, str(self.hyperchain))
+        save_output(
+            file_path_named,
+            self.intermediate_image,
+            self.extension,
+            str(self.hyperchain),
+        )
